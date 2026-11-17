@@ -75,5 +75,11 @@ multiple indexed copies of the old apps. Existing iPhone Home Screen labels may
 need a manual display-name edit; keep the same entry URL and app ID to preserve
 paired browser storage.
 
+Windows CI covers the local service and expects the Mac-approved remote profile
+loader to fail closed: Windows FileMode does not prove POSIX private-file access.
+The remote host and native approval workflow described here target macOS.
+Do not remove private-file validation merely to make Windows tests pass; native
+Windows remote enrollment would require its own ACL and local-auth design.
+
 The Pi CLI and optional computer-use package are independent dependencies.
 Their own update, license and permission policies are not changed by YuGo Pi.

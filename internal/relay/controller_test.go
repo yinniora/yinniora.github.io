@@ -43,7 +43,13 @@ func TestRemoteServerConfigurationVerifiesAndKeepsPrivateIdentity(t *testing.T) 
 		}
 	}
 	restored, err := NewController(host, file, ConnectionConfig{ClientURL: b.Origin + "/"})
-	if err != nil || restored.Bootstrap()["signalUrl"] != public["signalUrl"] {
+	if runtime.GOOS == "windows" {
+		// The Mac-approved remote feature fails closed where the current private
+		// file check cannot establish POSIX permissions. Do not weaken it for CI.
+		if err == nil || !strings.Contains(err.Error(), "private regular file") {
+			t.Fatal("unverifiable Windows remote credentials were not refused", err)
+		}
+	} else if err != nil || restored.Bootstrap()["signalUrl"] != public["signalUrl"] {
 		t.Fatal("saved configuration not restored", err)
 	}
 	old, _ := os.ReadFile(file)
