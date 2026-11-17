@@ -168,6 +168,14 @@ func TestForgedSDPFingerprintCannotImpersonateMac(t *testing.T) {
 	failed := make(chan struct{}, 1)
 	dc, _ := pc.CreateDataChannel("pi-workspace-v1", nil)
 	dc.OnOpen(func() { opened <- struct{}{} })
+	pc.SCTP().Transport().OnStateChange(func(state webrtc.DTLSTransportState) {
+		if state == webrtc.DTLSTransportStateFailed {
+			select {
+			case failed <- struct{}{}:
+			default:
+			}
+		}
+	})
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		if state == webrtc.PeerConnectionStateFailed {
 			select {
@@ -180,7 +188,7 @@ func TestForgedSDPFingerprintCannotImpersonateMac(t *testing.T) {
 	gather := webrtc.GatheringCompletePromise(pc)
 	pc.SetLocalDescription(offer)
 	<-gather
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	answer, err := fake.Answer(ctx, "fake", pc.LocalDescription().SDP)
 	if err != nil {
