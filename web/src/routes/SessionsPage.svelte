@@ -255,15 +255,23 @@
     document.body?.classList.remove('modal-sheet-open');
   }
 
-  async function updateProject(path, action) {
+  async function updateProject(path, action, options = {}) {
     projectsBusy = true;
     projectsError = '';
     try {
-      await defaultUpdateProject(path, action);
+      await defaultUpdateProject(path, action, options);
       await refreshSessions();
       await refreshProjectsList();
+      if (action === 'delete') {
+        window.dispatchEvent(new CustomEvent('pi:hub-updated'));
+      }
+      return true;
     } catch (error) {
-      projectsError = error.message || t('index.failedUpdateProject');
+      projectsError =
+        action === 'delete'
+          ? t('projects.deleteFailed')
+          : error.message || t('index.failedUpdateProject');
+      return false;
     } finally {
       projectsBusy = false;
     }
@@ -485,7 +493,7 @@
       onToggleAll={(enabled) => updateProject('', enabled ? 'enable-all' : 'disable-all')}
       onToggleFilter={(enabled) => updateProject('', enabled ? 'enable-filter' : 'disable-filter')}
       onRegister={(path) => updateProject(path, 'register')}
-      onRemove={(path) => updateProject(path, 'remove')}
+      onDelete={(path, options) => updateProject(path, 'delete', options)}
     />
   </main>
 </div>

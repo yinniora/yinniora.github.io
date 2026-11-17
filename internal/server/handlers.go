@@ -333,6 +333,8 @@ func (s *Server) sessionBootstrap(id string) string {
 }
 
 func (s *Server) handleNewSession(w http.ResponseWriter, r *http.Request) {
+	s.sessionManagementMu.Lock()
+	defer s.sessionManagementMu.Unlock()
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return

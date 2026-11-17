@@ -78,6 +78,7 @@ indexed workspaces, and register only the installed copies with LaunchServices.
 Mac environment variables: `PI_WEB_DEVICE_AUTH`, `PI_WEB_PAIR_APPROVER`,
 `PI_WEB_REMOTE_CLIENT_URL`, `PI_WEB_REMOTE_SIGNAL_URL`, `PI_WEB_REMOTE_ICE_URL`,
 `PI_WEB_REMOTE_TURN_IP`, `PI_WEB_REMOTE_TURN_SECRET`, `PI_WEB_RELAY_HOST_TOKEN`.
+Optional `PI_WEB_PROJECT_TRASH_HELPER` points to the native `Contents/Helpers/project-trash` executable inside Pi Chat. `PI_WEB_PROTECTED_PATHS` is an OS path-list of additional runtime/configuration locations whose ancestors must not be moved by project deletion. The helper moves folders to Finder Trash; no shell or UI scripting is used.
 `PI_WEB_REMOTE_DIRECT_URL` is an optional trusted HTTPS/WSS direct signaling
 endpoint. Point Tailscale Serve at the separate signaling-only loopback listener
 configured by `PI_WEB_DIRECT_SIGNAL_ADDR`, never at the workspace HTTP port.

@@ -157,6 +157,6 @@ export function defaultFetchProjects({
   const qs = params.toString();
   return getJSON('/api/projects' + (qs ? '?' + qs : ''));
 }
-export function defaultUpdateProject(path, action) {
-  return postJSON('/api/projects', { path, action });
+export function defaultUpdateProject(path, action, options = {}) {
+  return postJSON('/api/projects', { ...options, path, action });
 }

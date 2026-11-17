@@ -171,6 +171,11 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, 500, "cannot update trash")
 		return
 	}
+	if body.Restore {
+		if restorer, ok := s.chatSender.(interface{ RestoreSession(string) }); ok {
+			restorer.RestoreSession(id)
+		}
+	}
 	s.broadcast("__all__", "new-session")
 	s.broadcast(id, "reload")
 	writeJSON(w, 200, map[string]any{"ok": true, "id": id})
@@ -287,14 +292,17 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 			if auth.ApprovedDeviceID(r) != "" {
 				writeJSON(w, 200, map[string]any{"clientManaged": true, "transport": c.Kind})
 			} else {
-				if s.devices.bootstrap == nil { writeJSONError(w,503,"remote client is not configured"); return }
+				if s.devices.bootstrap == nil {
+					writeJSONError(w, 503, "remote client is not configured")
+					return
+				}
 				metadata := s.devices.bootstrap()
 				writeJSON(w, 200, map[string]any{"url": metadata["clientUrl"]})
 			}
 			return
 		}
 		if s.devices != nil && auth.ApprovedDeviceID(r) != "" && c.Kind == "local" {
-			writeJSONError(w,400,"The local connection is available on the Mac itself.")
+			writeJSONError(w, 400, "The local connection is available on the Mac itself.")
 			return
 		}
 		target, _ := url.Parse(c.URL)

@@ -1,4 +1,5 @@
 <script>
+  import { icon, Trash2, FolderGit2 } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { sessionsCountLabel } from '../../index/sessions.js';
 
@@ -13,11 +14,33 @@
     onToggleAll = async () => {},
     onToggleFilter = async () => {},
     onRegister = async () => {},
-    onRemove = async () => {},
+    onDelete = async () => false,
   } = $props();
 
   let query = $state('');
   let addPath = $state('');
+  let deleting = $state(null);
+  let deleteFiles = $state(false);
+  let confirmation = $state('');
+  const basename = (path) =>
+    String(path).replaceAll('\\', '/').split('/').filter(Boolean).at(-1) || '';
+  $effect(() => {
+    if (!open) {
+      deleting = null;
+      deleteFiles = false;
+      confirmation = '';
+    }
+  });
+  function askDelete(project) {
+    deleting = project;
+    deleteFiles = false;
+    confirmation = '';
+  }
+  async function deleteProject() {
+    if (!deleting || busy || (deleteFiles && confirmation !== basename(deleting.path))) return;
+    const ok = await onDelete(deleting.path, { deleteFiles, confirmation });
+    if (ok) deleting = null;
+  }
 
   const visibleProjects = $derived(
     projects.filter(
@@ -38,6 +61,7 @@
   }
 </script>
 
+<!-- eslint-disable svelte/no-at-html-tags -- Lucide icons only -->
 <div
   class="modal-overlay"
   id="projectsModalOverlay"
@@ -62,79 +86,140 @@
       </button>
     </div>
     <h2>{t('index.manageProjectsTitle')}</h2>
-    <label class="projects-filter-switch">
-      <span class="projects-filter-text">
-        <span class="projects-filter-title">{t('index.filterProjects')}</span>
-        <span class="projects-filter-desc" id="projectsFilterDesc"
-          >{filterEnabled ? t('index.filterOnDesc') : t('index.filterOffDesc')}</span
+    {#if deleting}
+      <section class="project-delete-confirm" role="region" aria-label={t('projects.confirmTitle')}>
+        <h3>{t('projects.confirmTitle')}</h3>
+        <strong>{basename(deleting.path)}</strong>
+        <code class="project-delete-path">{deleting.path}</code>
+        <p>
+          {t('projects.sessionsToTrash', {
+            count: deleteFiles
+              ? (deleting.fileSessionCount ?? deleting.sessionCount)
+              : deleting.sessionCount,
+          })}
+        </p>
+        <p class="project-delete-hint">{t('projects.pauseSchedules')}</p>
+        <label class="project-delete-files"
+          ><input
+            type="checkbox"
+            bind:checked={deleteFiles}
+            disabled={busy || !deleting.canDeleteFiles}
+          />{t('projects.deleteFiles')}</label
         >
-      </span>
-      <span class="switch"
-        ><input
-          type="checkbox"
-          id="projectsFilterToggle"
-          checked={filterEnabled}
-          disabled={busy}
-          onchange={(e) => onToggleFilter(e.currentTarget.checked)}
-        /><span class="switch-slider"></span></span
-      >
-    </label>
-    <div class="projects-config" id="projectsConfig" class:filter-off={!filterEnabled}>
-      <div class="projects-toolbar">
-        <input
-          type="search"
-          id="projectsSearch"
-          class="projects-search"
-          placeholder={t('index.searchProjects')}
-          autocomplete="off"
-          bind:value={query}
-        />
-        <button
-          class="projects-bulk-btn"
-          id="projectsToggleAllBtn"
-          type="button"
-          disabled={busy || projects.length === 0}
-          data-target={allEnabled ? 'disable' : 'enable'}
-          onclick={() => onToggleAll(!allEnabled)}
-          >{allEnabled ? t('index.deselectAll') : t('index.selectAll')}</button
+        <p class="project-delete-hint">
+          {deleteFiles ? t('projects.filesToMacTrash') : t('projects.filesKept')}
+        </p>
+        {#if !deleting.canDeleteFiles}<p class="project-delete-hint">
+            {t('projects.filesUnavailable')}
+          </p>{/if}
+        {#if deleteFiles}
+          <label for="project-delete-name"
+            >{t('projects.typeName', { name: basename(deleting.path) })}</label
+          >
+          <input
+            id="project-delete-name"
+            autocomplete="off"
+            bind:value={confirmation}
+            disabled={busy}
+          />
+        {/if}
+        {#if error}<p class="modal-error" role="alert">{error}</p>{/if}
+        <div class="project-delete-actions">
+          <button
+            type="button"
+            class="btn-secondary"
+            disabled={busy}
+            onclick={() => (deleting = null)}>{t('common.cancel')}</button
+          >
+          <button
+            type="button"
+            class="project-delete-submit"
+            disabled={busy || (deleteFiles && confirmation !== basename(deleting.path))}
+            onclick={deleteProject}
+            >{busy ? t('projects.deleting') : t('projects.confirmDelete')}</button
+          >
+        </div>
+      </section>
+    {:else}
+      <label class="projects-filter-switch">
+        <span class="projects-filter-text">
+          <span class="projects-filter-title">{t('index.filterProjects')}</span>
+          <span class="projects-filter-desc" id="projectsFilterDesc"
+            >{filterEnabled ? t('index.filterOnDesc') : t('index.filterOffDesc')}</span
+          >
+        </span>
+        <span class="switch"
+          ><input
+            type="checkbox"
+            id="projectsFilterToggle"
+            checked={filterEnabled}
+            disabled={busy}
+            onchange={(e) => onToggleFilter(e.currentTarget.checked)}
+          /><span class="switch-slider"></span></span
         >
-      </div>
-      <div class="projects-list" id="projectsList" data-projects-list>
-        {#if projects.length === 0}
-          <div class="projects-empty">{t('index.noProjectsFound')}</div>
-        {:else if visibleProjects.length === 0}
-          <div class="projects-empty" data-projects-no-results>{t('index.noProjectsMatch')}</div>
-        {:else}
-          {#each visibleProjects as project (project.path)}
-            <div class="project-row" data-path={project.path}>
-              <input
-                type="checkbox"
-                checked={!!project.enabled}
-                disabled={busy}
-                onchange={(e) => onToggleProject(project.path, e.currentTarget.checked)}
-              />
-              <button
-                type="button"
-                class="project-row-name"
-                disabled={busy}
-                onclick={() => onToggleProject(project.path, !project.enabled)}
-                ><bdi>{project.path}</bdi></button
-              >
-              <span class="project-row-count">{sessionsCountLabel(project.sessionCount || 0)}</span>
-              {#if project.source === 'registered'}
+      </label>
+      <div class="projects-config" id="projectsConfig" class:filter-off={!filterEnabled}>
+        <div class="projects-toolbar">
+          <input
+            type="search"
+            id="projectsSearch"
+            class="projects-search"
+            placeholder={t('index.searchProjects')}
+            autocomplete="off"
+            bind:value={query}
+          />
+          <button
+            class="projects-bulk-btn"
+            id="projectsToggleAllBtn"
+            type="button"
+            disabled={busy || projects.length === 0}
+            data-target={allEnabled ? 'disable' : 'enable'}
+            onclick={() => onToggleAll(!allEnabled)}
+            >{allEnabled ? t('index.deselectAll') : t('index.selectAll')}</button
+          >
+        </div>
+        <div class="projects-list" id="projectsList" data-projects-list>
+          {#if projects.length === 0}
+            <div class="projects-empty">{t('index.noProjectsFound')}</div>
+          {:else if visibleProjects.length === 0}
+            <div class="projects-empty" data-projects-no-results>{t('index.noProjectsMatch')}</div>
+          {:else}
+            {#each visibleProjects as project (project.path)}
+              <div class="project-row" data-path={project.path}>
+                <input
+                  type="checkbox"
+                  checked={!!project.enabled}
+                  disabled={busy}
+                  onchange={(e) => onToggleProject(project.path, e.currentTarget.checked)}
+                />
+                <button
+                  type="button"
+                  class="project-row-name"
+                  disabled={busy}
+                  onclick={() => onToggleProject(project.path, !project.enabled)}
+                  ><span class="project-folder-name"
+                    >{@html icon(FolderGit2, { size: 16 })}<bdi>{basename(project.path)}</bdi></span
+                  ><span class="project-folder-path">{project.path}</span></button
+                >
+                <span class="project-row-count"
+                  >{sessionsCountLabel(project.sessionCount || 0)}</span
+                >
                 <button
                   type="button"
                   class="project-row-remove"
                   disabled={busy}
-                  onclick={() => onRemove(project.path)}>{t('index.removeProject')}</button
+                  aria-label={`${t('projects.delete')} ${basename(project.path)}`}
+                  onclick={() => askDelete(project)}
                 >
-              {/if}
-            </div>
-          {/each}
-        {/if}
+                  {@html icon(Trash2, { size: 14 })}{t('projects.delete')}
+                </button>
+              </div>
+            {/each}
+          {/if}
+        </div>
       </div>
-    </div>
-    <div class="projects-footer">
+    {/if}
+    <div class="projects-footer" class:hidden={!!deleting}>
       <label class="projects-footer-label" for="projectsAddPath">{t('index.registerFolder')}</label>
       <input
         type="text"

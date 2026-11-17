@@ -113,6 +113,26 @@ func Main(version string) {
 		return nil
 	}
 
+	var trashProjectFiles func(context.Context, string) (string, error)
+	if filepath.IsAbs(os.Getenv("PI_WEB_PROJECT_TRASH_HELPER")) {
+		trashProjectFiles = func(ctx context.Context, path string) (string, error) {
+			helper := os.Getenv("PI_WEB_PROJECT_TRASH_HELPER")
+			if !filepath.IsAbs(helper) {
+				return "", fmt.Errorf("Mac Trash helper is not configured")
+			}
+			output, err := exec.CommandContext(ctx, helper, path).Output()
+			if err != nil {
+				return "", err
+			}
+			var result struct {
+				Path string `json:"path"`
+			}
+			if err = json.Unmarshal(output, &result); err != nil {
+				return "", err
+			}
+			return result.Path, nil
+		}
+	}
 	var srv *server.Server
 	manager := workers.NewManager(func(sessionID, sessionPath string) (workers.ChatWorker, error) {
 		return rpc.NewPiWorkerWithStream(sessionPath, func(preview rpc.StreamPreview) {
@@ -123,6 +143,7 @@ func Main(version string) {
 	})
 	var srvErr error
 	srv, srvErr = server.New(server.Deps{
+		TrashProjectFiles:   trashProjectFiles,
 		AgentDir:            agentDir,
 		SessionsDir:         sessionsDir,
 		Auth:                authMiddleware,

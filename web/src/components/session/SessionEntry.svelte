@@ -10,6 +10,7 @@
   import { safeMarkedParse } from '../../session/render/markdown.js';
   import { formatTimestamp } from '../../session/render/entry-format.js';
   import ToolCall from './ToolCall.svelte';
+  import ActivityDisclosure from './ActivityDisclosure.svelte';
   import ToolOutput from './ToolOutput.svelte';
 
   // `live` (passed from <SessionContent>) gates the fork/label buttons, which
@@ -73,16 +74,25 @@
     {#each msg.content as block, blockIndex (blockIndex)}
       {#if block.type === 'text' && block.text.trim()}<div class="assistant-text markdown-content">
           {@html md(block.text)}
-        </div>{:else if block.type === 'thinking' && block.thinking.trim()}<div
-          class="thinking-block"
-        >
-          <div class="thinking-text">{block.thinking}</div>
-          <div class="thinking-collapsed">Thinking ...</div>
-        </div>{/if}
+        </div>{:else if block.type === 'thinking' && block.thinking.trim()}
+        {#if live}
+          <ActivityDisclosure
+            kind="thinking"
+            id={`thinking:${entry.id}:${blockIndex}`}
+            label={t('activity.thinking')}
+          >
+            <div class="activity-thinking-text">{block.thinking}</div>
+          </ActivityDisclosure>
+        {:else}<div class="thinking-block">
+            <div class="thinking-text">{block.thinking}</div>
+            <div class="thinking-collapsed">Thinking ...</div>
+          </div>{/if}
+      {/if}
     {/each}
     {#each msg.content as block, toolBlockIndex (toolBlockIndex)}{#if block.type === 'toolCall'}<ToolCall
           call={block}
           {model}
+          {live}
         />{/if}{/each}
     {#if msg.stopReason === 'aborted'}<div class="error-text">
         Aborted

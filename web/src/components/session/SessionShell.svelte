@@ -6,6 +6,7 @@
   import SessionHeader from './SessionHeader.svelte';
   import SessionInfoHeader from './SessionInfoHeader.svelte';
   import SessionContent from './SessionContent.svelte';
+  import ActivityControls from './ActivityControls.svelte';
   import OutputGallery from './OutputGallery.svelte';
   import ImageModal from './ImageModal.svelte';
   import ShortcutsModal from './ShortcutsModal.svelte';
@@ -29,6 +30,7 @@
   } from '../../session/session-modals.svelte.js';
   import { getSessionRuntime } from '../../session/session-runtime-context.js';
   import { onMount } from 'svelte';
+  import { navigate } from '../../shared/navigation.js';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { createAnnotationApi } from '../../session/annotations/annotation-api.js';
   import { createStatusEvents } from '../../shared/status-events.js';
@@ -71,15 +73,30 @@
     }
   }
 
-  async function updateProject(path, action) {
+  async function updateProject(path, action, options = {}) {
     projectsBusy = true;
     projectsError = '';
     try {
-      await defaultUpdateProject(path, action);
+      await defaultUpdateProject(path, action, options);
       projectsRevision += 1;
       await refreshProjectsList();
+      if (action === 'delete') {
+        window.dispatchEvent(new CustomEvent('pi:hub-updated'));
+        if (
+          path === cwd ||
+          (options.deleteFiles && cwd.startsWith(path.replace(/\/$/, '') + '/'))
+        ) {
+          sessionModals.projects = false;
+          navigate('/');
+        }
+      }
+      return true;
     } catch (error) {
-      projectsError = error.message || t('index.failedUpdateProject');
+      projectsError =
+        action === 'delete'
+          ? t('projects.deleteFailed')
+          : error.message || t('index.failedUpdateProject');
+      return false;
     } finally {
       projectsBusy = false;
     }
@@ -218,6 +235,7 @@
       <div id="header-container"><SessionInfoHeader model={sessionModel} /></div>
       <LoadEarlier model={sessionModel} {sessionId} navigateTo={runtime.navigateTo} />
       <div id="messages">
+        <ActivityControls />
         <SessionContent model={sessionModel} afterRender={contentRuntime.afterRender} live />
         <OutputGallery model={sessionModel} {sessionId} {cwd} />
       </div>
@@ -259,7 +277,7 @@
   onToggleAll={(enabled) => updateProject('', enabled ? 'enable-all' : 'disable-all')}
   onToggleFilter={(enabled) => updateProject('', enabled ? 'enable-filter' : 'disable-filter')}
   onRegister={(path) => updateProject(path, 'register')}
-  onRemove={(path) => updateProject(path, 'remove')}
+  onDelete={(path, options) => updateProject(path, 'delete', options)}
 />
 
 <ShareDialog {sessionId} />

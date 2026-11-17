@@ -69,6 +69,8 @@ type projectEntry struct {
 	Enabled           bool     `json:"enabled"`
 	SessionCount      int      `json:"sessionCount"`
 	Source            string   `json:"source"`
+	CanDeleteFiles    bool     `json:"canDeleteFiles"`
+	FileSessionCount  int      `json:"fileSessionCount"`
 	RunningSessionIDs []string `json:"runningSessionIds,omitempty"`
 }
 
@@ -244,7 +246,17 @@ func (s *Server) handleApiProjects(w http.ResponseWriter, r *http.Request) {
 			en = true
 		}
 		entries = append(entries, projectEntry{
-			Path:              p,
+			Path:           p,
+			CanDeleteFiles: s.trashProjectFiles != nil && func() bool { _, err := s.projectFilesPath(p); return err == nil }(),
+			FileSessionCount: func() int {
+				n := 0
+				for path, count := range counts {
+					if filesystemWithin(path, p) {
+						n += count
+					}
+				}
+				return n
+			}(),
 			Enabled:           en,
 			SessionCount:      counts[p],
 			Source:            src,
@@ -311,8 +323,10 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Path   string `json:"path"`
-		Action string `json:"action"`
+		Path         string `json:"path"`
+		Action       string `json:"action"`
+		DeleteFiles  bool   `json:"deleteFiles"`
+		Confirmation string `json:"confirmation"`
 	}
 	if !decodeJSONBody(w, r, &body) {
 		return
@@ -348,6 +362,10 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if body.Action == "delete" {
+		s.handleDeleteProject(w, r, path, body.DeleteFiles, body.Confirmation)
+		return
+	}
 	now := s.now()
 	var err error
 	switch body.Action {

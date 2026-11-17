@@ -39,5 +39,13 @@ for name, source, ident, helper in [
     minimum = re.search(r'\bminos\s+(\S+)', load_commands)
     if not minimum or minimum.group(1) != MINIMUM_MACOS:
         raise SystemExit(f'{name}: unexpected executable deployment target')
+    if not helper:
+        trash_helper = contents / 'Helpers/project-trash'
+        trash_helper.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(['xcrun', 'swiftc', '-swift-version', '5', '-O',
+                        '-target', f'{architecture}-apple-macos{MINIMUM_MACOS}',
+                        str(ROOT / 'macos/ProjectTrash.swift'), '-o', str(trash_helper)],
+                       env=build_env, check=True)
+        subprocess.run(['codesign', '--force', '--sign', '-', str(trash_helper)], check=True)
     subprocess.run(['codesign', '--force', '--sign', '-', str(contents.parent)], check=True)
 print('Built macOS 13+ bundles in build/macos.noindex; install only one copy of each.')

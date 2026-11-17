@@ -588,4 +588,32 @@ export default {
   'outputs.open': '打开',
   'outputs.previewUnavailable': '无法预览。你可以下载文件后打开。',
   'outputs.downloadToOpen': '下载此文件，以便在兼容的应用中打开。',
+
+  // Machine translated from en.js through Pi.
+  'projects.delete': '删除项目',
+  'projects.confirmTitle': '删除此项目？',
+  'projects.sessionsToTrash': '{count} 个对话将移至 Pi 回收站，可随时恢复。',
+  'projects.pauseSchedules': '此项目的定时任务将被暂停。',
+  'projects.deleteFiles': '同时删除项目文件',
+  'projects.filesKept': 'Mac 上的文件将被保留。',
+  'projects.filesToMacTrash':
+    '整个文件夹（包括子项目）将移至 Mac 废纸篓。如有需要，可在访达中恢复。',
+  'projects.filesUnavailable': '此文件夹不可用或受保护。你仍可移除其项目条目和对话。',
+  'projects.typeName': '输入“{name}”以确认删除文件夹',
+  'projects.confirmDelete': '删除项目',
+  'projects.deleting': '正在删除…',
+  'projects.deleteFailed':
+    '无法完成项目删除。请停止正在运行的任务并检查文件夹访问权限。已移动的文件可从 Mac 废纸篓恢复。',
+  'activity.controls': '对话显示',
+  'activity.thinking': '思考',
+  'activity.tools': '工具调用',
+  'activity.tool': '工具',
+  'activity.output': '输出',
+  'activity.expand': '展开 {name}',
+  'activity.collapse': '收起 {name}',
+  'activity.expandAll': '全部展开',
+  'activity.collapseAll': '全部收起',
+  'activity.done': '已完成',
+  'activity.failed': '失败',
+  'activity.running': '运行中',
 };

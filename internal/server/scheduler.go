@@ -83,7 +83,7 @@ func (s *Server) evaluateSchedules(state map[string]scheduleState) {
 		}
 		sc := sc
 		s.startTask(func(ctx context.Context) {
-			if _, err := s.fireScheduleContext(ctx, sc); err != nil && !errors.Is(err, context.Canceled) {
+			if _, err := s.fireScheduleContext(ctx, sc, true); err != nil && !errors.Is(err, context.Canceled) {
 				fmt.Fprintf(os.Stderr, "scheduler: fire %q: %v\n", sc.Name, err)
 			}
 		})
@@ -117,9 +117,24 @@ func (s *Server) fireSchedule(sc schedules.Schedule) (string, error) {
 	return s.fireScheduleContext(context.Background(), sc)
 }
 
-func (s *Server) fireScheduleContext(ctx context.Context, sc schedules.Schedule) (string, error) {
+func (s *Server) fireScheduleContext(ctx context.Context, sc schedules.Schedule, automatic ...bool) (string, error) {
+	s.sessionManagementMu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			s.sessionManagementMu.Unlock()
+		}
+	}()
+
 	if s.schedules == nil {
 		return "", errors.New("schedules unavailable")
+	}
+	if len(automatic) > 0 && automatic[0] {
+		current, err := s.schedules.Get(sc.ID)
+		if err != nil || !current.Enabled {
+			return "", errors.New("scheduled task is no longer enabled")
+		}
+		sc = current
 	}
 	fired := s.now().UTC()
 	runID, err := s.schedules.RecordRun(schedules.Run{
@@ -185,6 +200,8 @@ func (s *Server) fireScheduleContext(ctx context.Context, sc schedules.Schedule)
 			return sessionID, fmt.Errorf("set thinking level: %w", err)
 		}
 	}
+	s.sessionManagementMu.Unlock()
+	locked = false
 	if err := s.chatSender.Send(ctx, sessionID, resolved.Path, chat.Request{Message: sc.Instructions}); err != nil {
 		_ = s.schedules.FailRun(runID, err.Error())
 		return sessionID, fmt.Errorf("send: %w", err)

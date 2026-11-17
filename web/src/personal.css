@@ -998,3 +998,196 @@
     max-height: 70dvh;
   }
 }
+
+#spa-root .activity-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 24px;
+  color: var(--muted);
+  font-size: 12px;
+}
+#spa-root .activity-controls span {
+  margin-right: auto;
+}
+#spa-root .activity-controls button {
+  padding: 5px 10px;
+  border: 1px solid var(--dim);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+#spa-root .activity-disclosure {
+  margin: 10px 0;
+  border: 1px solid var(--dim);
+  border-radius: 11px;
+  overflow: hidden;
+  background: var(--body-bg);
+}
+#spa-root .activity-disclosure summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 13px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-soft);
+  user-select: none;
+}
+#spa-root .activity-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+#spa-root .activity-chevron {
+  display: flex;
+  flex: none;
+  transition: transform 0.15s;
+}
+#spa-root .activity-disclosure[open] > .activity-chevron,
+#spa-root .activity-disclosure[open] > summary .activity-chevron {
+  transform: rotate(90deg);
+}
+#spa-root .activity-label {
+  font-weight: 600;
+  flex: none;
+}
+#spa-root .activity-summary {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-code, monospace);
+}
+#spa-root .activity-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+#spa-root .activity-body {
+  padding: 2px 14px 14px;
+  border-top: 1px solid var(--dim-2);
+}
+#spa-root .activity-thinking-text {
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-soft);
+  padding: 10px 0;
+}
+#spa-root .activity-body > .tool-execution {
+  border: 0;
+  margin: 0;
+  padding: 10px 0;
+  background: none;
+}
+#spa-root .project-folder-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  direction: ltr;
+}
+#spa-root .project-folder-path {
+  display: block;
+  direction: ltr;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 4px;
+}
+#spa-root .project-row-name {
+  direction: ltr;
+  text-align: left;
+}
+#spa-root .project-row-remove {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+}
+#spa-root .project-delete-confirm {
+  padding: 18px;
+  border: 1px solid var(--dim);
+  border-radius: 12px;
+  margin-top: 18px;
+  font-size: 13px;
+}
+#spa-root .project-delete-confirm h3 {
+  margin: 0 0 16px;
+  font-size: 17px;
+}
+#spa-root .project-delete-path {
+  display: block;
+  padding: 10px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: 12px;
+}
+#spa-root .project-delete-files {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 0;
+  cursor: pointer;
+}
+#spa-root .project-delete-hint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+#spa-root .project-delete-confirm input[type='text'],
+#spa-root #project-delete-name {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--dim);
+  border-radius: 7px;
+  background: var(--input-bg);
+  color: var(--text);
+}
+#spa-root .project-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+#spa-root .project-delete-submit {
+  border: 0;
+  border-radius: 8px;
+  background: #bd3333;
+  color: white;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+#spa-root .project-delete-submit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+#spa-root .projects-footer.hidden {
+  display: none;
+}
+@media (max-width: 600px) {
+  #spa-root .activity-status {
+    font-size: 0;
+  }
+  #spa-root .project-row-count {
+    display: none;
+  }
+  #spa-root .project-row-remove {
+    font-size: 11px;
+  }
+}
+#spa-root .projects-config.filter-off {
+  opacity: 1;
+}

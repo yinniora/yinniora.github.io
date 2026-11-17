@@ -38,6 +38,7 @@ const globalSessID = "__all__"
 // list (which depends on a process-wide cache), and the chat sender (which
 // owns rpc workers).
 type Deps struct {
+	TrashProjectFiles   func(context.Context, string) (string, error)
 	AgentDir            string
 	SessionsDir         string
 	Auth                *auth.Middleware
@@ -68,6 +69,7 @@ type Deps struct {
 // per session file. Construct via New; register HTTP routes via Register.
 type Server struct {
 	sessionManagementMu   sync.Mutex
+	trashProjectFiles     func(context.Context, string) (string, error)
 	agentDir              string
 	sessionsDir           string
 	clients               []*sseClient
@@ -156,6 +158,7 @@ func New(deps Deps) (*Server, error) {
 	taskCtx, taskCancel := context.WithCancel(context.Background())
 	s := &Server{
 		agentDir:              agentDir,
+		trashProjectFiles:     deps.TrashProjectFiles,
 		sessionsDir:           deps.SessionsDir,
 		clients:               make([]*sseClient, 0),
 		fileMod:               make(map[string]time.Time),

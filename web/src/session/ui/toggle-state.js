@@ -1,3 +1,5 @@
+const DISCLOSURE_KEY = 'pi.sessionDetail.disclosures';
+
 export const TOGGLE_STATE_STORAGE_KEY = 'pi.sessionDetail.toggleState';
 export const TOGGLE_DEFAULT_SETTING_KEYS = {
   thinkingExpanded: 'pi-web:v1:toggle:thinking',
@@ -82,8 +84,16 @@ export function saveToggleState(state, { sessionId = '', storage = globalThis.lo
   } catch (_) {}
 }
 
-export function applyToggleStateToNode(node, state) {
+export function applyToggleStateToNode(node, state, overrides = {}) {
   if (!node) return;
+  node.querySelectorAll('[data-display-kind]').forEach((el) => {
+    const key = el.dataset.collapseKey;
+    el.open =
+      key in overrides
+        ? overrides[key]
+        : el.dataset.requiresResponse === 'true' ||
+          (el.dataset.displayKind === 'thinking' ? state.thinkingExpanded : state.toolsVisible);
+  });
   node.querySelectorAll('.thinking-text').forEach((el) => {
     el.style.display = state.thinkingExpanded ? '' : 'none';
   });
@@ -91,6 +101,10 @@ export function applyToggleStateToNode(node, state) {
     el.style.display = state.thinkingExpanded ? 'none' : 'block';
   });
   node.querySelectorAll('.tool-execution, .compaction').forEach((el) => {
+    if (el.closest('[data-display-kind]')) {
+      el.style.display = '';
+      return;
+    }
     el.style.display = state.toolsVisible ? '' : 'none';
   });
   // Mirrors the .thinking-text / .thinking-collapsed pair: show a "Tool: <name>
@@ -138,10 +152,26 @@ export function createToggleController({
   initialState = loadToggleState({ sessionId, storage }),
 } = {}) {
   const state = initialState;
-  const applyToNode = (node) => applyToggleStateToNode(node, state);
+  let overrides = {};
+  try {
+    overrides = JSON.parse(storage?.getItem(DISCLOSURE_KEY) || '{}')[sessionId] || {};
+  } catch {}
+  const saveDisclosures = () => {
+    try {
+      const map = JSON.parse(storage?.getItem(DISCLOSURE_KEY) || '{}');
+      map[sessionId] = overrides;
+      storage?.setItem(DISCLOSURE_KEY, JSON.stringify(map));
+    } catch {}
+  };
+  const applyToNode = (node) => applyToggleStateToNode(node, state, overrides);
   const syncButtons = () => syncToggleButtons(documentImpl, state);
   const save = () => saveToggleState(state, { sessionId, storage });
   const toggle = (key) => {
+    const prefix = key === 'thinkingExpanded' ? 'thinking:' : key === 'toolsVisible' ? 'tool:' : '';
+    if (prefix) {
+      for (const id of Object.keys(overrides)) if (id.startsWith(prefix)) delete overrides[id];
+      saveDisclosures();
+    }
     state[key] = !state[key];
     save();
     applyToNode(documentImpl);
@@ -150,6 +180,23 @@ export function createToggleController({
 
   return {
     state,
+    setDisclosure(key, open) {
+      overrides[key] = open;
+      saveDisclosures();
+    },
+    setAllExpanded(open) {
+      overrides = {};
+      state.thinkingExpanded = open;
+      state.toolsVisible = open;
+      state.toolOutputsExpanded = open;
+      documentImpl
+        .querySelectorAll('[data-collapse-key]')
+        .forEach((el) => (overrides[el.dataset.collapseKey] = open));
+      saveDisclosures();
+      save();
+      applyToNode(documentImpl);
+      syncButtons();
+    },
     get thinkingExpanded() {
       return state.thinkingExpanded;
     },

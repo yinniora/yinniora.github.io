@@ -57,3 +57,30 @@ loopback listener. A non-loopback listener requires authentication. If that
 interface is unavailable, pi-web retries it independently so the primary server
 and any separately configured reverse proxy continue working. Network tunnels,
 certificates and firewall rules remain the operator's responsibility.
+
+## Delete a project
+
+Open **Manage projects** from the home navigation or the conversation header.
+Every registered or discovered project has a **Delete project** button. The
+confirmation shows the complete folder path and the affected conversation count.
+
+By default only the project entry is removed and its conversations move to Pi
+Trash. Files on the Mac remain in place. Restoring a conversation brings its
+project back. Associated scheduled tasks are paused to prevent automatic
+recreation; resume them deliberately after restoring the project.
+
+Select **Also delete the project files** to move the entire working folder to
+**Mac Trash**, including nested projects. Type the folder's name to confirm.
+Recover the folder with Finder's Put Back action before resuming its sessions.
+This does not permanently erase working files. Stop running project tasks first.
+System/account roots, symlink roots and folders containing Pi configuration or
+runtime components cannot be deleted through this control.
+
+## Expand thinking and tool calls
+
+In a live conversation, click a thinking or tool-call row to expand/collapse
+its content. Tool rows show the command/path and running, completed or failed
+state. The display toolbar can expand or collapse all rows. Individual choices
+are remembered per conversation and remain stable across reloads and streamed
+updates. Pending questions open automatically so their response controls remain
+available. These controls display only thinking content supplied by the model.

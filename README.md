@@ -2,7 +2,8 @@
 
 A self-maintained fork of [ygncode/pi-web](https://github.com/ygncode/pi-web),
 with a quieter desktop/mobile interface, a native macOS conversation window,
-inline images/SVG/video/audio/files, permanent session deletion, synchronized
+inline images/SVG/video/audio/files, permanent session deletion, project management with optional Mac Trash moves,
+expandable thinking/tool activity, synchronized
 language settings and Mac-approved remote devices.
 
 Remote access uses an independent HTTPS client and standard WebRTC/DTLS. The

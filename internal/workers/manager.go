@@ -370,10 +370,17 @@ func (m *Manager) RetireIdle(sessionID string) (func(), error) {
 	if m.retired == nil {
 		m.retired = make(map[string]bool)
 	}
+	wasRetired := m.retired[sessionID]
 	m.retired[sessionID] = true
 	delete(m.workers, sessionID)
 	m.mu.Unlock()
-	rollback := func() { m.mu.Lock(); delete(m.retired, sessionID); m.mu.Unlock() }
+	rollback := func() {
+		m.mu.Lock()
+		if !wasRetired {
+			delete(m.retired, sessionID)
+		}
+		m.mu.Unlock()
+	}
 	if w != nil {
 		if err := w.Close(); err != nil {
 			rollback()
@@ -386,3 +393,6 @@ func (m *Manager) RetireIdle(sessionID string) (func(), error) {
 type idleReportable interface {
 	IdleSince(now time.Time) time.Duration
 }
+
+// RestoreSession allows a recovered conversation to start an RPC worker again.
+func (m *Manager) RestoreSession(id string) { m.mu.Lock(); delete(m.retired, id); m.mu.Unlock() }

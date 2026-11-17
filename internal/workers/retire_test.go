@@ -47,3 +47,15 @@ func TestFailedDeletionCanReleaseRetirement(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRestoredProjectSessionCanStartWorkerAgain(t *testing.T) {
+	m := NewManagerWithTTL(func(id, path string) (ChatWorker, error) { return &fakeChatWorker{}, nil }, 0)
+	defer m.Close()
+	if _, err := m.RetireIdle("restored.jsonl"); err != nil {
+		t.Fatal(err)
+	}
+	m.RestoreSession("restored.jsonl")
+	if err := m.EnsureWorker(context.Background(), "restored.jsonl", "/tmp/restored.jsonl"); err != nil {
+		t.Fatal(err)
+	}
+}

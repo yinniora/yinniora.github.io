@@ -315,7 +315,7 @@ type piRPCWorker struct {
 | `/api/settings` | GET/POST | `handleGetSettings` / `handleSaveSettings` | Server-backed user settings (SQLite) |
 | `/api/btw` | GET | `handleGetBtw` | Resolve the btw scratch-chat session for a parent (SQLite) |
 | `/api/btw/new` | POST | `handleNewBtw` | Create a new btw scratch-chat session (SQLite) |
-| `/api/projects` | GET/POST | `handleApiProjects` / `handleUpdateProject` | List projects + filter state (`limit`/`offset`, optional `current` priority + `sessionLimit` bundled summaries, active session IDs per project, `filtered=1` to apply the enabled-projects allowlist with the current project always kept); enable/disable/register/remove, bulk enable-all/disable-all, enable-filter/disable-filter (SQLite) |
+| `/api/projects` | GET/POST | `handleApiProjects` / `handleUpdateProject` | List projects + filter state (`limit`/`offset`, optional `current` priority + `sessionLimit` bundled summaries, active session IDs per project, `filtered=1` to apply the enabled-projects allowlist with the current project always kept); enable/disable/register/remove/delete (optional native Mac Trash move with folder-name confirmation, paused schedules and recoverable conversation trash), bulk enable-all/disable-all, enable-filter/disable-filter (SQLite) |
 | `/api/sounds` | GET | `handleApiSounds` | List available notification sounds |
 | `/sounds/` | GET | `handleSounds` | Serve a sound asset (no auth) |
 | `/custom-themes.css` | GET | `handleCustomThemes` | User custom theme CSS |
@@ -427,3 +427,5 @@ Status changes are broadcast as SSE `status-delta` events to `__all__` subscribe
 ## Personal remote access
 
 `internal/relay` carries bounded HTTP over standard WebRTC DTLS. `devices.go` owns native-approved single-use tickets, public-key whitelisting and immediate revocation. `assets.go` confines media access with `os.OpenRoot` and supports byte ranges. Remote requests never receive the global Pi token. See [remote security](remote-security.md).
+
+Project deletion retires idle RPC workers before updating trash/prefs/schedules in one SQLite transaction. Running jobs reject deletion. Optional filesystem moves use the configured native `PI_WEB_PROJECT_TRASH_HELPER`; protected runtime/configuration paths and roots are refused. Restore releases the worker retirement marker. Session creation and timer scheduling coordinate through the session-management lock.
