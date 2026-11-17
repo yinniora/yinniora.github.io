@@ -1,8 +1,5 @@
-// Package updater checks whether a newer pi-web release is available. It
-// compares the build-time version against the npm registry's published
-// version (the install channel) and fetches the matching changelog from the
-// GitHub Releases API. Results are cached in memory and refreshed by a
-// background poll; callers can also force an immediate check.
+// Package updater caches release information and tracks official commits.
+// YuGo uses credential-free upstream reminders with manual reviewed upgrades.
 package updater
 
 import (
@@ -31,13 +28,15 @@ const (
 
 // Info is the snapshot returned to the API layer (and marshalled to JSON).
 type Info struct {
-	Current      string `json:"current"`
-	Latest       string `json:"latest"`
-	HasUpdate    bool   `json:"hasUpdate"`
-	IsDev        bool   `json:"isDev"`
-	Changelog    string `json:"changelog"`
-	ChangelogURL string `json:"changelogUrl"`
-	CheckedAt    string `json:"checkedAt"`
+	Current      string        `json:"current"`
+	Latest       string        `json:"latest"`
+	HasUpdate    bool          `json:"hasUpdate"`
+	IsDev        bool          `json:"isDev"`
+	Changelog    string        `json:"changelog"`
+	ChangelogURL string        `json:"changelogUrl"`
+	CheckedAt    string        `json:"checkedAt"`
+	TrackingOnly bool          `json:"trackingOnly,omitempty"`
+	Upstream     *UpstreamInfo `json:"upstream,omitempty"`
 }
 
 // devVersionRe matches `git describe` development builds: a tag followed by a
@@ -48,11 +47,14 @@ var devVersionRe = regexp.MustCompile(`-\d+-g[0-9a-f]{7,}|-dirty$`)
 // Checker holds the current version and the cached result of the last remote
 // check. It is safe for concurrent use.
 type Checker struct {
-	manual    bool
-	current   string
-	npmURL    string
-	githubAPI string
-	client    *http.Client
+	manual      bool
+	tracking    bool
+	upstreamAPI string
+	upstream    UpstreamInfo
+	current     string
+	npmURL      string
+	githubAPI   string
+	client      *http.Client
 
 	mu           sync.RWMutex
 	latest       string
@@ -105,6 +107,11 @@ func (c *Checker) snapshotLocked() Info {
 		IsDev:        c.isDev(),
 		Changelog:    c.changelog,
 		ChangelogURL: c.changelogURL,
+		TrackingOnly: c.tracking,
+	}
+	if c.tracking {
+		upstream := c.upstream
+		info.Upstream = &upstream
 	}
 	if !c.checkedAt.IsZero() {
 		info.CheckedAt = c.checkedAt.UTC().Format(time.RFC3339)
@@ -119,6 +126,9 @@ func (c *Checker) snapshotLocked() Info {
 // resulting snapshot. For dev builds it short-circuits and only stamps
 // checkedAt so the UI can show "checked just now".
 func (c *Checker) Check(ctx context.Context) (Info, error) {
+	if c.tracking {
+		return c.checkUpstream(ctx)
+	}
 	if c.isDev() || c.manual {
 		c.mu.Lock()
 		c.checkedAt = time.Now()
@@ -152,7 +162,7 @@ func (c *Checker) Check(ctx context.Context) (Info, error) {
 // Start runs an initial check shortly after launch, then refreshes every
 // PollInterval until ctx is cancelled. Intended to be run in its own goroutine.
 func (c *Checker) Start(ctx context.Context) {
-	if c.isDev() || c.manual {
+	if !c.tracking && (c.isDev() || c.manual) {
 		return
 	}
 	// Small delay so startup isn't blocked on the network.

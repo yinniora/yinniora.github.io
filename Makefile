@@ -114,23 +114,10 @@ docs-dev:
 	python3 scripts/build_site.py
 	cd website && npm install && npm run dev
 
-# Release helpers — bump package.json, commit, tag, and push.
-# Uses npm version which auto-creates a vX.Y.Z git tag.
-release-patch:
-	npm version patch
-	git push --follow-tags
-
-release-minor:
-	npm version minor
-	git push --follow-tags
-
-release-major:
-	npm version major
-	git push --follow-tags
-
-release-beta:
-	npm version prerelease --preid=beta
-	git push --follow-tags
+# YuGo versions and yugo-v* tags follow the reviewed release procedure.
+release-patch release-minor release-major release-beta:
+	@echo 'Use the YuGo release procedure in docs/maintenance.md.'
+	@exit 1
 
 .PHONY: variant-check notices
 variant-check:

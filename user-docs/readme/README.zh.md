@@ -1,81 +1,55 @@
-<!-- Machine-translated from the root English README. -->
 # YuGo Pi
 
 [中文](user-docs/readme/README.zh.md) · [License](LICENSE) · [Upstream](https://github.com/ygncode/pi-web)
 
-YuGo Pi is an independently maintained, MIT-licensed variant of **pi-web**,
-originally created by **Set Kyar Wa Lar (YGNCode)**. It is not an official
-pi-web or Pi release. The upstream copyright and license remain intact.
+YuGo Pi 是 **pi-web** 的独立维护 MIT 许可变体，原作者为 **Set Kyar Wa Lar (YGNCode)**。本项目并非官方 pi-web 或 Pi 发行版，上游版权与许可保持不变。
 
-The project is maintained at [yinniora/yugo-pi](https://github.com/yinniora/yugo-pi).
-Bug reports and contributions for this variant belong in this repository.
+项目维护地址：[yinniora/yugo-pi](https://github.com/yinniora/yugo-pi)。与本变体相关的问题反馈和贡献请提交至此仓库。
 
-## What YuGo Pi adds
+## YuGo Pi 新增功能
 
-- A native Mac conversation window and a mobile Home Screen web app.
-- Projects and conversations on the phone home screen, project menus and new
-  conversation controls, persistent collapse, and a clear Home return action.
-- Stable mobile keyboard layout, bounded scrolling and page zoom protection.
-- Expandable model thinking and tool activity, image/SVG zoom, native video
-  and audio, file downloads, and a separate BTW side chat with an introduction
-  and explicit attachment of replies to the main draft.
-- Conversation Trash and permanent deletion, optional verified generated-file
-  cleanup, and optional project-folder moves to Mac Trash with confirmation.
-- Mac-authenticated one-time pairing, device approvals, revocation and precise
-  device details. Your Mac owns the identity and access decisions.
-- Your own authenticated relay, automatic P2P attempts, encrypted WebRTC/DTLS,
-  actual P2P/Relay status, and synchronization/loading indicators.
+- 原生 Mac 对话窗口及移动端主屏网页应用。
+- 手机主屏的项目与对话视图、项目菜单与新建对话控件、持久折叠状态，以及返回主页操作。
+- 稳定的移动端键盘布局、有界滚动与页面缩放保护。
+- 可展开的模型思考与工具活动、图片/SVG 缩放、原生视频与音频、文件下载，以及带介绍的独立 BTW 侧边对话，支持将回复显式附加至主草稿。
+- 对话回收站与永久删除、可选的已生成文件清理验证，以及可选的将项目文件夹移至 Mac 废纸篓（带确认）。
+- Mac 认证一次性配对、设备审批、撤销与精确设备详情。Mac 掌管身份与访问决策。
+- 自建认证中继、自动 P2P 尝试、加密 WebRTC/DTLS、真实 P2P/中继状态，以及同步/加载指示器。
 
-## Build and install
+## 构建与安装
 
-Prerequisites: Go from `go.mod`, Node/npm, a configured Pi coding agent, and
-Xcode Command Line Tools for the native Mac window. No model keys, devices,
-relay credentials or certificates are distributed with the source.
+前置条件：`go.mod` 指定的 Go 版本、Node/npm、已配置的 Pi 编程助手，以及用于原生 Mac 窗口的 Xcode Command Line Tools。源码不包含模型密钥、设备、中继凭据或证书。
 
 ```bash
 git clone https://github.com/yinniora/yugo-pi.git
 cd yugo-pi
 make check
-make build remote-build VERSION=0.1.0-yugo.1
+make build remote-build VERSION=0.1.0-yugo.2
 python3 scripts/collect_notices.py
 python3 scripts/build_macos.py
 python3 scripts/install_remote_macos.py --client https://YOUR-INDEPENDENT-CLIENT/
 ```
 
-The fresh Mac installer refuses to overwrite an existing installation. Existing
-users should follow the [migration and maintenance guide](docs/maintenance.md).
-The internal `pi-web` binary name and data paths remain compatible so upgrades
-do not reset conversations, approvals, keys or existing pairing origins.
+默认本地端点为 `http://127.0.0.1:31415`；远程访问通过独立的已审批设备客户端启用。
 
-For phone access and your own server, see the
-[self-hosted remote guide](docs/architecture/self-hosted-remote.md) and
-[security architecture](docs/architecture/remote-security.md). The independently
-hosted phone program must remain separate from an untrusted relay.
+全新 Mac 安装程序拒绝覆盖已有安装。现有用户请参阅[迁移与维护指南](docs/maintenance.md)。内部 `pi-web` 二进制名称与数据路径保持兼容，升级不会重置对话、审批、密钥或已有配对来源。
 
-## Upstream updates without replacing YuGo changes
+如需手机访问和自建服务器，请参阅[自托管远程指南](docs/architecture/self-hosted-remote.md)与[安全架构](docs/architecture/remote-security.md)。独立托管的手机程序必须与不受信任的中继保持隔离。
 
-YuGo Pi has its own `yugo-v*` releases. Runtime updates are manual; the app and
-Pi extension do not install the upstream npm package. Official changes are
-fetched into an isolated review worktree:
+## 在不覆盖 YuGo 变更的前提下跟进上游更新
+
+YuGo Pi 有自己的 `yugo-v*` 发行版。Mac 服务每六小时自动追踪官方提交，并在 Mac 和手机上显示审查提醒。运行时升级保持手动：我们审查官方变更、准备 YuGo 补丁并在发布前验证功能。应用与 Pi 扩展不安装上游 npm 包。官方变更会被拉取至隔离的审查工作树：
 
 ```bash
 python3 scripts/sync_upstream.py check
 python3 scripts/sync_upstream.py prepare
 ```
 
-The script never resets or merges into your working main branch. Conflicts
-stay in the review worktree for explicit resolution. Review the diff, run the
-variant checks, full tests and mobile regressions, then merge the reviewed PR.
-Upstream changes can conflict; no update is accepted merely because it is newer.
-See [maintenance](docs/maintenance.md) for the complete process.
+该脚本不会重置或合并至您的工作主分支。冲突保留在审查工作树中等待显式解决。审查差异、运行变体检查、完整测试和移动端回归测试后，再合并已审查的 PR。上游变更可能存在冲突；不会仅因版本更新就接受变更。完整流程请参阅[维护指南](docs/maintenance.md)。
 
-## License and provenance
+## 许可证与来源
 
-YuGo Pi retains the upstream [MIT license](LICENSE), author attribution and
-Git history. [NOTICE](NOTICE) distinguishes this derivative from upstream.
-[THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES) accompanies distributed clients,
-native apps and release archives. Separate tools and model services remain
-subject to their own licenses and terms.
+YuGo Pi 保留上游 [MIT 许可证](LICENSE)、作者署名与 Git 历史。[NOTICE](NOTICE) 将本衍生版本与上游区分。[THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES) 随分发的客户端、原生应用及发行归档一并提供。独立工具与模型服务仍受其各自许可证和条款约束。
 
-Historical upstream guides and translations are retained for reference; the
-root README, YuGo maintenance guide and self-hosted guide describe this variant.
+历史上游指南与译文保留供参考；根目录 README、YuGo 维护指南与自托管指南描述本变体。
+

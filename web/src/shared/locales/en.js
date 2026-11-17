@@ -703,6 +703,15 @@ export default {
   'version.unavailable': 'Version information is unavailable.',
   'version.checkForUpdates': 'Check for updates',
   'version.checking': 'Checking…',
+  'version.trackingOnly': 'Official update tracking is on',
+  'version.trackingDescription':
+    'YuGo Pi checks official changes every 6 hours while the Mac service is running. Checks only read public GitHub metadata.',
+  'version.upstreamAvailable': 'Official changes available for YuGo Pi review',
+  'version.patchReview':
+    'We will review these changes and prepare a YuGo Pi upgrade patch. Installation stays manual so our features are preserved.',
+  'version.reviewOfficialChanges': 'View official changes',
+  'version.upstreamCurrent': 'No official changes since our integrated upstream commit.',
+  'version.trackingPending': 'Waiting for the first successful check. You can check now.',
   'version.couldNotCheck': 'Could not check for updates.',
   'version.devBuild': "You're running a local development build.",
   'version.latestPublished': 'Latest published: {version}',

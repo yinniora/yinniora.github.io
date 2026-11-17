@@ -728,4 +728,13 @@ export default {
   'app.variant': '独立维护的 pi-web 变体',
   'app.upstream': '上游 pi-web 项目',
   'app.issues': 'YuGo Pi 问题反馈',
+  'version.trackingOnly': '官方更新追踪已开启',
+  'version.trackingDescription':
+    'Mac 服务运行期间，YuGo Pi 每 6 小时检查一次官方变更。检查仅读取 GitHub 公开元数据。',
+  'version.upstreamAvailable': '官方变更可供 YuGo Pi 审查',
+  'version.patchReview':
+    '我们将审查这些变更并准备 YuGo Pi 升级补丁。安装保持手动执行，以保留我们的功能。',
+  'version.reviewOfficialChanges': '查看官方变更',
+  'version.upstreamCurrent': '自我们集成的上游提交以来无官方变更。',
+  'version.trackingPending': '等待首次成功检查，您可以立即检查。',
 };

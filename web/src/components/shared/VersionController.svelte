@@ -19,10 +19,14 @@
   let status = $state('');
   let statusKind = $state('');
   let error = $state('');
+  let dismissedUpstream = $state('');
 
   const effectiveFetch = $derived(fetchImpl || window.fetch.bind(window));
   const label = $derived(versionLabel(info));
-  const hasUpdate = $derived(!!(info && info.hasUpdate));
+  const hasUpdate = $derived(!!(info?.hasUpdate || info?.upstream?.hasUpdate));
+  const showReminder = $derived(
+    info?.trackingOnly && info?.upstream?.hasUpdate && info.upstream.latest !== dismissedUpstream,
+  );
   const changelogHtml = $derived(renderChangelog(info?.changelog || ''));
 
   function applyStatus() {
@@ -65,6 +69,13 @@
     if (busy) return;
     open = false;
     document.body?.classList.remove('version-modal-open');
+  }
+
+  function dismissReminder() {
+    dismissedUpstream = info?.upstream?.latest || '';
+    try {
+      localStorage.setItem('yugo:upstream-dismissed', dismissedUpstream);
+    } catch {}
   }
 
   function setStatus(message, kind = '') {
@@ -151,8 +162,20 @@
     const controller = { refresh, openModal, closeModal, applyStatus };
     const unregister = registerVersionController(controller);
     document.addEventListener('click', handleRowClick);
+    try {
+      dismissedUpstream = localStorage.getItem('yugo:upstream-dismissed') || '';
+    } catch {}
     refresh(false);
+    const poll = setInterval(() => {
+      if (document.visibilityState !== 'hidden') refresh(false);
+    }, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh(false);
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
+      clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisible);
       unregister();
       document.removeEventListener('click', handleRowClick);
       document.body?.classList.remove('version-modal-open');
@@ -161,6 +184,20 @@
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
+
+{#if showReminder && !open}
+  <div class="upstream-reminder" role="status">
+    <button type="button" class="reminder-open" onclick={openModal}
+      >{t('version.upstreamAvailable')}</button
+    >
+    <button
+      type="button"
+      class="reminder-close"
+      onclick={dismissReminder}
+      aria-label={t('common.close')}>{@html icon(X, { size: 16 })}</button
+    >
+  </div>
+{/if}
 
 {#if open}
   <div
@@ -189,6 +226,28 @@
       <div class="version-modal-body">
         {#if !info}
           <p>{t('version.unavailable')}</p>
+        {:else if info.trackingOnly}
+          <p class="version-modal-lead">{t('version.trackingOnly')}</p>
+          <p class="version-modal-notes">{t('version.trackingDescription')}</p>
+          {#if info.upstream?.hasUpdate}
+            <p><strong>{t('version.upstreamAvailable')}</strong></p>
+            <p class="version-modal-notes">{t('version.patchReview')}</p>
+            <a href={info.upstream.url} target="_blank" rel="noreferrer"
+              >{t('version.reviewOfficialChanges')} {@html icon(ExternalLink, { size: 12 })}</a
+            >
+          {:else if info.upstream?.latest}
+            <p>{t('version.upstreamCurrent')}</p>
+          {:else}
+            <p>{t('version.trackingPending')}</p>
+          {/if}
+          {#if info.upstream?.error}
+            <p class="version-modal-notes">{t('version.couldNotCheck')}</p>
+          {/if}
+          {#if info.checkedAt}
+            <p class="version-modal-notes">
+              {t('version.lastChecked', { when: new Date(info.checkedAt).toLocaleString() })}
+            </p>
+          {/if}
         {:else if info.isDev}
           <p>{t('version.devBuild')}</p>
           {#if info.latest}<p class="version-modal-notes">
@@ -224,7 +283,7 @@
         {error || status}
       </div>
       <div class="version-modal-actions">
-        {#if info?.hasUpdate && !info?.isDev}
+        {#if info?.hasUpdate && !info?.isDev && !info?.trackingOnly}
           <button
             type="button"
             class="version-modal-btn primary"
@@ -248,3 +307,39 @@
     </div>
   </div>
 {/if}
+
+<style>
+  .upstream-reminder {
+    position: fixed;
+    z-index: 500;
+    top: max(8px, env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    max-width: min(420px, calc(100vw - 24px));
+    align-items: center;
+    border: 1px solid var(--dim);
+    border-radius: 14px;
+    background: var(--surface-1, var(--bg));
+    box-shadow: 0 8px 28px #0002;
+  }
+  .upstream-reminder button {
+    color: var(--text);
+    background: transparent;
+    border: 0;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    min-height: 44px;
+  }
+  .reminder-open {
+    padding: 10px 14px;
+    text-align: left;
+  }
+  .reminder-close {
+    padding: 10px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+  }
+</style>

@@ -1,5 +1,15 @@
 # Backend Architecture
 
+## YuGo update tracking
+
+The application uses `updater.NewTracking`: public official commit metadata is
+checked after startup and every six hours. `/api/version` exposes a cached
+`trackingOnly` snapshot with the integrated/latest official SHAs, comparison URL,
+availability and check errors. `/api/check-update` refreshes this metadata. No
+GitHub token, install callback, source merge or process restart is involved.
+The upstream base is embedded from `internal/updater/upstream-base.txt` and
+validated against `variant.json`. `/api/update` remains disabled for this variant.
+
 ## Browser session management and connection handover
 
 `-extra-host` optionally serves the same HTTP handler on a private address in

@@ -18,7 +18,8 @@ def check(root=ROOT):
     assert 'The above copyright notice and this permission notice' in license_text
     assert 'independently maintained' in (root / 'NOTICE').read_text()
     app = (root / 'internal/app/app.go').read_text()
-    assert 'updater.NewManual(version)' in app
+    assert 'updater.NewTracking(version)' in app
+    assert (root / 'internal/updater/upstream-base.txt').read_text().strip().startswith(config['baseCommit'])
     assert 'return runInstall(ctx)' not in app
     extension = (root / '.pi/extensions/pi-web.ts').read_text()
     update = extension.split('if (subcommand === "update") {', 1)[1].split('if (subcommand !== "status")', 1)[0]
@@ -27,6 +28,7 @@ def check(root=ROOT):
     workflow = (root / '.github/workflows/release.yml').read_text()
     assert 'yugo-v*' in workflow and 'npm publish' not in workflow
     assert 'THIRD_PARTY_NOTICES' in workflow
+    assert 'git push --follow-tags' not in (root / 'Makefile').read_text()
     for name in [
         'web/src/components/index/MobileHome.svelte',
         'web/src/components/index/HomeProject.test.js',

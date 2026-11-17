@@ -39,6 +39,19 @@ The release workflow builds YuGo archives from our repository, includes LICENSE,
 NOTICE and THIRD_PARTY_NOTICES, and does not publish the upstream npm package.
 Do not reuse an official version number or point an installer at upstream.
 
+The Mac service automatically checks the public official `main` commit three
+seconds after startup and every six hours thereafter. This is read-only metadata
+tracking without GitHub tokens, model calls, Git operations or installation. The
+Mac and phone version dialog shows the result, last successful check and a review
+link; new commits produce a dismissible reminder. Network failures retain the
+last known reminder and never claim the app is current. The browser refreshes
+the cached status every minute while visible and when returning to the app.
+
+The integrated official base is recorded in `variant.json` and
+`internal/updater/upstream-base.txt`; update both only after completing the
+review and merge. Checks compare official commits against this base, not YuGo's
+independent release version.
+
 The installed application and `/pi-web update` are pinned to manual maintenance.
 Official fetches and reviewed source merges never install or restart the app.
 After accepting a review, explicitly build, inspect notices, back up the current

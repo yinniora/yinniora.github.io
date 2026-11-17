@@ -18,6 +18,39 @@ afterEach(() => {
 });
 
 describe('VersionController', () => {
+  it('reminds about official changes and only offers review and metadata checks', async () => {
+    const fetchImpl = vi.fn(() =>
+      jsonResponse({
+        current: '0.1.0-yugo.2',
+        trackingOnly: true,
+        hasUpdate: false,
+        upstream: {
+          hasUpdate: true,
+          latest: 'new-official-commit',
+          url: 'https://github.com/ygncode/pi-web/compare/base...new',
+        },
+      }),
+    );
+    render(VersionController, { props: { fetchImpl, minCheckMs: 0 } });
+    const reminder = await screen.findByRole('button', {
+      name: 'Official changes available for YuGo Pi review',
+    });
+    await fireEvent.click(reminder);
+    expect(await screen.findByText('Official update tracking is on')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /View official changes/ })).toHaveAttribute(
+      'href',
+      'https://github.com/ygncode/pi-web/compare/base...new',
+    );
+    expect(screen.queryByRole('button', { name: 'Update & Restart' })).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+    await waitFor(() =>
+      expect(fetchImpl).toHaveBeenCalledWith('/api/check-update', expect.anything()),
+    );
+    expect(
+      fetchImpl.mock.calls.some(([url]) => ['/api/update', '/api/restart'].includes(url)),
+    ).toBe(false);
+  });
+
   it('populates the status label from /api/version', async () => {
     const fetchImpl = vi.fn(() =>
       jsonResponse({ current: '1.0.0', latest: '1.1.0', hasUpdate: true }),

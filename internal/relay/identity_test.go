@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -68,7 +69,8 @@ func TestIdentityPersistsPrivately(t *testing.T) {
 		t.Fatal("identity changed on restart", err)
 	}
 	info, _ := os.Stat(file)
-	if info.Mode().Perm() != 0600 {
+	// Windows FileMode does not report POSIX owner/group permission bits.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatal("identity is not private")
 	}
 	_, other, err := LoadIdentity(filepath.Join(t.TempDir(), "identity.pem"))

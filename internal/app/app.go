@@ -76,7 +76,7 @@ func Main(version string) {
 		authMiddleware.AllowAnyHost()
 	}
 
-	versionChecker := updater.NewManual(version)
+	versionChecker := updater.NewTracking(version)
 	deviceEnabled := os.Getenv("PI_WEB_DEVICE_AUTH") == "1"
 	var remoteHost *relay.Host
 	if deviceEnabled {

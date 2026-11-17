@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -28,7 +29,8 @@ func TestRemoteServerConfigurationVerifiesAndKeepsPrivateIdentity(t *testing.T) 
 		t.Fatal(err)
 	}
 	info, _ := os.Stat(file)
-	if info.Mode().Perm() != 0600 {
+	// Windows FileMode does not report POSIX owner/group permission bits.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatal("configuration is not private")
 	}
 	public := c.Bootstrap()

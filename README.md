@@ -35,7 +35,7 @@ relay credentials or certificates are distributed with the source.
 git clone https://github.com/yinniora/yugo-pi.git
 cd yugo-pi
 make check
-make build remote-build VERSION=0.1.0-yugo.1
+make build remote-build VERSION=0.1.0-yugo.2
 python3 scripts/collect_notices.py
 python3 scripts/build_macos.py
 python3 scripts/install_remote_macos.py --client https://YOUR-INDEPENDENT-CLIENT/
@@ -56,9 +56,12 @@ hosted phone program must remain separate from an untrusted relay.
 
 ## Upstream updates without replacing YuGo changes
 
-YuGo Pi has its own `yugo-v*` releases. Runtime updates are manual; the app and
-Pi extension do not install the upstream npm package. Official changes are
-fetched into an isolated review worktree:
+YuGo Pi has its own `yugo-v*` releases. The Mac service automatically tracks
+official commits every six hours and shows a review reminder on Mac and phone.
+Runtime upgrades remain manual: we review official changes, prepare a YuGo
+patch and verify our features before publishing. The app and Pi extension do
+not install the upstream npm package. Official changes are fetched into an
+isolated review worktree:
 
 ```bash
 python3 scripts/sync_upstream.py check

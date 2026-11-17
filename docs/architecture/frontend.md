@@ -183,3 +183,10 @@ BTW opens with a short explanation of its independent context and shared project
 files. A reply can be explicitly attached to the main composer draft; this never
 automatically sends a message. Closing BTW leaves its saved conversation and
 any running reply intact.
+
+`VersionController` reads cached upstream tracking on mount, every visible minute
+and on visibility resume. A new official commit produces a dismissible reminder
+on both Mac and phone. Its dialog explains review and patching, links the official
+comparison and allows a fresh metadata check. Tracking snapshots never expose
+an install/restart action. Dismissal records only the public commit ID locally;
+a different future official commit shows a new reminder.

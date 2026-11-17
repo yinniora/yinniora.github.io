@@ -6,6 +6,6 @@
   "upstream": "https://github.com/ygncode/pi-web",
   "upstreamBranch": "main",
   "baseCommit": "4a77ea5",
-  "updatePolicy": "reviewed-manual-merge",
+  "updatePolicy": "automatic-tracking-reviewed-manual-merge",
   "runtimeCompatibility": "Existing pi-web data paths, bundle identifiers, environment variables and device identities are retained."
 }
