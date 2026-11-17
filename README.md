@@ -1,145 +1,83 @@
-# Pi Workspace — personal fork
+# YuGo Pi
 
-A self-maintained fork of [ygncode/pi-web](https://github.com/ygncode/pi-web),
-with a quieter desktop/mobile interface, a native macOS conversation window,
-inline images/SVG/video/audio/files, permanent session deletion, project management with optional Mac Trash moves,
-expandable thinking/tool activity, synchronized
-language settings and Mac-approved remote devices.
+[中文](user-docs/readme/README.zh.md) · [License](LICENSE) · [Upstream](https://github.com/ygncode/pi-web)
 
-Remote access uses an independent HTTPS client and standard WebRTC/DTLS. The
-Mac owns its identity and device whitelist; a VPS only forwards signaling and
-encrypted packets. Every new pairing QR requires Mac system authentication.
-See [the security architecture](docs/architecture/remote-security.md) for trust
-boundaries, runtime configuration, revocation and build instructions.
-To connect a different Mac or use your own protected relay, follow
-[the self-hosted setup guide](docs/architecture/self-hosted-remote.md).
-The Mac settings include server verification and native authentication; the
-phone shows actual P2P/Relay and synchronization/loading status.
+YuGo Pi is an independently maintained, MIT-licensed variant of **pi-web**,
+originally created by **Set Kyar Wa Lar (YGNCode)**. It is not an official
+pi-web or Pi release. The upstream copyright and license remain intact.
 
-Personal releases are pinned and disable upstream automatic installation.
-Upstream changes are reviewed and tested before a new personal version is
-published. The original MIT license and upstream documentation follow below.
-The screenshots below describe upstream; the personal interface differs.
+The project is maintained at [yinniora/yugo-pi](https://github.com/yinniora/yugo-pi).
+Bug reports and contributions for this variant belong in this repository.
 
----
+## What YuGo Pi adds
 
-<h1 align="center">pi-web (Remote Control Your Pi)</h1>
+- A native Mac conversation window and a mobile Home Screen web app.
+- Projects and conversations on the phone home screen, project menus and new
+  conversation controls, persistent collapse, and a clear Home return action.
+- Stable mobile keyboard layout, bounded scrolling and page zoom protection.
+- Expandable model thinking and tool activity, image/SVG zoom, native video
+  and audio, file downloads, and a separate BTW side chat with an introduction
+  and explicit attachment of replies to the main draft.
+- Conversation Trash and permanent deletion, optional verified generated-file
+  cleanup, and optional project-folder moves to Mac Trash with confirmation.
+- Mac-authenticated one-time pairing, device approvals, revocation and precise
+  device details. Your Mac owns the identity and access decisions.
+- Your own authenticated relay, automatic P2P attempts, encrypted WebRTC/DTLS,
+  actual P2P/Relay status, and synchronization/loading indicators.
 
-<div align="center">
+## Build and install
 
-[![GitHub stars](https://img.shields.io/github/stars/ygncode/pi-web?style=flat&logo=github&label=stars&cacheSeconds=86400)](https://github.com/ygncode/pi-web/stargazers)
-[![npm downloads](https://img.shields.io/npm/dw/@ygncode/pi-web?label=downloads/wk&color=2ea043&cacheSeconds=86400)](https://www.npmjs.com/package/@ygncode/pi-web)
-[![license MIT](https://img.shields.io/npm/l/@ygncode/pi-web?label=license&color=0a7bbb&cacheSeconds=86400)](LICENSE)
-[![Telegram](https://img.shields.io/badge/Telegram-Join-26A5E4?logo=telegram&logoColor=white)](https://t.me/+NJvFOTTa0wNjNTc9)
-![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-555)
-
-**English** · [Español](user-docs/readme/README.es.md) · [Français](user-docs/readme/README.fr.md) · [Deutsch](user-docs/readme/README.de.md) · [中文](user-docs/readme/README.zh.md) · [日本語](user-docs/readme/README.ja.md) · [Bahasa Indonesia](user-docs/readme/README.id.md) · [Bahasa Melayu](user-docs/readme/README.ms.md) · [Tiếng Việt](user-docs/readme/README.vi.md) · [ไทย](user-docs/readme/README.th.md) · [Filipino](user-docs/readme/README.fil.md) · [မြန်မာ](user-docs/readme/README.my.md) · [ភាសាខ្មែរ](user-docs/readme/README.km.md) · [ລາວ](user-docs/readme/README.lo.md)
-
-</div>
-
-<div align="center">
-
-Drive your [pi](https://pi.dev) coding agent from your phone, tablet, or laptop — anywhere on your network, or remotely over Tailscale.
-
-It's a full PWA, so you can install it and use it like a native app on any device. Think of it as your own personal AI workspace — like Claude's Cowork, but with different models — chat across models, code from your phone, or turn it into a [personal assistant](user-docs/en/personal-assistant.md) that lives on your machine.
-
-Make it yours: switch themes and fonts, and use it in your own language — pi-web ships with multiple languages and you can add your own. More features are on the way, but it won't get bloated: anything you don't need can be turned off in settings.
-
-</div>
-
-> [!WARNING]
-> pi-web is currently in **beta**. Things will change and break!
-
-> [!TIP]
-> New here? **[Read the user guide →](user-docs/en/README.md)** for a full tour of features, install steps, and tips. ([Other languages →](user-docs/README.md))
-
-## Screenshots
-
-<div align="center">
-  <img src="user-docs/assets/pi-web-desktop-screenshot.png" alt="Desktop" width="90%" /><br />
-  <em>Desktop</em>
-  <br /><br />
-  <img src="user-docs/assets/pi-web-mobile-screenshot.png" alt="Mobile" width="90%" /><br />
-  <em>Mobile</em>
-</div>
-
-## How It Fits Together
-
-```
- pi (terminal)                 Browser (phone / tablet / laptop)
-      │                                │
-      │  writes JSONL                  │  HTTP + SSE
-      ▼                                ▼
- ~/.pi/agent/sessions/  ←───  pi-web (Go HTTP server)
-                                      │
-                    ┌─────────────────┼─────────────────┐
-                    │                 │                 │
-              pi --mode rpc      fsnotify         tailscale serve
-            (per‑session       (live reload)      (remote HTTPS
-             chat worker)                           via MagicDNS)
-```
-
-- **pi** writes conversation JSONL to `~/.pi/agent/sessions/` as it works.
-- **pi-web** is a Go server that reads those files, renders them in the browser, and streams live updates via SSE.
-- **pi --mode rpc** workers handle browser-initiated chat — one per session, reaped after 10 min idle.
-- **fsnotify** watches the sessions directory so the browser reloads within milliseconds of new output.
-- **Tailscale Serve** publishes the localhost server as an HTTPS endpoint on your tailnet.
-
-## Install
+Prerequisites: Go from `go.mod`, Node/npm, a configured Pi coding agent, and
+Xcode Command Line Tools for the native Mac window. No model keys, devices,
+relay credentials or certificates are distributed with the source.
 
 ```bash
-pi install npm:@ygncode/pi-web@beta
+git clone https://github.com/yinniora/yugo-pi.git
+cd yugo-pi
+make check
+make build remote-build VERSION=0.1.0-yugo.1
+python3 scripts/collect_notices.py
+python3 scripts/build_macos.py
+python3 scripts/install_remote_macos.py --client https://YOUR-INDEPENDENT-CLIENT/
 ```
 
-That's it — it downloads the matching binary, sets up auto‑start, and registers the `/web`, `/pi-web`, `/remote`, and `/refresh` commands.
+The default local endpoint is `http://127.0.0.1:31415`; remote access is enabled
+through the separate approved-device client.
 
-Once installed, open `http://127.0.0.1:31415` in your browser. From pi, use `/web` to open the current session in your browser instantly. If Tailscale is running on your machine, pi-web automatically publishes an HTTPS endpoint on your tailnet — use `/remote` from pi to get a QR code and URL for any device on your tailnet.
+The fresh Mac installer refuses to overwrite an existing installation. Existing
+users should follow the [migration and maintenance guide](docs/maintenance.md).
+The internal `pi-web` binary name and data paths remain compatible so upgrades
+do not reset conversations, approvals, keys or existing pairing origins.
 
-> **macOS remote access:** Install and open Tailscale interactively, approve the administrator prompt, and sign in. Then run `/pi-web restart`, followed by `/remote`.
+For phone access and your own server, see the
+[self-hosted remote guide](docs/architecture/self-hosted-remote.md) and
+[security architecture](docs/architecture/remote-security.md). The independently
+hosted phone program must remain separate from an untrusted relay.
 
-For manual installs, binary downloads, or building from source, see [user-docs/install.md](user-docs/en/install.md).
+## Upstream updates without replacing YuGo changes
 
-## Pi Integration
-
-After `pi install npm:@ygncode/pi-web@beta`, you get:
-
-| Command | What it does |
-|---------|--------------|
-| `/web` | Open the current session in your browser (SSH-aware: skips browser and shows URL only) |
-| `/pi-web` | Show status, version, start/stop/restart the server, or update |
-| `/remote` | Show a QR code and URL for remote access over Tailscale |
-| `/refresh` | Pull new messages written from remote browsers back into the terminal session |
-
-Session **auto-titling** is built into pi-web itself and configured on the `/settings` page. It's **on by default** and names sessions automatically. You can choose:
-
-- **When to title** — once per session, or on every new message (the default).
-- **Title model** — a free, instant **built-in word heuristic (no AI)** by default, or pick a model (e.g. a small/fast one) for smarter, model-written titles.
-
-The package also installs the pi-web binary to `~/.pi/agent/bin/pi-web` and sets up auto-start on login.
-
-## Auto-Start on Login
-
-The `pi install npm:@ygncode/pi-web@beta` command sets this up automatically:
-
-| OS | Mechanism |
-|----|-----------|
-| macOS | launchd plist at `~/Library/LaunchAgents/com.pi-web.plist` |
-| Linux | systemd user service at `~/.config/systemd/user/pi-web.service` |
-| Windows | `HKCU` Run-key entry launching a hidden starter in `~/.config/pi-web/` |
-
-To set a token for remote access, create `~/.config/pi-web/env`:
-
-```
-PI_WEB_TOKEN=your-token-here
-```
-
-For more details (manual setup, custom ports, non-loopback binds), see [user-docs/install.md](user-docs/en/install.md).
-
-## Development
+YuGo Pi has its own `yugo-v*` releases. Runtime updates are manual; the app and
+Pi extension do not install the upstream npm package. Official changes are
+fetched into an isolated review worktree:
 
 ```bash
-make setup   # install frontend deps and download Go modules
-make check   # frontend test/build + Go test/vet
-make build   # setup if needed, build frontend, then build ./pi-web
+python3 scripts/sync_upstream.py check
+python3 scripts/sync_upstream.py prepare
 ```
 
+The script never resets or merges into your working main branch. Conflicts
+stay in the review worktree for explicit resolution. Review the diff, run the
+variant checks, full tests and mobile regressions, then merge the reviewed PR.
+Upstream changes can conflict; no update is accepted merely because it is newer.
+See [maintenance](docs/maintenance.md) for the complete process.
+
+## License and provenance
+
+YuGo Pi retains the upstream [MIT license](LICENSE), author attribution and
+Git history. [NOTICE](NOTICE) distinguishes this derivative from upstream.
+[THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES) accompanies distributed clients,
+native apps and release archives. Separate tools and model services remain
+subject to their own licenses and terms.
+
+Historical upstream guides and translations are retained for reference; the
+root README, YuGo maintenance guide and self-hosted guide describe this variant.

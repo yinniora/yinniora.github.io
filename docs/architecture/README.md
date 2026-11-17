@@ -1,6 +1,9 @@
 # Architecture Documentation
 
-This directory contains the architecture documentation for **pi-web**, a local web viewer for pi coding-agent sessions.
+This directory contains the architecture documentation for **YuGo Pi**, an independently maintained pi-web variant for Pi coding-agent sessions.
+
+See [maintenance](../maintenance.md) for reviewed upstream synchronization and
+independent release rules. The original MIT license and attribution are preserved.
 
 ## Documents
 

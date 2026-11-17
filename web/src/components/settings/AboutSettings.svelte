@@ -12,7 +12,7 @@
   <div class="settings-row">
     <div class="settings-row-label">
       <span class="name">{t('common.version')}</span>
-      <span class="hint">pi-web</span>
+      <span class="hint">{t('app.name')}</span>
     </div>
     <div class="settings-control">
       <button class="settings-link" type="button" data-version-row
@@ -44,15 +44,15 @@
   </div>
   <div class="settings-row">
     <div class="settings-row-label">
-      <span class="name">{t('settings.sponsor')}</span>
-      <span class="hint">{t('settings.sponsorHint')}</span>
+      <span class="name">{t('app.upstream')}</span>
+      <span class="hint">{t('app.variant')}</span>
     </div>
     <div class="settings-control">
       <a
         class="settings-link"
-        href="https://github.com/sponsors/setkyar"
+        href="https://github.com/ygncode/pi-web"
         target="_blank"
-        rel="noreferrer">{t('settings.becomeSponsor')}</a
+        rel="noreferrer">pi-web · YGNCode</a
       >
     </div>
   </div>

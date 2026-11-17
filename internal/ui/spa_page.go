@@ -43,7 +43,7 @@ func RenderAppShell(w io.Writer, bootstrap string) error {
 		LiveDocumentEnd   template.HTML
 	}{
 		LiveDocumentStart: template.HTML(renderLiveDocumentStart(liveDocumentData{
-			Title:   "pi-web",
+			Title:   "YuGo Pi",
 			Preload: preload,
 			Styles:  appStylesheets(),
 		})),

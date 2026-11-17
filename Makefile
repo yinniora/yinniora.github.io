@@ -8,14 +8,15 @@ ROOT_NODE_MODULES := node_modules
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-build: setup frontend-build
+build: setup frontend-build notices
 	go build -ldflags="-s -w -X main.version=$(VERSION)" -o $(BINARY) ./cmd/pi-web
 
 build-relay:
 	go build -ldflags="-s -w" -o pi-relay ./cmd/pi-relay
 
-remote-build:
+remote-build: notices
 	cd web && npm exec -- vite build --config vite.config.remote.js
+	python3 scripts/collect_notices.py
 	python3 scripts/package_remote.py
 
 setup: frontend-setup go-setup
@@ -74,7 +75,7 @@ vet: go-setup
 
 test: frontend-test extension-test memory-test pi-web-ctl-test go-test install-test
 
-check: frontend-lint frontend-format-check frontend-knip frontend-test extension-test memory-test pi-web-ctl-test frontend-build go-test install-test vet
+check: variant-check frontend-lint frontend-format-check frontend-knip frontend-test extension-test memory-test pi-web-ctl-test frontend-build go-test install-test vet
 
 dev: frontend-setup go-setup
 	@echo "Starting secondary dev instance at http://127.0.0.1:31416 (frontend watcher + Go hot-reloader)..."
@@ -130,3 +131,11 @@ release-major:
 release-beta:
 	npm version prerelease --preid=beta
 	git push --follow-tags
+
+.PHONY: variant-check notices
+variant-check:
+	python3 scripts/check_variant.py
+	python3 -m unittest discover -s scripts -p 'test_variant_*.py'
+
+notices: frontend-build go-setup
+	python3 scripts/collect_notices.py

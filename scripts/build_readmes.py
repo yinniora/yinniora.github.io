@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import re
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -71,15 +72,12 @@ def nav_line(current: str) -> str:
 
 
 def header(current: str) -> str:
-    return f"""<h1 align="center">pi-web (Remote Control Your Pi)</h1>
+    return f"""<h1 align="center">YuGo Pi</h1>
 
 <div align="center">
 
-[![GitHub stars](https://img.shields.io/github/stars/ygncode/pi-web?style=flat&logo=github&label=stars&cacheSeconds=86400)](https://github.com/ygncode/pi-web/stargazers)
-[![npm downloads](https://img.shields.io/npm/dt/@ygncode/pi-web?label=downloads&color=2ea043)](https://www.npmjs.com/package/@ygncode/pi-web)
-[![license MIT](https://img.shields.io/npm/l/@ygncode/pi-web?label=license&color=0a7bbb)](../../LICENSE)
-[![Telegram](https://img.shields.io/badge/Telegram-Join-26A5E4?logo=telegram&logoColor=white)](https://t.me/+NJvFOTTa0wNjNTc9)
-![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-555)
+[![GitHub stars](https://img.shields.io/github/stars/yinniora/yugo-pi?style=flat&logo=github&label=stars)](https://github.com/yinniora/yugo-pi/stargazers)
+[![license MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 
 {nav_line(current)}
 
@@ -108,7 +106,7 @@ Here is the Markdown to translate:
 def translate(body: str, code: str) -> str:
     prompt = PROMPT.format(target=TRANSLATE_TARGET[code], body=body)
     result = subprocess.run(
-        ["pi", "-p", "--model", "opencode-go/deepseek-v4-pro", "--no-session", prompt],
+        ["pi", "-p", "--no-session", "--no-tools", "--no-extensions", "--no-mcp", "--no-skills", "--no-context-files", *(["--model", os.environ["PI_TRANSLATION_MODEL"]] if os.environ.get("PI_TRANSLATION_MODEL") else []), prompt],
         capture_output=True,
         text=True,
         timeout=600,

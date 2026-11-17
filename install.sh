@@ -4,14 +4,14 @@ set -euo pipefail
 # pi-web installer — downloads the binary and sets up auto-start
 #
 # Standalone (no pi required):
-#   curl -fsSL https://raw.githubusercontent.com/ygncode/pi-web/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/yinniora/yugo-pi/main/install.sh | bash
 #
 # Via pi package (also registers /remote, /refresh commands):
-#   pi install npm:@ygncode/pi-web@beta
+#   pi install npm:@yinniora/yugo-pi@beta
 #
 # Updates are handled by re-running the same command.
 
-REPO="ygncode/pi-web"
+REPO="yinniora/yugo-pi"
 if [[ -n "${PI_WEB_INSTALL_DIR:-}" ]]; then
   INSTALL_DIR="$PI_WEB_INSTALL_DIR"
 elif [[ -n "${npm_package_name:-}" ]]; then
@@ -62,10 +62,10 @@ detect_platform() {
 package_tag() {
   # When install.sh runs as an npm lifecycle script, install the binary that
   # matches the npm package version. This keeps pinned installs such as
-  # `pi install npm:@ygncode/pi-web@0.0.1-beta.25` pinned for both the extension
+  # `pi install npm:@yinniora/yugo-pi@0.0.1-beta.25` pinned for both the extension
   # package and the downloaded pi-web binary.
-  if [[ "${npm_package_name:-}" == "@ygncode/pi-web" && -n "${npm_package_version:-}" ]]; then
-    echo "v${npm_package_version#v}"
+  if [[ "${npm_package_name:-}" == "@yinniora/yugo-pi" && -n "${npm_package_version:-}" ]]; then
+    echo "yugo-v${npm_package_version#yugo-v}"
   fi
 }
 
@@ -137,7 +137,7 @@ needs_update() {
 download_binary() {
   local platform="$1"
   local tag="$2"
-  local asset="pi-web-${platform}"
+  local asset="yugo-pi-${platform}.tar.gz"
   local url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
 
   info "Downloading pi-web ${tag} (${platform})..."
@@ -147,14 +147,18 @@ download_binary() {
   tmp="$(mktemp -d)"
 
   if command -v curl &>/dev/null; then
-    curl -fsSL --progress-bar -o "${tmp}/pi-web" "$url"
+    curl -fsSL --progress-bar -o "${tmp}/release.tar.gz" "$url"
   elif command -v wget &>/dev/null; then
-    wget -q --show-progress -O "${tmp}/pi-web" "$url"
+    wget -q --show-progress -O "${tmp}/release.tar.gz" "$url"
   else
     err "Neither curl nor wget found. Install one and try again."
     exit 1
   fi
 
+  tar -xzf "${tmp}/release.tar.gz" -C "${tmp}" -- pi-web LICENSE NOTICE THIRD_PARTY_NOTICES
+  local legal_dir="${HOME}/.local/share/yugo-pi/legal"
+  mkdir -p "$legal_dir"
+  cp "${tmp}/LICENSE" "${tmp}/NOTICE" "${tmp}/THIRD_PARTY_NOTICES" "$legal_dir/"
   chmod +x "${tmp}/pi-web"
   echo "${tmp}/pi-web"
 }

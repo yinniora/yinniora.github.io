@@ -97,7 +97,7 @@
 
   onMount(() => {
     const previousTitle = document.title;
-    document.title = `${t('settings.title')} — Pi Sessions`;
+    document.title = `${t('settings.title')} — ${t('app.name')}`;
 
     try {
       const ref = document.referrer;

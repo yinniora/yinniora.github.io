@@ -1,0 +1,8 @@
+{
+  "@pierre/theming@0.0.1": {
+    "directory": "pierre-theming-0.0.1",
+    "source": "https://raw.githubusercontent.com/pierrecomputer/pierre/43c4783f330efe068f7248cc4f4417c4920da01c/packages/theming/LICENSE.md",
+    "sha256": "13d92be18d5ceac526f33cc96b6902a14d168f3e1d4b16be738f0fa70da7fe98",
+    "reason": "The published npm package declares apache-2.0 but omits LICENSE.md. Preserve the licensor-provided text from its official repository."
+  }
+}

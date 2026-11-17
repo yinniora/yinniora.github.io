@@ -170,9 +170,14 @@
       if (e.currentTarget === e.target) closeModal();
     }}
   >
-    <div class="version-modal" role="dialog" aria-modal="true" aria-label="pi-web version">
+    <div
+      class="version-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${t('app.name')} ${t('common.version')}`}
+    >
       <div class="version-modal-header">
-        <span class="version-modal-title">pi-web</span>
+        <span class="version-modal-title">{t('app.name')}</span>
         <span class="version-modal-current">{info?.current ? cleanVersion(info.current) : ''}</span>
         <button
           type="button"

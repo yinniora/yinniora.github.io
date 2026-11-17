@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	defaultNPMURL    = "https://registry.npmjs.org/@ygncode/pi-web"
-	defaultGitHubAPI = "https://api.github.com/repos/ygncode/pi-web"
+	defaultNPMURL    = "https://registry.npmjs.org/@yinniora/yugo-pi"
+	defaultGitHubAPI = "https://api.github.com/repos/yinniora/yugo-pi"
 	// npmChannel is the dist-tag pi-web installs from (see pi install command).
 	npmChannel = "beta"
 	// PollInterval is how often the background goroutine refreshes the cache.

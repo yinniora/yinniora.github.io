@@ -5,6 +5,7 @@ import os
 import platform
 import plistlib
 import re
+import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,21 +16,25 @@ if architecture not in ('arm64', 'x86_64'):
     raise SystemExit('Build these bundles on a supported Mac architecture.')
 build_env = {**os.environ, 'MACOSX_DEPLOYMENT_TARGET': MINIMUM_MACOS}
 for name, source, ident, helper in [
-    ('Pi Chat', 'PiChat.swift', 'local.pi.chat', False),
-    ('Pi Device Approval', 'DeviceApproval.swift', 'local.pi.device-approval', True),
+    ('YuGo Pi', 'PiChat.swift', 'local.pi.chat', False),
+    ('YuGo Pi Approval', 'DeviceApproval.swift', 'local.pi.device-approval', True),
 ]:
     contents = OUT / (name + '.app') / 'Contents'
     executable = contents / 'MacOS' / name
     executable.parent.mkdir(parents=True, exist_ok=True)
     info = {'CFBundleName': name, 'CFBundleDisplayName': name,
             'CFBundleIdentifier': ident, 'CFBundleExecutable': name,
-            'CFBundlePackageType': 'APPL', 'CFBundleVersion': '2',
-            'CFBundleShortVersionString': '0.0.1',
+            'CFBundlePackageType': 'APPL', 'CFBundleVersion': '3',
+            'CFBundleShortVersionString': '0.1.0',
             'LSMinimumSystemVersion': MINIMUM_MACOS,
             'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True},
             'NSHighResolutionCapable': True}
     if helper:
         info['LSUIElement'] = True
+    resources = contents / 'Resources'
+    resources.mkdir(exist_ok=True)
+    for legal_name in ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES']:
+        shutil.copy2(ROOT / legal_name, resources / legal_name)
     (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
     subprocess.run(['xcrun', 'swiftc', '-swift-version', '5', '-O',
                     '-target', f'{architecture}-apple-macos{MINIMUM_MACOS}',

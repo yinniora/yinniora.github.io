@@ -17,7 +17,7 @@ python3 scripts/install_remote_macos.py --start
 ```
 
 The fresh installer refuses to replace an existing installation. It creates a
-private local token, installs Pi Chat and the LocalAuthentication helper, and
+private local token, installs YuGo Pi and the LocalAuthentication helper, and
 binds workspace HTTP to loopback only. It does not enroll a device or expose a
 workspace port. Existing installations should keep their identity, launch agent
 and model configuration when updating their binaries.

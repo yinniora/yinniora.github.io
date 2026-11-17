@@ -17,8 +17,8 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 run_case() {
   local mode="$1"
   local package_version="${2:-}"
-  local expected_tag="v9.9.9"
-  [[ -n "$package_version" ]] && expected_tag="v${package_version#v}"
+  local expected_tag="yugo-v9.9.9"
+  [[ -n "$package_version" ]] && expected_tag="yugo-v${package_version#yugo-v}"
   local workdir bindir shimdir calllog
   workdir="$(mktemp -d)"
   bindir="$workdir/bin"
@@ -40,11 +40,15 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   esac
 done
 if [[ "$url" == *api.github.com* ]]; then
-  echo '{"tag_name": "v9.9.9"}'
+  echo '{"tag_name": "yugo-v9.9.9"}'
 elif [[ "$url" == *releases/download* ]]; then
   tag="${url#*/releases/download/}"
   tag="${tag%%/*}"
-  printf '#!/bin/sh\necho %s\n' "$tag" > "$out"
+  archive_dir="$(mktemp -d)"
+  printf '#!/bin/sh\necho %s\n' "$tag" > "$archive_dir/pi-web"
+  for notice in LICENSE NOTICE THIRD_PARTY_NOTICES; do printf '%s\n' "$notice" > "$archive_dir/$notice"; done
+  tar -czf "$out" -C "$archive_dir" pi-web LICENSE NOTICE THIRD_PARTY_NOTICES
+  rm -rf "$archive_dir"
 fi
 exit 0
 SHIM
@@ -73,7 +77,7 @@ SHIM
   )
   [[ "$mode" == "inplace" ]] && env_vars+=("PI_WEB_INPLACE_UPDATE=1")
   if [[ -n "$package_version" ]]; then
-    env_vars+=("npm_package_name=@ygncode/pi-web" "npm_package_version=$package_version")
+    env_vars+=("npm_package_name=@yinniora/yugo-pi" "npm_package_version=$package_version")
   fi
 
   env -i "${env_vars[@]}" bash "$INSTALL_SH" </dev/null > "$workdir/out.log" 2>&1 \

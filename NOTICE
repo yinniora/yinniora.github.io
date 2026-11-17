@@ -1,0 +1,14 @@
+YuGo Pi
+
+An independently maintained derivative of pi-web by Set Kyar Wa Lar (YGNCode).
+Upstream: https://github.com/ygncode/pi-web
+Original copyright: Copyright (c) 2026 Set Kyar Wa Lar (YGNCode).
+The original MIT license is preserved in LICENSE.
+
+YuGo Pi modifications are maintained by the YuGo Pi contributors and are
+distributed under the same MIT license. This variant is not an official
+YGNCode or Pi release and does not imply endorsement by upstream authors.
+
+Third-party components retain their respective licenses; see
+THIRD_PARTY_NOTICES. The Pi agent and optional computer-control packages are
+separate projects, with their own licenses and permissions.

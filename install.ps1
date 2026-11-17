@@ -1,10 +1,10 @@
 # pi-web installer for Windows — downloads the binary and sets up auto-start.
 #
 # Standalone (no pi required):
-#   irm https://raw.githubusercontent.com/ygncode/pi-web/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/yinniora/yugo-pi/main/install.ps1 | iex
 #
 # Via pi package (also registers /web, /remote commands):
-#   pi install npm:@ygncode/pi-web@beta
+#   pi install npm:@yinniora/yugo-pi@beta
 #
 # Updates are handled by re-running the same command.
 #
@@ -18,7 +18,7 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$Repo = 'ygncode/pi-web'
+$Repo = 'yinniora/yugo-pi'
 if ($env:PI_WEB_INSTALL_DIR) {
   $InstallDir = $env:PI_WEB_INSTALL_DIR
 } else {
@@ -51,8 +51,8 @@ function Get-Arch {
 function Get-PackageTag {
   # When running as an npm lifecycle script, install the binary that matches
   # the npm package version so pinned installs stay pinned (see install.sh).
-  if ($env:npm_package_name -eq '@ygncode/pi-web' -and $env:npm_package_version) {
-    return 'v' + $env:npm_package_version.TrimStart('v')
+  if ($env:npm_package_name -eq '@yinniora/yugo-pi' -and $env:npm_package_version) {
+    return 'yugo-v' + $env:npm_package_version
   }
   return $null
 }
@@ -83,14 +83,21 @@ function Get-InstalledVersion {
 }
 
 function Get-Binary($arch, $tag) {
-  $asset = "pi-web-windows-$arch.exe"
+  $asset = "yugo-pi-windows-$arch.zip"
   $url = "https://github.com/$Repo/releases/download/$tag/$asset"
   Info "Downloading pi-web $tag (windows-$arch)..."
   Info "  $url"
   $tmpDir = Join-Path ([IO.Path]::GetTempPath()) ('pi-web-' + [IO.Path]::GetRandomFileName())
   New-Item -ItemType Directory -Path $tmpDir | Out-Null
   $dest = Join-Path $tmpDir 'pi-web.exe'
-  Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+  $archive = Join-Path $tmpDir 'release.zip'
+  Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
+  Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
+  $legal = Join-Path $HOME '.local\share\yugo-pi\legal'
+  New-Item -ItemType Directory -Force -Path $legal | Out-Null
+  foreach ($name in 'LICENSE','NOTICE','THIRD_PARTY_NOTICES') {
+    Copy-Item (Join-Path $tmpDir $name) (Join-Path $legal $name) -Force
+  }
   return $dest
 }
 

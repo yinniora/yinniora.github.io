@@ -23,7 +23,7 @@ func TestAppShellPreservesPWAContract(t *testing.T) {
 		`<meta name="theme-color" content="#0e0e13">`,
 		`<meta name="mobile-web-app-capable" content="yes">`,
 		`<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`,
-		`<meta name="apple-mobile-web-app-title" content="Pi Sessions">`,
+		`<meta name="apple-mobile-web-app-title" content="YuGo Pi">`,
 		`<meta name="pi-web-theme"`,
 		`navigator.windowControlsOverlay`,
 		`<link rel="stylesheet" href="/custom-themes.css">`,

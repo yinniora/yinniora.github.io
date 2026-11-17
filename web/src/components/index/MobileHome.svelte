@@ -28,7 +28,7 @@
 <!-- eslint-disable svelte/no-at-html-tags -- Lucide icons -->
 <div class="mobile-home">
   <header class="mobile-home-header">
-    <div class="mobile-home-brand">Pi <ConnectionStatus /></div>
+    <div class="mobile-home-brand">{t('app.name')} <ConnectionStatus /></div>
     <div class="mobile-home-tools">
       <button class="home-icon-button" aria-label={t('index.searchSessions')} onclick={onSearch}
         >{@html icon(Search, { size: 20 })}</button

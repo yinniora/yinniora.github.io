@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import re
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -84,7 +85,7 @@ Here is the Markdown to translate (begin your output directly with the translate
 def translate(body: str, code: str) -> str:
     prompt = PROMPT.format(target=TRANSLATE_TARGET[code], body=body)
     result = subprocess.run(
-        ["pi", "-p", "--model", "opencode-go/deepseek-v4-pro", "--no-session", prompt],
+        ["pi", "-p", "--no-session", "--no-tools", "--no-extensions", "--no-mcp", "--no-skills", "--no-context-files", *(["--model", os.environ["PI_TRANSLATION_MODEL"]] if os.environ.get("PI_TRANSLATION_MODEL") else []), prompt],
         capture_output=True,
         text=True,
         timeout=600,
@@ -149,7 +150,7 @@ def build_hero(code: str) -> str:
     )
     prompt = HERO_PROMPT.format(target=TRANSLATE_TARGET[code], payload=payload)
     result = subprocess.run(
-        ["pi", "-p", "--model", "opencode-go/deepseek-v4-pro", "--no-session", prompt],
+        ["pi", "-p", "--no-session", "--no-tools", "--no-extensions", "--no-mcp", "--no-skills", "--no-context-files", *(["--model", os.environ["PI_TRANSLATION_MODEL"]] if os.environ.get("PI_TRANSLATION_MODEL") else []), prompt],
         capture_output=True,
         text=True,
         timeout=600,

@@ -1,7 +1,7 @@
 {
-  "name": "@ygncode/pi-web",
-  "description": "Remote control your pi coding agent from any browser on your network",
-  "version": "0.0.1-beta.38-personal.7",
+  "name": "@yinniora/yugo-pi",
+  "description": "YuGo Pi — an independently maintained pi-web variant for Mac and mobile",
+  "version": "0.1.0-yugo.1",
   "keywords": [
     "pi-package"
   ],
@@ -27,11 +27,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ygncode/pi-web"
+    "url": "https://github.com/yinniora/yugo-pi"
   },
   "license": "MIT",
   "devDependencies": {
     "typebox": "^1.1.38",
     "vitest": "^4.1.7"
+  },
+  "homepage": "https://github.com/yinniora/yugo-pi",
+  "bugs": {
+    "url": "https://github.com/yinniora/yugo-pi/issues"
   }
 }

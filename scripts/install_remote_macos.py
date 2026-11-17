@@ -22,8 +22,8 @@ if client.scheme != 'https' or not client.hostname or client.username or client.
 source = Path(__file__).resolve().parent.parent
 mac_home = Path.home()
 plist = mac_home / 'Library/LaunchAgents/com.pi-web.plist'
-apps = ['Pi Chat', 'Pi Device Approval']
-if plist.exists() or any((mac_home / 'Applications' / (name + '.app')).exists() for name in apps):
+apps = ['YuGo Pi', 'YuGo Pi Approval']
+if (mac_home / 'Applications/Pi Chat.app').exists() or (mac_home / 'Applications/Pi Device Approval.app').exists() or plist.exists() or any((mac_home / 'Applications' / (name + '.app')).exists() for name in apps):
     parser.error('An installation already exists; this fresh installer will not overwrite its keys or apps')
 if not (source / 'pi-web').is_file() or any(not (source / 'build/macos.noindex' / (name + '.app')).is_dir() for name in apps):
     parser.error('First run make build and python3 scripts/build_macos.py')
@@ -48,8 +48,8 @@ workspace = mac_home / 'Pi Projects'
 workspace.mkdir(exist_ok=True)
 env = dict(PATH=os.environ.get('PATH', '/usr/bin:/bin'), PI_WEB_TOKEN=secrets.token_hex(32),
            PI_WEB_DEVICE_AUTH='1', PI_WEB_REMOTE_CLIENT_URL=args.client,
-           PI_WEB_PAIR_APPROVER=str(mac_home / 'Applications/Pi Device Approval.app/Contents/MacOS/Pi Device Approval'),
-           PI_WEB_PROJECT_TRASH_HELPER=str(mac_home / 'Applications/Pi Chat.app/Contents/Helpers/project-trash'),
+           PI_WEB_PAIR_APPROVER=str(mac_home / 'Applications/YuGo Pi Approval.app/Contents/MacOS/YuGo Pi Approval'),
+           PI_WEB_PROJECT_TRASH_HELPER=str(mac_home / 'Applications/YuGo Pi.app/Contents/Helpers/project-trash'),
            PI_WEB_DEFAULT_WORKSPACE=str(workspace), PI_WEB_PROTECTED_PATHS=str(runtime))
 service = dict(Label='com.pi-web', ProgramArguments=[str(runtime / 'pi-web'), '--host', '127.0.0.1'],
                EnvironmentVariables=env, WorkingDirectory=str(workspace), RunAtLoad=True, KeepAlive=True,
@@ -60,5 +60,5 @@ with plist.open('xb') as stream:
     plistlib.dump(service, stream)
 if args.start:
     subprocess.run(['launchctl', 'bootstrap', 'gui/' + str(os.getuid()), str(plist)], check=True)
-print('Installed Pi Chat and the Mac approval helper. No relay credentials or devices were created.')
-print('Open Pi Chat → Settings → Remote control and devices to import your own server configuration.')
+print('Installed YuGo Pi and the Mac approval helper. No relay credentials or devices were created.')
+print('Open YuGo Pi → Settings → Remote control and devices to import your own server configuration.')

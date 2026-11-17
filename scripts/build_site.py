@@ -32,10 +32,10 @@ USER_DOCS = ROOT / "user-docs"
 ASSETS = USER_DOCS / "assets"
 LOCALES_JSON = SITE / ".vitepress" / "locales.generated.json"
 
-PACKAGE_URL = "https://pi.dev/packages/@ygncode/pi-web?name=pi-web"
+PACKAGE_URL = "https://github.com/yinniora/yugo-pi"
 
 # Browser/SEO <title> for the home page (titleTemplate:false keeps it verbatim).
-HOME_TITLE = "pi-web - Web UI for Pi (Access pi via Remote, Mobile)"
+HOME_TITLE = "YuGo Pi — independently maintained Mac and mobile workspace"
 
 # Reading order for the sidebar. README becomes the "guide" page per locale.
 DOC_ORDER = [

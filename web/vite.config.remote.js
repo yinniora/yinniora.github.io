@@ -1,8 +1,9 @@
+import { licenseInventory } from './license-inventory.js';
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [svelte(), licenseInventory()],
   base: '/',
   build: {
     outDir: 'dist-remote',

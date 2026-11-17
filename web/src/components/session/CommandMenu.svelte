@@ -34,7 +34,7 @@
   import { openModelUsage, openFork, openDiff } from '../../session/session-modals.svelte.js';
   import { showToast } from '../../shared/toast.js';
   import { sessionTitle } from '../../session/session-title.svelte.js';
-  import { USER_DOCS_URL, TELEGRAM_INVITE_URL } from '../../shared/links.js';
+  import { USER_DOCS_URL, SUPPORT_URL } from '../../shared/links.js';
   import {
     cloneSession,
     forkSession,
@@ -70,10 +70,10 @@
     { kind: 'action', action: 'user-docs', icon: BookOpen, label: 'common.userDocs' },
     {
       kind: 'link',
-      href: TELEGRAM_INVITE_URL,
+      href: SUPPORT_URL,
       external: true,
       icon: Send,
-      label: 'common.telegram',
+      label: 'app.issues',
     },
     { kind: 'link', href: '/schedules', icon: CalendarClock, label: 'schedules.navTitle' },
     { kind: 'link', href: '/settings', icon: Settings, label: 'common.settings', kbd: '⌘,' },

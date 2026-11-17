@@ -1,6 +1,11 @@
 // English — the source of truth for pi-web UI strings and the fallback for every
 // other locale. Keys are dot-namespaced by area. Add new strings here first.
 export default {
+  'app.name': 'YuGo Pi',
+  'app.upstreamName': 'pi-web · YGNCode',
+  'app.variant': 'Independently maintained pi-web variant',
+  'app.upstream': 'Original pi-web project',
+  'app.issues': 'YuGo Pi issues',
   'mobile.home': 'Home',
   'mobile.workspace': 'Your workspace',
   'mobile.workspaceHint': 'Projects and conversations, all in one place.',
@@ -593,14 +598,15 @@ export default {
   'remote.scanInside': 'Scan the QR code shown on your Mac from inside this app.',
   'remote.scan': 'Scan QR code',
   'remote.stopCamera': 'Stop camera',
-  'remote.cameraHint': 'Point the camera at the fresh QR code in Pi → Devices on your Mac.',
+  'remote.cameraHint': 'Point the camera at the fresh QR code in YuGo Pi → Devices on your Mac.',
   'remote.cameraUnavailable':
     'The camera is unavailable. Allow camera access, or paste a pairing link below.',
   'remote.pasteLabel': 'Pairing link',
   'remote.pastePlaceholder': 'Paste the pairing link copied on your Mac',
   'remote.connect': 'Pair and connect',
   'remote.retry': 'Retry connection',
-  'remote.invalidPairing': 'This is not a valid Pi pairing link. Create a fresh code on the Mac.',
+  'remote.invalidPairing':
+    'This is not a valid YuGo Pi pairing link. Create a fresh code on the Mac.',
   'remote.expiredPairing':
     'This pairing code has expired. Authenticate on the Mac to create another.',
   'remote.transport': 'Connection',
@@ -618,9 +624,9 @@ export default {
   'remote.startFailed': 'The secure app could not start. Check the connection, then retry.',
   'devices.copyPairLink': 'Copy pairing link',
   'devices.appPairHint':
-    'In the Home Screen Pi app, tap Scan QR code. You can also copy this link and paste it inside that app.',
+    'In the Home Screen YuGo Pi app, tap Scan QR code. You can also copy this link and paste it inside that app.',
   'remote.pairFirst':
-    'On your Mac, open Pi Chat → Devices, authenticate, then scan the single-use QR code.',
+    'On your Mac, open YuGo YuGo Pi → Devices, authenticate, then scan the single-use QR code.',
   'remote.connecting': 'Verifying the Mac and opening an encrypted connection…',
   'remote.denied':
     'This device is not approved or its access was revoked. Authenticate on the Mac and pair again.',
@@ -641,7 +647,7 @@ export default {
   'devices.authHint':
     'Touch ID or Mac account authentication is required every time a new pairing code is created.',
   'devices.qrAlt': 'Single-use device pairing QR code',
-  'devices.scan': 'Scan inside the Pi app on your iPhone',
+  'devices.scan': 'Scan inside the YuGo Pi app on your iPhone',
   'devices.expires': 'Single use · expires in {seconds}s',
   'devices.expired': 'This code has expired. Authenticate on the Mac to create another.',
   'devices.whitelist': 'Approved devices',
@@ -650,7 +656,7 @@ export default {
   'devices.revoked': 'Revoked',
   'devices.revoke': 'Revoke access',
   'devices.confirmRevoke': 'Revoke and disconnect',
-  'devices.macOnly': 'Open Pi Chat on the Mac to add or manage approved devices.',
+  'devices.macOnly': 'Open YuGo Pi on the Mac to add or manage approved devices.',
   'devices.notEnabled': 'Device pairing has not been configured on this installation.',
   'devices.loadFailed': 'The device list could not be loaded. Try again.',
   'devices.macApprovalFailed':
@@ -733,7 +739,8 @@ export default {
   'devices.offline': 'Offline',
   'devices.standalone': 'Home Screen app',
   'devices.browser': 'Browser',
-  'devices.featuresPending': 'System details appear after this device reopens the latest Pi page.',
+  'devices.featuresPending':
+    'System details appear after this device reopens the latest YuGo Pi page.',
   'devices.unknownTime': 'Unknown time',
   'devices.remove': 'Remove device',
   'devices.confirmRemove': 'Remove and disconnect',

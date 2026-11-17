@@ -1,14 +1,14 @@
-# Contributing to pi-web
+# Contributing to YuGo Pi
 
-Thanks for your interest in contributing! pi-web is currently in an **early stage** of development, and we are not actively accepting pull requests right now.
+YuGo Pi is independently maintained at https://github.com/yinniora/yugo-pi.
+Open bugs and feature requests here; upstream maintainers are not responsible
+for this variant. For substantial changes, open an issue to agree on scope.
+Pull requests should target `main`, describe the resulting behavior and include
+relevant validation. Run `make check` before submitting. Preserve the MIT
+license, original attribution and third-party notices. Do not commit credentials,
+pairing QR data, private relay addresses or user conversations.
 
-## How to contribute
-
-**Please open an issue first.** Whether it's a bug report, a feature idea, or a question — start with an issue so we can discuss it before any code is written.
-
-- **Feature requests:** Create an issue describing what you'd like to see. I'll review it and let you know if it's something I want to include at this stage.
-- **Bug reports:** File an issue with steps to reproduce, expected behavior, and what actually happened. I'll respond and triage from there.
-
-If a feature or fix is something I decide to move forward with, I'll invite a pull request at that point.
-
-Thanks for understanding, and I appreciate you taking the time to help make pi-web better!
+Upstream synchronization uses the isolated worktree process in
+[maintenance](docs/maintenance.md). Resolve conflicts explicitly and verify the
+YuGo contracts and mobile/security regressions before merging. Proposing a
+change to the upstream project must follow that project's own contribution rules.

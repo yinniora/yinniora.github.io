@@ -9,7 +9,7 @@ final class PiWindow: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
     func applicationDidFinishLaunching(_ notification: Notification) {
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 850)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: min(1220, screen.width - 60), height: min(820, screen.height - 60)), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Pi Workspace"
+        window.title = "YuGo Pi"
         window.minSize = NSSize(width: 640, height: 480)
         window.center()
         web = WKWebView(frame: .zero)
@@ -26,7 +26,7 @@ final class PiWindow: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
     func installMenu() {
         let menu = NSMenu()
         let app = NSMenuItem(); let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "退出 Pi", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "退出 YuGo Pi", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         app.submenu = appMenu; menu.addItem(app)
         let edit = NSMenuItem(); let editMenu = NSMenu(title: "编辑")
         for (title, selector, key) in [("撤销", "undo:", "z"), ("剪切", "cut:", "x"), ("复制", "copy:", "c"), ("粘贴", "paste:", "v"), ("全选", "selectAll:", "a")] {

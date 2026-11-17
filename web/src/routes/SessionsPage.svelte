@@ -328,7 +328,7 @@
       })
       .catch(() => {});
     const previousTitle = document.title;
-    document.title = window.__PI_REMOTE_CLIENT__ ? 'Pi' : 'Pi Sessions';
+    document.title = t('app.name');
     configureSettingsSync({ fetchImpl: window.fetch.bind(window) });
     setupKeyboardNav({ windowImpl: window, documentImpl: document });
 
@@ -412,7 +412,7 @@
 <!-- eslint-disable svelte/no-at-html-tags -- Lucide icons only -->
 <div class="personal-home">
   <aside class="personal-home-nav" aria-label={t('home.navigation')}>
-    <a class="personal-brand" href="/">Pi<span>Workspace</span></a>
+    <a class="personal-brand" href="/">{t('app.name')}<span>Workspace</span></a>
     <button class="personal-nav-new" onclick={openNewSessionModal}
       >{@html icon(Plus, { size: 18 })}{t('index.startNewSession')}</button
     >
@@ -459,7 +459,7 @@
       />
     {:else}
       <section class="personal-welcome">
-        <div class="personal-eyebrow">Pi <ConnectionStatus /></div>
+        <div class="personal-eyebrow">{t('app.name')} <ConnectionStatus /></div>
         <h1>{t('home.headline')}</h1>
         <form
           class="personal-start-box"

@@ -41,7 +41,9 @@
   }}
 >
   <div class="home-menu-heading">
-    <span><strong>Pi</strong><small>{t('index.title')} · {t('hub.connections')}</small></span
+    <span
+      ><strong>{t('app.name')}</strong><small>{t('index.title')} · {t('hub.connections')}</small
+      ></span
     ><button class="home-menu-close" aria-label={t('common.close')} onclick={onClose}
       >{@html icon(X, { size: 18 })}</button
     >

@@ -136,7 +136,8 @@
 <!-- eslint-disable svelte/no-at-html-tags -- Lucide icons only -->
 <section class="connect-card">
   <div class="connect-brand">
-    Pi <ConnectionStatus fallback={busy ? 'connecting' : 'unpaired'} />
+    {t('app.name')}
+    <ConnectionStatus fallback={busy ? 'connecting' : 'unpaired'} />
   </div>
   <h1>{t('remote.welcome')}</h1>
   <p class="connect-intro">{t('remote.appHint')}</p>

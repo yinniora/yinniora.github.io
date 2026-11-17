@@ -1,3 +1,4 @@
+import { licenseInventory } from './license-inventory.js';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
@@ -15,7 +16,7 @@ import { resolve } from 'node:path';
 // emitted — the snapshot stays a single JS file. TestExportBundleIsSelfContained
 // guards against any live-only module leaking into this graph.
 export default defineConfig({
-  plugins: [svelte({ emitCss: false })],
+  plugins: [svelte({ emitCss: false }), licenseInventory()],
   build: {
     outDir: 'dist-export',
     emptyOutDir: true,
