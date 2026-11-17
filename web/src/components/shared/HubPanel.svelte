@@ -28,7 +28,9 @@
     try {
       const data = await getJSON(view === 'trash' ? '/api/trash' : '/api/connections');
       const nextItems = view === 'trash' ? data.sessions : data.connections;
-      items = Array.isArray(nextItems) ? nextItems : [];
+      items = (Array.isArray(nextItems) ? nextItems : []).filter(
+        (item) => view !== 'connections' || !window.__PI_REMOTE_CLIENT__ || item.kind !== 'local',
+      );
     } catch (e) {
       error = e.message;
     } finally {
@@ -70,13 +72,19 @@
         });
         if (data.clientManaged && window.__PI_REMOTE_CLIENT__) {
           await window.__PI_REMOTE_CLIENT__.reconnect(
-            data.transport === 'remote' ? 'remote' : 'all',
+            data.transport === 'remote'
+              ? 'vps'
+              : data.transport === 'tailscale'
+                ? 'tailscale'
+                : 'auto',
           );
           close();
           return;
         }
         if (!data.url) throw new Error(t('hub.connectionFailed'));
         window.location.assign(data.url);
+      } else if (action === 'pair-again') {
+        window.location.assign('/?pairing=1');
       } else if (action === 'logout') {
         await postJSON('/api/logout', {});
         window.location.assign('/');
@@ -126,6 +134,11 @@
       >
     </header>
     {#if error}<p class="hub-error" role="alert">{error}</p>{/if}
+    {#if view === 'connections' && window.__PI_REMOTE_CLIENT__}<button
+        type="button"
+        class="btn-secondary"
+        onclick={() => run('pair-again')}>{t('remote.repair')}</button
+      >{/if}
     {#if view === 'session'}
       <form
         onsubmit={(e) => {

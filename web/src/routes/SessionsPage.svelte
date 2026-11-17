@@ -283,7 +283,7 @@
 
   onMount(() => {
     const previousTitle = document.title;
-    document.title = 'Pi Sessions';
+    document.title = window.__PI_REMOTE_CLIENT__ ? 'Pi' : 'Pi Sessions';
     configureSettingsSync({ fetchImpl: window.fetch.bind(window) });
     setupKeyboardNav({ windowImpl: window, documentImpl: document });
 
@@ -393,7 +393,7 @@
   </aside>
   <main class="personal-home-main">
     <section class="personal-welcome">
-      <div class="personal-eyebrow">Pi Workspace</div>
+      <div class="personal-eyebrow">Pi</div>
       <h1>{t('home.headline')}</h1>
       <form
         class="personal-start-box"

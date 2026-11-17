@@ -124,6 +124,7 @@ func (s *Server) WrapDevices(next http.Handler, forcedRemote bool) http.Handler 
 func (d *deviceAccess) authorize(ctx context.Context, id string, publicKey json.RawMessage, ticket string) error {
 	var revoked string
 	err := d.db.QueryRowContext(ctx, `SELECT revoked_at FROM approved_devices WHERE id=?`, id).Scan(&revoked)
+	active := err == nil && revoked == ""
 	if ticket == "" {
 		if err != nil || revoked != "" {
 			return fmt.Errorf("device is not approved")
@@ -138,6 +139,10 @@ func (d *deviceAccess) authorize(ctx context.Context, id string, publicKey json.
 	}
 	d.mu.Unlock()
 	if !ok || !d.now().Before(pending.expires) {
+		if active {
+			_, err = d.db.ExecContext(ctx, `UPDATE approved_devices SET last_seen=? WHERE id=?`, d.now().UTC().Format(time.RFC3339Nano), id)
+			return err
+		}
 		return fmt.Errorf("pairing code expired")
 	}
 	stamp := d.now().UTC().Format(time.RFC3339Nano)
@@ -200,7 +205,12 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		writeJSON(w, 200, map[string]any{"enabled": true, "canManage": admin, "devices": out, "currentDevice": auth.ApprovedDeviceID(r)})
+		writeJSON(w, 200, map[string]any{"enabled": true, "canManage": admin, "devices": out, "connection": func() map[string]any {
+			if d.bootstrap != nil {
+				return d.bootstrap()
+			}
+			return nil
+		}(), "currentDevice": auth.ApprovedDeviceID(r)})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -274,6 +284,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	d.tickets[hashDeviceSecret(secret)] = deviceTicket{name: name, expires: expires}
 	d.mu.Unlock()
 	metadata["ticket"] = secret
+	metadata["expiresAt"] = expires.UTC().Format(time.RFC3339)
 	data, _ := json.Marshal(metadata)
 	client.Fragment = "pair=" + base64.RawURLEncoding.EncodeToString(data)
 	writeJSON(w, 200, map[string]any{"url": client.String(), "expiresAt": expires})

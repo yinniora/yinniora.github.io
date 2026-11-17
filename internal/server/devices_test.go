@@ -75,6 +75,19 @@ func TestPairTicketSingleUseExpiryAndRevoke(t *testing.T) {
 	if err := s.devices.authorize(context.Background(), "second", pub, ticket); err == nil {
 		t.Fatal("ticket reused")
 	}
+	if err := s.devices.authorize(context.Background(), "first", pub, ticket); err != nil {
+		t.Fatal("approved device could not recover after a lost enrollment response:", err)
+	}
+	fresh := pair()
+	if err := s.devices.authorize(context.Background(), "first", pub, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.devices.tickets) != 0 {
+		t.Fatal("fresh ticket was not consumed by an already approved device")
+	}
+	if err := s.devices.authorize(context.Background(), "third", pub, fresh); err == nil {
+		t.Fatal("approved device left its fresh ticket usable by another key")
+	}
 	if err := s.devices.authorize(context.Background(), "stranger", pub, ""); err == nil {
 		t.Fatal("unapproved device")
 	}
@@ -89,6 +102,9 @@ func TestPairTicketSingleUseExpiryAndRevoke(t *testing.T) {
 	}
 	if err := s.devices.authorize(context.Background(), "first", pub, ""); err == nil {
 		t.Fatal("revoked key authenticated")
+	}
+	if err := s.devices.authorize(context.Background(), "first", pub, ticket); err == nil {
+		t.Fatal("revoked key recovered using a spent ticket")
 	}
 	ticket = pair()
 	s.devices.now = func() time.Time { return time.Now().Add(4 * time.Minute) }

@@ -9,7 +9,9 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https: wss:; worker-src 'self'; frame-src 'self' blob:; base-uri 'none'; form-action 'self'"
     />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <title>Pi Workspace</title>
+    <title>Pi</title>
+    <meta name="apple-mobile-web-app-title" content="Pi" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <style>
       body {
         margin: 0;
@@ -23,6 +25,7 @@
         min-height: 90dvh;
         padding: 30px;
         text-align: center;
+        box-sizing: border-box;
       }
       #remote-status h1 {
         font-size: 28px;
@@ -35,6 +38,12 @@
       #remote-status[hidden] {
         display: none;
       }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #212121;
+          color: #eee;
+        }
+      }
       .failed p {
         color: #ad4040;
       }
@@ -42,7 +51,7 @@
   </head>
   <body>
     <main id="remote-status">
-      <h1>Pi Workspace</h1>
+      <h1>Pi</h1>
       <p>Preparing a secure connection…</p>
     </main>
     <div id="spa-root"></div>

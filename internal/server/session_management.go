@@ -254,7 +254,7 @@ func configuredConnections() []connection {
 		if u.Scheme != "https" && !(u.Scheme == "http" && privateHTTP) {
 			continue
 		}
-		if v.Kind != "local" && v.Kind != "tailscale" {
+		if v.Kind != "local" && v.Kind != "tailscale" && v.Kind != "auto" {
 			v.Kind = "remote"
 		}
 		v.URL = strings.TrimRight(v.URL, "/")

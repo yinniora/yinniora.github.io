@@ -32,6 +32,17 @@ Clearing browser website data loses that identity and requires another Mac
 approval. Revocation immediately closes active channels and cancels their HTTP
 requests. A remote device cannot generate QR codes or approve another device.
 
+The installed Home Screen app has its own website storage and must enroll inside
+that app, even if the browser was already paired. Its unconnected screen offers
+local camera QR decoding, a copied-link fallback and retry. Camera frames never
+leave the device or enter WebRTC media tracks; the stream stops on cancel,
+successful scan, backgrounding or teardown. A copied link has the same short
+lifetime and one-use rule as the QR. Pairing tickets are removed from the URL
+fragment immediately and are never persisted with the public connection data.
+An already-approved key can recover after losing the enrollment response; a
+spent ticket cannot enroll a different key. Concurrent windows share one
+IndexedDB identity through a serialized creation transaction.
+
 ## Transport
 
 The independent static client verifies **every** SHA-256 fingerprint in SDP
@@ -55,6 +66,13 @@ receives only disposable routing/TURN credentials, SDP and DTLS ciphertext,
 **not** Pi tokens, model keys, device private keys or the Mac identity key.
 Outer HTTPS certificates protect signaling availability and metadata; losing a
 VPS HTTPS key cannot impersonate the pinned inner DTLS identity.
+
+One entry named Pi offers Automatic, Tailscale and VPS preferences. Automatic
+races direct and public signaling and allows direct ICE routes; Tailscale uses
+only the configured private signaling endpoint and no TURN servers; VPS uses
+public signaling and relay-only ICE. Switching routes keeps the same pinned
+identity and device approval. An authenticated metadata refresh can update the
+direct endpoint, but cannot change the pinned Mac identity.
 
 Do not forward a Mac HTTP listener through SSH or serve this client program
 from the VPS. Use a separately controlled HTTPS static host. Remove obsolete

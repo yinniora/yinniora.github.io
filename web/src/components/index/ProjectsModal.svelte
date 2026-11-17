@@ -21,24 +21,31 @@
   let addPath = $state('');
   let deleting = $state(null);
   let deleteFiles = $state(false);
-  let confirmation = $state('');
+  let confirmFiles = $state(false);
   const basename = (path) =>
     String(path).replaceAll('\\', '/').split('/').filter(Boolean).at(-1) || '';
   $effect(() => {
     if (!open) {
       deleting = null;
       deleteFiles = false;
-      confirmation = '';
+      confirmFiles = false;
     }
   });
   function askDelete(project) {
     deleting = project;
     deleteFiles = false;
-    confirmation = '';
+    confirmFiles = false;
   }
   async function deleteProject() {
-    if (!deleting || busy || (deleteFiles && confirmation !== basename(deleting.path))) return;
-    const ok = await onDelete(deleting.path, { deleteFiles, confirmation });
+    if (!deleting || busy) return;
+    if (deleteFiles && !confirmFiles) {
+      confirmFiles = true;
+      return;
+    }
+    const ok = await onDelete(deleting.path, {
+      deleteFiles,
+      confirmation: deleteFiles ? basename(deleting.path) : '',
+    });
     if (ok) deleting = null;
   }
 
@@ -87,8 +94,8 @@
     </div>
     <h2>{t('index.manageProjectsTitle')}</h2>
     {#if deleting}
-      <section class="project-delete-confirm" role="region" aria-label={t('projects.confirmTitle')}>
-        <h3>{t('projects.confirmTitle')}</h3>
+      <section class="project-delete-confirm" aria-label={t('projects.confirmTitle')}>
+        <h3>{t(confirmFiles ? 'projects.confirmFilesTitle' : 'projects.confirmTitle')}</h3>
         <strong>{basename(deleting.path)}</strong>
         <code class="project-delete-path">{deleting.path}</code>
         <p>
@@ -99,29 +106,22 @@
           })}
         </p>
         <p class="project-delete-hint">{t('projects.pauseSchedules')}</p>
-        <label class="project-delete-files"
-          ><input
-            type="checkbox"
-            bind:checked={deleteFiles}
-            disabled={busy || !deleting.canDeleteFiles}
-          />{t('projects.deleteFiles')}</label
-        >
-        <p class="project-delete-hint">
-          {deleteFiles ? t('projects.filesToMacTrash') : t('projects.filesKept')}
-        </p>
-        {#if !deleting.canDeleteFiles}<p class="project-delete-hint">
-            {t('projects.filesUnavailable')}
-          </p>{/if}
-        {#if deleteFiles}
-          <label for="project-delete-name"
-            >{t('projects.typeName', { name: basename(deleting.path) })}</label
+        {#if !confirmFiles}
+          <label class="project-delete-files"
+            ><input
+              type="checkbox"
+              bind:checked={deleteFiles}
+              disabled={busy || !deleting.canDeleteFiles}
+            />{t('projects.deleteFiles')}</label
           >
-          <input
-            id="project-delete-name"
-            autocomplete="off"
-            bind:value={confirmation}
-            disabled={busy}
-          />
+          <p class="project-delete-hint">
+            {deleteFiles ? t('projects.filesToMacTrash') : t('projects.filesKept')}
+          </p>
+          {#if !deleting.canDeleteFiles}<p class="project-delete-hint">
+              {t('projects.filesUnavailable')}
+            </p>{/if}
+        {:else}
+          <p class="project-delete-final-warning">{t('projects.confirmFilesBody')}</p>
         {/if}
         {#if error}<p class="modal-error" role="alert">{error}</p>{/if}
         <div class="project-delete-actions">
@@ -129,14 +129,19 @@
             type="button"
             class="btn-secondary"
             disabled={busy}
-            onclick={() => (deleting = null)}>{t('common.cancel')}</button
+            onclick={() => {
+              if (confirmFiles) confirmFiles = false;
+              else deleting = null;
+            }}>{t('common.cancel')}</button
           >
           <button
             type="button"
             class="project-delete-submit"
-            disabled={busy || (deleteFiles && confirmation !== basename(deleting.path))}
+            disabled={busy}
             onclick={deleteProject}
-            >{busy ? t('projects.deleting') : t('projects.confirmDelete')}</button
+            >{busy
+              ? t('projects.deleting')
+              : t(confirmFiles ? 'projects.confirmFilesDelete' : 'projects.confirmDelete')}</button
           >
         </div>
       </section>

@@ -104,6 +104,10 @@ export default {
     'The entire folder, including subprojects, will move to Mac Trash. Restore it in Finder if needed.',
   'projects.filesUnavailable':
     'This folder is unavailable or protected. You can still remove its project entry and conversations.',
+  'projects.confirmFilesTitle': 'Delete the folder and all its files?',
+  'projects.confirmFilesBody':
+    'The folder above, all subfolders and their files will move to Mac Trash. Confirm once more to continue.',
+  'projects.confirmFilesDelete': 'Confirm folder deletion',
   'projects.typeName': 'Type “{name}” to confirm deleting the folder',
   'projects.confirmDelete': 'Delete project',
   'projects.deleting': 'Deleting…',
@@ -545,6 +549,38 @@ export default {
   'home.headline': 'What would you like to work on?',
   'home.privateWorkspace': 'Your private workspace',
   'home.localFirst': 'Conversations and files stay on your Mac',
+  'remote.welcome': 'Connect to your Mac',
+  'remote.appHint':
+    'Pair once inside this app. Your browser and Home Screen app connect separately.',
+  'remote.scanInside': 'Scan the QR code shown on your Mac from inside this app.',
+  'remote.scan': 'Scan QR code',
+  'remote.stopCamera': 'Stop camera',
+  'remote.cameraHint': 'Point the camera at the fresh QR code in Pi → Devices on your Mac.',
+  'remote.cameraUnavailable':
+    'The camera is unavailable. Allow camera access, or paste a pairing link below.',
+  'remote.pasteLabel': 'Pairing link',
+  'remote.pastePlaceholder': 'Paste the pairing link copied on your Mac',
+  'remote.connect': 'Pair and connect',
+  'remote.retry': 'Retry connection',
+  'remote.invalidPairing': 'This is not a valid Pi pairing link. Create a fresh code on the Mac.',
+  'remote.expiredPairing':
+    'This pairing code has expired. Authenticate on the Mac to create another.',
+  'remote.transport': 'Connection',
+  'remote.auto': 'Automatic',
+  'remote.tailscale': 'Tailscale',
+  'remote.vps': 'VPS',
+  'remote.autoHint': 'Prefer a direct connection and fall back to VPS relay.',
+  'remote.tailscaleHint': 'Enable Tailscale on both the Mac and iPhone.',
+  'remote.tailscaleUnavailable':
+    'The Mac has not enabled its Tailscale HTTPS entry yet. Use Automatic or VPS for now.',
+  'remote.vpsHint': 'Connect through the encrypted VPS relay; Tailscale is not required.',
+  'remote.storageUnavailable':
+    'This app could not save its device identity. Allow website storage and try again.',
+  'remote.repair': 'Pair this app again',
+  'remote.startFailed': 'The secure app could not start. Check the connection, then retry.',
+  'devices.copyPairLink': 'Copy pairing link',
+  'devices.appPairHint':
+    'In the Home Screen Pi app, tap Scan QR code. You can also copy this link and paste it inside that app.',
   'remote.pairFirst':
     'On your Mac, open Pi Chat → Devices, authenticate, then scan the single-use QR code.',
   'remote.connecting': 'Verifying the Mac and opening an encrypted connection…',

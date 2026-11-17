@@ -20,19 +20,29 @@ it('offers deletion for discovered projects and keeps files by default', async (
   await fireEvent.click(getByRole('button', { name: 'Delete project', exact: true }));
   expect(onDelete).toHaveBeenCalledWith('/work/demo', { deleteFiles: false, confirmation: '' });
 });
-it('requires the project name before deleting files and can cancel without mutation', async () => {
-  const onDelete = vi.fn();
+it('confirms folder and child-file deletion twice without a text input', async () => {
+  const onDelete = vi.fn().mockResolvedValue(true);
   const { getByRole, getByLabelText, container } = render(ProjectsModal, {
     props: { open: true, projects: [project], onDelete },
   });
   await fireEvent.click(getByRole('button', { name: 'Delete project demo' }));
   await fireEvent.click(getByLabelText('Also delete the project files'));
-  const confirm = getByRole('button', { name: 'Delete project', exact: true });
-  expect(confirm.disabled).toBe(true);
-  await fireEvent.input(container.querySelector('#project-delete-name'), {
-    target: { value: 'demo' },
+  expect(container.querySelector('#project-delete-name')).toBeNull();
+  await fireEvent.click(getByRole('button', { name: 'Delete project', exact: true }));
+  expect(onDelete).not.toHaveBeenCalled();
+  expect(getByRole('heading', { name: 'Delete the folder and all its files?' })).toBeTruthy();
+  await fireEvent.click(getByRole('button', { name: 'Confirm folder deletion' }));
+  expect(onDelete).toHaveBeenCalledWith('/work/demo', { deleteFiles: true, confirmation: 'demo' });
+});
+it('can cancel the second confirmation without deleting anything', async () => {
+  const onDelete = vi.fn();
+  const { getByRole, getByLabelText } = render(ProjectsModal, {
+    props: { open: true, projects: [project], onDelete },
   });
-  expect(confirm.disabled).toBe(false);
+  await fireEvent.click(getByRole('button', { name: 'Delete project demo' }));
+  await fireEvent.click(getByLabelText('Also delete the project files'));
+  await fireEvent.click(getByRole('button', { name: 'Delete project', exact: true }));
   await fireEvent.click(getByRole('button', { name: 'Cancel' }));
   expect(onDelete).not.toHaveBeenCalled();
+  expect(getByLabelText('Also delete the project files')).toBeTruthy();
 });

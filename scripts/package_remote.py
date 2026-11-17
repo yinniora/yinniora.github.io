@@ -14,9 +14,10 @@ worker = (ROOT / 'web/remote-sw.js').read_text().replace('pi-remote-personal-1',
 for name in ['icon.svg', 'icon-maskable.svg']:
     shutil.copy2(ROOT / 'internal/ui/embedded/assets' / name, OUT / name)
 (OUT / 'manifest.webmanifest').write_text(json.dumps({
-    'name': 'Pi Workspace', 'short_name': 'Pi', 'start_url': '/', 'scope': '/',
+    'id': '/', 'name': 'Pi', 'short_name': 'Pi', 'start_url': '/', 'scope': '/',
     'display': 'standalone', 'background_color': '#ffffff', 'theme_color': '#ffffff',
     'icons': [{'src': '/icon.svg', 'sizes': 'any', 'type': 'image/svg+xml'}],
 }, indent=2) + '\n')
+shutil.copy2(ROOT / 'web/node_modules/jsqr/LICENSE', OUT / 'jsqr-LICENSE.txt')
 (OUT / '.nojekyll').touch()
 print('Packaged independent client', version, '; no runtime configuration or credentials included.')

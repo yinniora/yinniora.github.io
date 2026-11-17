@@ -56,21 +56,31 @@ export async function getDeviceIdentity(fingerprint) {
     request.onerror = () => reject(request.error);
   });
   const key = normalizedFingerprint(fingerprint);
-  let identity = await new Promise((resolve, reject) => {
-    const request = db.transaction('keys').objectStore('keys').get(key);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+  const read = () =>
+    new Promise((resolve, reject) => {
+      const request = db.transaction('keys').objectStore('keys').get(key);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  let identity = await read();
   if (!identity) {
-    identity = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, [
-      'sign',
-      'verify',
-    ]);
-    await new Promise((resolve, reject) => {
+    const candidate = await crypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['sign', 'verify'],
+    );
+    identity = await new Promise((resolve, reject) => {
       const transaction = db.transaction('keys', 'readwrite');
-      transaction.objectStore('keys').put(identity, key);
-      transaction.oncomplete = resolve;
+      const store = transaction.objectStore('keys');
+      const request = store.get(key);
+      let winner;
+      request.onsuccess = () => {
+        winner = request.result || candidate;
+        if (!request.result) store.put(candidate, key);
+      };
+      transaction.oncomplete = () => resolve(winner);
       transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('Device storage failed'));
     });
   }
   db.close();

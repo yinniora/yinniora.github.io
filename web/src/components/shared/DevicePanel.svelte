@@ -3,6 +3,7 @@
   import QRCode from 'qrcode';
   import { icon, Plus, Trash2, Link2 } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
+  import { copyToClipboard } from '../../shared/clipboard.js';
   import { getJSON, postJSON } from '../../shared/api.js';
   import FullScreenSheet from '../session/FullScreenSheet.svelte';
 
@@ -14,6 +15,8 @@
   let error = $state('');
   let name = $state('iPhone');
   let qr = $state('');
+  let pairLink = $state('');
+  let copied = $state(false);
   let expires = $state(0);
   let now = $state(Date.now());
   let confirmRevoke = $state('');
@@ -29,6 +32,8 @@
     open = true;
     error = '';
     qr = '';
+    pairLink = '';
+    copied = false;
     confirmRevoke = '';
     try {
       await refresh();
@@ -40,8 +45,11 @@
     busy = true;
     error = '';
     qr = '';
+    pairLink = '';
+    copied = false;
     try {
       const data = await postJSON('/api/devices', { action: 'pair', name });
+      pairLink = data.url;
       qr = await QRCode.toDataURL(data.url, { width: 640, margin: 2, errorCorrectionLevel: 'M' });
       expires = Date.parse(data.expiresAt);
       now = Date.now();
@@ -108,6 +116,13 @@
           {#if remaining > 0}<img src={qr} alt={t('devices.qrAlt')} /><strong
               >{t('devices.scan')}</strong
             ><span>{t('devices.expires', { seconds: remaining })}</span>
+            <p>{t('devices.appPairHint')}</p>
+            <button
+              type="button"
+              onclick={async () => {
+                copied = await copyToClipboard(pairLink);
+              }}>{copied ? t('common.copied') : t('devices.copyPairLink')}</button
+            >
           {:else}<p>{t('devices.expired')}</p>{/if}
         </div>
       {/if}

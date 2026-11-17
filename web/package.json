@@ -15,6 +15,7 @@
   "dependencies": {
     "@pierre/diffs": "^1.2.10",
     "highlight.js": "latest",
+    "jsqr": "1.4.0",
     "lucide": "^1.17.0",
     "marked": "latest",
     "qrcode": "1.5.4"
@@ -27,6 +28,7 @@
     "@testing-library/user-event": "^14.6.1",
     "eslint": "10.15.0",
     "eslint-plugin-svelte": "3.19.0",
+    "fake-indexeddb": "6.2.8",
     "globals": "17.6.0",
     "jsdom": "latest",
     "knip": "^6.16.0",

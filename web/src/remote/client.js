@@ -1,4 +1,5 @@
 import { t } from '../shared/i18n.js';
+import { normalizeTransport, saveRemoteConfig, TRANSPORT_KEY } from './config.js';
 import {
   base64ToBytes,
   bytesToBase64,
@@ -13,8 +14,9 @@ const originalFetch = window.fetch.bind(window);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class RemoteClient {
-  constructor(config) {
+  constructor(config, { preference = 'auto' } = {}) {
     this.config = validateRemoteConfig(config);
+    this.preference = normalizeTransport(preference);
     this.pending = new Map();
     this.connecting = null;
     this.peer = null;
@@ -23,6 +25,10 @@ export class RemoteClient {
   }
 
   async connect() {
+    if (['failed', 'closed'].includes(this.peer?.connectionState)) {
+      this.peer.close();
+      this.authorized = false;
+    }
     if (this.channel?.readyState === 'open' && this.authorized) return;
     if (this.blocked) throw new Error(t('remote.denied'));
     if (this.connecting) return this.connecting;
@@ -33,40 +39,57 @@ export class RemoteClient {
   }
 
   async openConnection() {
-    const identity = await getDeviceIdentity(this.config.fingerprint);
-    let iceServers = [];
+    if (this.preference === 'tailscale' && !this.config.directUrl) {
+      const error = new Error(t('remote.tailscaleUnavailable'));
+      error.code = 'tailscaleUnavailable';
+      throw error;
+    }
+    let identity;
     try {
-      const response = await originalFetch(this.config.iceUrl, {
-        cache: 'no-store',
-        credentials: 'omit',
-        redirect: 'error',
-        signal: AbortSignal.timeout(8000),
-      });
-      const reader = response.body.getReader();
-      const chunks = [];
-      let size = 0;
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        size += value.length;
-        if (size > 65536) {
-          await reader.cancel();
-          throw new Error('ICE response too large');
-        }
-        chunks.push(value);
-      }
-      const data = JSON.parse(await new Blob(chunks).text());
-      iceServers = validatedICEServers(data, new URL(this.config.iceUrl).hostname);
+      identity = await getDeviceIdentity(this.config.fingerprint);
     } catch {
-      /* Direct candidates may still connect over Tailscale or LAN. */
+      const error = new Error(t('remote.storageUnavailable'));
+      error.code = 'storageUnavailable';
+      throw error;
+    }
+    let iceServers = [];
+    if (this.preference !== 'tailscale') {
+      try {
+        const response = await originalFetch(this.config.iceUrl, {
+          cache: 'no-store',
+          credentials: 'omit',
+          redirect: 'error',
+          signal: AbortSignal.timeout(8000),
+        });
+        const reader = response.body.getReader();
+        const chunks = [];
+        let size = 0;
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          size += value.length;
+          if (size > 65536) {
+            await reader.cancel();
+            throw new Error('ICE response too large');
+          }
+          chunks.push(value);
+        }
+        const data = JSON.parse(await new Blob(chunks).text());
+        iceServers = validatedICEServers(data, new URL(this.config.iceUrl).hostname);
+      } catch {
+        /* Direct candidates may still connect over Tailscale or LAN. */
+      }
     }
     const peer = new RTCPeerConnection({
-      iceServers,
-      iceTransportPolicy: this.preference === 'remote' ? 'relay' : 'all',
+      iceServers: this.preference === 'tailscale' ? [] : iceServers,
+      iceTransportPolicy: this.preference === 'vps' ? 'relay' : 'all',
     });
     const channel = peer.createDataChannel('pi-workspace-v1', { ordered: true });
     this.peer = peer;
     this.channel = channel;
+    peer.onconnectionstatechange = () => {
+      if (peer.connectionState === 'failed') peer.close();
+    };
     this.authorized = false;
     let socket;
     const approved = new Promise((resolve, reject) => {
@@ -100,7 +123,7 @@ export class RemoteClient {
           clearTimeout(timeout);
           this.authorized = true;
           delete this.config.ticket;
-          localStorage.setItem('pi-remote:config-v1', JSON.stringify(this.config));
+          saveRemoteConfig(this.config);
           if (location.hash.startsWith('#pair='))
             history.replaceState({}, '', location.pathname + location.search);
           resolve();
@@ -124,9 +147,11 @@ export class RemoteClient {
     approved.catch(() => {});
     try {
       const endpoints =
-        this.config.directUrl && this.preference !== 'remote'
-          ? [this.config.directUrl, this.config.signalUrl]
-          : [this.config.signalUrl];
+        this.preference === 'tailscale'
+          ? [this.config.directUrl]
+          : this.config.directUrl && this.preference === 'auto'
+            ? [this.config.directUrl, this.config.signalUrl]
+            : [this.config.signalUrl];
       const sockets = [];
       try {
         socket = await Promise.any(
@@ -192,6 +217,8 @@ export class RemoteClient {
     } catch (error) {
       peer.close();
       socket?.close();
+      if (error instanceof AggregateError)
+        throw new Error(t('remote.relayFailed'), { cause: error });
       throw error;
     }
   }
@@ -277,7 +304,10 @@ export class RemoteClient {
   }
 
   reconnect(preference = 'all') {
-    this.preference = preference;
+    this.preference = normalizeTransport(preference);
+    try {
+      localStorage.setItem(TRANSPORT_KEY, this.preference);
+    } catch {}
     this.peer?.close();
     this.socket?.close();
     return this.connect();
