@@ -19,6 +19,7 @@ import (
 	"pi-web/internal/agentdir"
 	"pi-web/internal/auth"
 	"pi-web/internal/chatqueue"
+	"pi-web/internal/relay"
 	"pi-web/internal/render"
 	"pi-web/internal/rpc"
 	"pi-web/internal/schedules"
@@ -38,6 +39,7 @@ const globalSessID = "__all__"
 // list (which depends on a process-wide cache), and the chat sender (which
 // owns rpc workers).
 type Deps struct {
+	RemoteControl       *relay.Controller
 	TrashProjectFiles   func(context.Context, string) (string, error)
 	AgentDir            string
 	SessionsDir         string
@@ -68,6 +70,7 @@ type Deps struct {
 // Server holds runtime state — connected SSE clients and last-seen modtimes
 // per session file. Construct via New; register HTTP routes via Register.
 type Server struct {
+	remoteControl         *relay.Controller
 	sessionManagementMu   sync.Mutex
 	trashProjectFiles     func(context.Context, string) (string, error)
 	agentDir              string
@@ -199,6 +202,10 @@ func New(deps Deps) (*Server, error) {
 			return nil, fmt.Errorf("initialize device whitelist: %w", deviceErr)
 		}
 		s.devices.bootstrap = deps.RemoteBootstrap
+		s.remoteControl = deps.RemoteControl
+		if s.remoteControl != nil {
+			s.devices.changed = s.remoteControl.SyncDevices
+		}
 	}
 	s.schedules.Now = now
 	s.chatQueue.Now = now
@@ -347,6 +354,7 @@ func (s *Server) startTask(task func(context.Context)) bool {
 // middleware from Deps.
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/devices", s.auth.Wrap(s.handleDevices))
+	mux.HandleFunc("/api/remote-settings", s.auth.Wrap(s.handleRemoteSettings))
 	mux.HandleFunc("/api/trash", s.auth.Wrap(s.handleTrash))
 	mux.HandleFunc("/api/export-markdown", s.auth.Wrap(s.visibleSession(s.handleMarkdownExport)))
 	mux.HandleFunc("/api/connections", s.auth.Wrap(s.handleConnections))
@@ -373,6 +381,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/label-session", s.auth.Wrap(s.visibleSession(s.handleLabelSessionEntry)))
 	mux.HandleFunc("/api/recent-locations", s.auth.Wrap(s.visibleSession(s.handleRecentLocations)))
 	mux.HandleFunc("/api/projects", s.getPostHandler(s.handleApiProjects, s.handleUpdateProject))
+	mux.HandleFunc("/api/project-folders", s.auth.Wrap(s.handleProjectFolders))
 	mux.HandleFunc("/api/files", s.auth.Wrap(s.visibleSession(s.handleApiFiles)))
 	mux.HandleFunc("/api/assets", s.auth.Wrap(s.visibleSession(s.handleAssets)))
 	mux.HandleFunc("/api/asset", s.auth.Wrap(s.visibleSession(s.handleAsset)))

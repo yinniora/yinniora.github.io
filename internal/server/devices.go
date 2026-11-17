@@ -24,11 +24,18 @@ const deviceSchema = `CREATE TABLE IF NOT EXISTS approved_devices (
  created_at TEXT NOT NULL, last_seen TEXT NOT NULL, revoked_at TEXT NOT NULL DEFAULT ''
 )`
 
+type deviceFeatures struct {
+	OS      string `json:"os"`
+	Browser string `json:"browser"`
+	App     string `json:"app"`
+}
+
 type deviceTicket struct {
 	name    string
 	expires time.Time
 }
 type deviceAccess struct {
+	changed    func()
 	db         *sql.DB
 	approve    func(context.Context, string) error
 	bootstrap  func() map[string]any
@@ -43,7 +50,11 @@ func (s *Server) AuthorizeRemoteDevice(ctx context.Context, id string, publicKey
 	if s.devices == nil {
 		return fmt.Errorf("device authentication is disabled")
 	}
-	return s.devices.authorize(ctx, id, publicKey, ticket)
+	err := s.devices.authorize(ctx, id, publicKey, ticket)
+	if err == nil && s.devices.changed != nil {
+		s.devices.changed()
+	}
+	return err
 }
 func (s *Server) WatchRemoteDevice(id string, closePeer func()) func() {
 	if s.devices == nil {
@@ -56,6 +67,16 @@ func (s *Server) WatchRemoteDevice(id string, closePeer func()) func() {
 func newDeviceAccess(db *sql.DB, approve func(context.Context, string) error) (*deviceAccess, error) {
 	if _, err := db.Exec(deviceSchema); err != nil {
 		return nil, err
+	}
+	// Existing installations keep their approved keys and enrollment times.
+	var columns int
+	if err := db.QueryRow(`SELECT count(*) FROM pragma_table_info('approved_devices') WHERE name='features'`).Scan(&columns); err != nil {
+		return nil, err
+	}
+	if columns == 0 {
+		if _, err := db.Exec(`ALTER TABLE approved_devices ADD COLUMN features TEXT NOT NULL DEFAULT '{}'`); err != nil {
+			return nil, err
+		}
 	}
 	return &deviceAccess{db: db, approve: approve, tickets: make(map[string]deviceTicket), active: make(map[string]map[string]func()), now: time.Now}, nil
 }
@@ -122,6 +143,8 @@ func (s *Server) WrapDevices(next http.Handler, forcedRemote bool) http.Handler 
 }
 
 func (d *deviceAccess) authorize(ctx context.Context, id string, publicKey json.RawMessage, ticket string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	var revoked string
 	err := d.db.QueryRowContext(ctx, `SELECT revoked_at FROM approved_devices WHERE id=?`, id).Scan(&revoked)
 	active := err == nil && revoked == ""
@@ -132,12 +155,10 @@ func (d *deviceAccess) authorize(ctx context.Context, id string, publicKey json.
 		_, err = d.db.ExecContext(ctx, `UPDATE approved_devices SET last_seen=? WHERE id=?`, d.now().UTC().Format(time.RFC3339Nano), id)
 		return err
 	}
-	d.mu.Lock()
 	pending, ok := d.tickets[hashDeviceSecret(ticket)]
 	if ok {
 		delete(d.tickets, hashDeviceSecret(ticket))
 	}
-	d.mu.Unlock()
 	if !ok || !d.now().Before(pending.expires) {
 		if active {
 			_, err = d.db.ExecContext(ctx, `UPDATE approved_devices SET last_seen=? WHERE id=?`, d.now().UTC().Format(time.RFC3339Nano), id)
@@ -169,64 +190,119 @@ func (d *deviceAccess) watch(id string, closePeer func()) func() {
 	return func() { d.mu.Lock(); delete(d.active[id], key); d.mu.Unlock() }
 }
 func (d *deviceAccess) revoke(id string) error {
-	if _, err := d.db.Exec(`UPDATE approved_devices SET revoked_at=? WHERE id=?`, d.now().UTC().Format(time.RFC3339Nano), id); err != nil {
+	return d.remove(id, false)
+}
+
+func (d *deviceAccess) remove(id string, forget bool) error {
+	d.mu.Lock()
+	query := `UPDATE approved_devices SET revoked_at=? WHERE id=?`
+	args := []any{d.now().UTC().Format(time.RFC3339Nano), id}
+	if forget {
+		query, args = `DELETE FROM approved_devices WHERE id=?`, []any{id}
+	}
+	if _, err := d.db.Exec(query, args...); err != nil {
+		d.mu.Unlock()
 		return err
 	}
-	d.mu.Lock()
 	closers := d.active[id]
 	delete(d.active, id)
 	d.mu.Unlock()
 	for _, closePeer := range closers {
 		closePeer()
 	}
+	if d.changed != nil {
+		d.changed()
+	}
 	return nil
 }
 
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if s.devices == nil {
 		writeJSON(w, 200, map[string]any{"enabled": false, "canManage": false, "devices": []any{}})
 		return
 	}
 	d := s.devices
+	connection := map[string]any{}
+	if d.bootstrap != nil {
+		connection = d.bootstrap()
+	}
+	signal, _ := url.Parse(fmt.Sprint(connection["signalUrl"]))
+	ice, _ := url.Parse(fmt.Sprint(connection["iceUrl"]))
+	canPair := signal != nil && ice != nil && signal.Scheme == "wss" && ice.Scheme == "https" && signal.Host != "" && signal.Host == ice.Host
 	admin := localDeviceAdmin(r)
 	if r.Method == http.MethodGet {
-		out := []map[string]string{}
+		out := []map[string]any{}
 		if admin {
-			rows, err := d.db.Query(`SELECT id,name,created_at,last_seen,revoked_at FROM approved_devices ORDER BY created_at DESC`)
+			d.mu.Lock()
+			rows, err := d.db.Query(`SELECT id,name,created_at,last_seen,features FROM approved_devices WHERE revoked_at='' ORDER BY created_at DESC,id`)
 			if err != nil {
+				d.mu.Unlock()
 				writeJSONError(w, 500, "cannot read device whitelist")
 				return
 			}
-			defer rows.Close()
 			for rows.Next() {
-				var id, name, created, seen, revoked string
-				if rows.Scan(&id, &name, &created, &seen, &revoked) == nil {
-					out = append(out, map[string]string{"id": id, "name": name, "createdAt": created, "lastSeen": seen, "revokedAt": revoked})
+				var id, name, created, seen, raw string
+				if rows.Scan(&id, &name, &created, &seen, &raw) == nil {
+					var features deviceFeatures
+					_ = json.Unmarshal([]byte(raw), &features)
+					out = append(out, map[string]any{"id": id, "name": name, "createdAt": created, "lastSeen": seen, "revokedAt": "", "features": features, "connected": len(d.active[id]) > 0})
 				}
 			}
-		}
-		writeJSON(w, 200, map[string]any{"enabled": true, "canManage": admin, "devices": out, "connection": func() map[string]any {
-			if d.bootstrap != nil {
-				return d.bootstrap()
+			readErr := rows.Err()
+			_ = rows.Close()
+			d.mu.Unlock()
+			if readErr != nil {
+				writeJSONError(w, 500, "cannot read device whitelist")
+				return
 			}
-			return nil
-		}(), "currentDevice": auth.ApprovedDeviceID(r)})
+		}
+		writeJSON(w, 200, map[string]any{"enabled": true, "canManage": admin, "canPair": canPair, "devices": out, "connection": connection, "currentDevice": auth.ApprovedDeviceID(r)})
 		return
 	}
 	if r.Method != http.MethodPost {
 		writeJSONError(w, 405, "method not allowed")
 		return
 	}
+	var body struct {
+		Action, Name, ID string
+		Features         deviceFeatures `json:"features"`
+	}
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	if body.Action == "identify" {
+		id := auth.ApprovedDeviceID(r)
+		if id == "" || len(body.Features.OS) > 64 || len(body.Features.Browser) > 64 || (body.Features.App != "browser" && body.Features.App != "standalone") || strings.ContainsAny(body.Features.OS+body.Features.Browser, "\r\n\x00") {
+			writeJSONError(w, 403, "invalid device features")
+			return
+		}
+		raw, _ := json.Marshal(body.Features)
+		d.mu.Lock()
+		result, err := d.db.ExecContext(r.Context(), `UPDATE approved_devices SET features=? WHERE id=? AND revoked_at=''`, string(raw), id)
+		d.mu.Unlock()
+		if err != nil {
+			writeJSONError(w, 500, "cannot update device features")
+			return
+		}
+		count, _ := result.RowsAffected()
+		if count == 0 {
+			writeJSONError(w, 403, "device is not approved")
+			return
+		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+		return
+	}
 	if !admin {
 		writeJSONError(w, 403, "Device approval is available only on the Mac itself.")
 		return
 	}
-	var body struct{ Action, Name, ID string }
-	if !decodeJSONBody(w, r, &body) {
-		return
-	}
-	if body.Action == "revoke" {
-		if d.revoke(body.ID) != nil {
+	if body.Action == "revoke" || body.Action == "delete" {
+		if body.ID == "" || len(body.ID) > 128 {
+			writeJSONError(w, 400, "invalid device")
+			return
+		}
+		if d.remove(body.ID, body.Action == "delete") != nil {
 			writeJSONError(w, 500, "cannot revoke device")
 			return
 		}
@@ -239,6 +315,10 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	}
 	if d.approve == nil || d.bootstrap == nil {
 		writeJSONError(w, 403, "Mac system authentication is not configured; no pairing code was created.")
+		return
+	}
+	if !canPair {
+		writeJSONError(w, 409, "Configure a verified remote server before pairing.")
 		return
 	}
 	if !d.approvalMu.TryLock() {
@@ -284,6 +364,11 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	d.tickets[hashDeviceSecret(secret)] = deviceTicket{name: name, expires: expires}
 	d.mu.Unlock()
 	metadata["ticket"] = secret
+	if s.remoteControl != nil {
+		if ticket := s.remoteControl.EnrollmentTicket(); ticket != "" {
+			metadata["relayTicket"] = ticket
+		}
+	}
 	metadata["expiresAt"] = expires.UTC().Format(time.RFC3339)
 	data, _ := json.Marshal(metadata)
 	client.Fragment = "pair=" + base64.RawURLEncoding.EncodeToString(data)

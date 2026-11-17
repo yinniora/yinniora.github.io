@@ -10,7 +10,7 @@ it('provides scanning, paste and all transport choices when this app has no pair
   const { getByRole, getByLabelText } = render(RemoteConnect, { props: { onConnect: vi.fn() } });
   expect(getByRole('button', { name: 'Scan QR code' })).toBeTruthy();
   expect(getByLabelText('Pairing link')).toBeTruthy();
-  for (const name of ['Automatic', 'Tailscale', 'VPS'])
+  for (const name of ['Automatic', 'Prefer P2P', 'Relay'])
     expect(getByRole('radio', { name })).toBeTruthy();
 });
 it('can pair inside the current app using a copied Mac link', async () => {

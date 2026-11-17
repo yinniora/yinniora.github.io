@@ -1,4 +1,5 @@
 <script>
+  import MacFolderPicker from '../shared/MacFolderPicker.svelte';
   import { t } from '../../shared/i18n.js';
 
   let {
@@ -53,6 +54,7 @@
         <button type="button" class="recent-chip" onclick={() => chooseRecent(loc)}>{loc}</button>
       {/each}
     </div>
+    <label class="mac-path-label" for="sessionPath">{t('folders.pathLabel')}</label>
     <input
       type="text"
       id="sessionPath"
@@ -60,6 +62,7 @@
       bind:value={path}
       onkeydown={handleKeydown}
     />
+    <MacFolderPicker value={path} disabled={creating} onSelect={(folder) => (path = folder)} />
     <div class="modal-actions">
       <button class="btn-secondary" id="cancelBtn" type="button" onclick={onClose}
         >{t('common.cancel')}</button

@@ -27,7 +27,10 @@ no custom CA or iPhone certificate profile to install. Backing up or replacing
 this identity is a Mac administration task; replacing it requires re-pairing.
 
 The browser generates a non-extractable P-256 private CryptoKey in IndexedDB.
-The Mac stores its public key, device name and approval/revocation timestamps.
+The Mac stores its public key, device name, precise enrollment/connection times
+and coarse system/browser/app labels. Full user agents, hardware models and
+locations are not collected. Removed devices disappear from the list and lose
+Mac and relay access.
 Clearing browser website data loses that identity and requires another Mac
 approval. Revocation immediately closes active channels and cancels their HTTP
 requests. A remote device cannot generate QR codes or approve another device.
@@ -64,7 +67,8 @@ mutating requests automatically.
 ICE prefers available direct LAN/Tailscale routes. TURN over UDP or TCP is the
 fallback. The client accepts TURN instructions only for the configured relay
 host and port. The VPS runs the small `pi-relay` signaling broker and Coturn. It
-receives only disposable routing/TURN credentials, SDP and DTLS ciphertext,
+receives only public device-key IDs/proofs, disposable routing/TURN credentials,
+SDP and DTLS ciphertext,
 **not** Pi tokens, model keys, device private keys or the Mac identity key.
 Outer HTTPS certificates protect signaling availability and metadata; losing a
 VPS HTTPS key cannot impersonate the pinned inner DTLS identity.
@@ -100,7 +104,10 @@ indexed workspaces, and register only the installed copies with LaunchServices.
 
 Mac environment variables: `PI_WEB_DEVICE_AUTH`, `PI_WEB_PAIR_APPROVER`,
 `PI_WEB_REMOTE_CLIENT_URL`, `PI_WEB_REMOTE_SIGNAL_URL`, `PI_WEB_REMOTE_ICE_URL`,
-`PI_WEB_REMOTE_TURN_IP`, `PI_WEB_REMOTE_TURN_SECRET`, `PI_WEB_RELAY_HOST_TOKEN`.
+`PI_WEB_REMOTE_TURN_IP`, `PI_WEB_REMOTE_TURN_SECRET`, `PI_WEB_RELAY_HOST_TOKEN`,
+`PI_WEB_RELAY_CLIENT_SECRET`. Mac-authenticated server changes are stored
+privately in `remote/connection.json` and applied without replacing the Mac
+identity. See [self-hosted remote setup](self-hosted-remote.md).
 Optional `PI_WEB_PROJECT_TRASH_HELPER` points to the native `Contents/Helpers/project-trash` executable inside Pi Chat. `PI_WEB_PROTECTED_PATHS` is an OS path-list of additional runtime/configuration locations whose ancestors must not be moved by project deletion. The helper moves folders to Finder Trash; no shell or UI scripting is used.
 `PI_WEB_REMOTE_DIRECT_URL` is an optional trusted HTTPS/WSS direct signaling
 endpoint. Point Tailscale Serve at the separate signaling-only loopback listener
@@ -109,7 +116,12 @@ The browser races direct and public signaling, so Tailscale can work even when
 the VPS is offline. Keep all credentials in local mode-0600 runtime configuration.
 
 Broker variables: `PI_RELAY_ROOM`, `PI_RELAY_HOST_TOKEN`, `PI_RELAY_TURN_SECRET`,
-`PI_RELAY_PUBLIC_IP`, `PI_RELAY_CLIENT_ORIGIN`. The service binds loopback
+`PI_RELAY_PUBLIC_IP`, `PI_RELAY_CLIENT_ORIGIN`, `PI_RELAY_CLIENT_SECRET`.
+The broker requires device ECDSA challenge proofs before signaling and signed,
+replay-protected requests before issuing TURN credentials. The Mac synchronizes
+approved key IDs over its authenticated host connection. New pairing receives a
+separate short-lived relay capability; the Mac pairing secret never reaches the
+relay. See [self-hosted remote setup](self-hosted-remote.md). The service binds loopback
 127.0.0.1:43120 behind HTTPS; the room is a high-entropy routing identifier.
 Coturn must use short-lived REST authentication, allocation/bandwidth quotas,
 and deny loopback/private/link-local peer destinations. Do not enable a public

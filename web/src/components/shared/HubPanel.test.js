@@ -115,3 +115,34 @@ it('offers permanent deletion directly in the session panel with confirmation', 
   await fireEvent.click(view.getByRole('button', { name: 'Cancel' }));
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it('switches transport modes on the same phone entry instead of disabling every same-origin link', async () => {
+  const reconnect = vi.fn().mockResolvedValue();
+  vi.stubGlobal('__PI_REMOTE_CLIENT__', { preference: 'auto', reconnect });
+  const url = location.origin;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (path, options) =>
+        new Response(
+          JSON.stringify(
+            options?.method === 'POST'
+              ? { clientManaged: true, transport: 'remote' }
+              : {
+                  connections: [
+                    { id: 'auto', kind: 'auto', url },
+                    { id: 'p2p', kind: 'tailscale', url },
+                    { id: 'relay', kind: 'remote', url },
+                  ],
+                },
+          ),
+        ),
+    ),
+  );
+  const view = render(HubPanel);
+  await open({ view: 'connections' });
+  const relay = await view.findByRole('button', { name: /^Relay/ });
+  expect(relay.disabled).toBe(false);
+  await fireEvent.click(relay);
+  await waitFor(() => expect(reconnect).toHaveBeenCalledWith('vps'));
+});

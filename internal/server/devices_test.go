@@ -123,3 +123,104 @@ func TestRemoteHTTPGatedEvenWithForwardedLoopback(t *testing.T) {
 		t.Fatalf("remote HTTP allowed: %d", w.Code)
 	}
 }
+
+func TestDeviceDetailsAndRemoval(t *testing.T) {
+	s := deviceTestServer(t, nil)
+	stamp := "2026-11-17T12:34:56Z"
+	for _, id := range []string{"phone-one", "phone-two"} {
+		if _, err := s.db.Exec(`INSERT INTO approved_devices(id,public_key,name,created_at,last_seen) VALUES(?,?,?,?,?)`, id, `{}`, "iPhone", stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := func(body string, device string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "http://localhost/api/devices", strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:123"
+		if device != "" {
+			r = auth.WithApprovedDevice(r, device)
+		}
+		w := httptest.NewRecorder()
+		s.handleDevices(w, r)
+		return w
+	}
+	if w := request(`{"action":"identify","id":"phone-two","features":{"os":"iOS 26.1","browser":"Safari 26","app":"standalone"}}`, "phone-one"); w.Code != 200 {
+		t.Fatal(w.Code, w.Body)
+	}
+	var one, two string
+	s.db.QueryRow(`SELECT features FROM approved_devices WHERE id='phone-one'`).Scan(&one)
+	s.db.QueryRow(`SELECT features FROM approved_devices WHERE id='phone-two'`).Scan(&two)
+	if !strings.Contains(one, "iOS 26.1") || two != "{}" {
+		t.Fatal("device changed another identity's features")
+	}
+	for _, body := range []string{`{"action":"delete","id":"phone-two"}`, `{"action":"pair","name":"other"}`} {
+		if w := request(body, "phone-one"); w.Code != 403 {
+			t.Fatal("remote device gained administration", w.Code)
+		}
+	}
+	if w := request(`{"action":"identify","features":{"os":"iOS","app":"browser"}}`, ""); w.Code != 403 {
+		t.Fatal("unapproved metadata accepted")
+	}
+	closed := false
+	unwatch := s.devices.watch("phone-one", func() { closed = true })
+	defer unwatch()
+	r := httptest.NewRequest("GET", "http://localhost/api/devices", nil)
+	r.RemoteAddr = "127.0.0.1:123"
+	w := httptest.NewRecorder()
+	s.handleDevices(w, r)
+	var data struct {
+		Devices []struct {
+			ID, CreatedAt, LastSeen string
+			Connected               bool
+			Features                deviceFeatures
+		}
+	}
+	if json.Unmarshal(w.Body.Bytes(), &data) != nil || len(data.Devices) != 2 || data.Devices[0].CreatedAt != stamp || !data.Devices[0].Connected || data.Devices[0].Features.App != "standalone" {
+		t.Fatal("missing device details", w.Body)
+	}
+	if w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("device details cacheable")
+	}
+	if w := request(`{"action":"delete","id":"phone-one"}`, ""); w.Code != 200 {
+		t.Fatal(w.Body)
+	}
+	if !closed {
+		t.Fatal("removed device remains connected")
+	}
+	if err := s.devices.authorize(context.Background(), "phone-one", json.RawMessage(`{}`), ""); err == nil {
+		t.Fatal("removed key authenticated")
+	}
+	denied := false
+	s.devices.watch("phone-one", func() { denied = true })()
+	if !denied {
+		t.Fatal("removed key reattached a connection")
+	}
+	if w := request(`{"action":"identify","features":{"os":"iOS","app":"browser"}}`, "phone-one"); w.Code != 403 {
+		t.Fatal("deleted row recreated by metadata")
+	}
+	if w := request(`{"action":"delete","id":"phone-one"}`, ""); w.Code != 200 {
+		t.Fatal("repeat removal failed")
+	}
+	s.devices.revoke("phone-two")
+	w = httptest.NewRecorder()
+	s.handleDevices(w, r)
+	if !strings.Contains(w.Body.String(), `"devices":[]`) {
+		t.Fatal("revoked devices remain in the visible list", w.Body)
+	}
+}
+
+func TestExistingDeviceMigrationPreservesApproval(t *testing.T) {
+	s := newTestServer(t)
+	if _, err := s.db.Exec(deviceSchema); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO approved_devices(id,public_key,name,created_at,last_seen) VALUES('old-key','{}','Phone','paired-time','seen-time')`); err != nil {
+		t.Fatal(err)
+	}
+	d, err := newDeviceAccess(s.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id, created, features string
+	if err = d.db.QueryRow(`SELECT id,created_at,features FROM approved_devices`).Scan(&id, &created, &features); err != nil || id != "old-key" || created != "paired-time" || features != "{}" {
+		t.Fatal("migration replaced existing approval", err)
+	}
+}

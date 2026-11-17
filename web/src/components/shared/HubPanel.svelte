@@ -16,6 +16,25 @@
   let dialog;
   let previousFocus;
 
+  function currentConnection(item) {
+    const client = window.__PI_REMOTE_CLIENT__;
+    if (client)
+      return (
+        client.preference ===
+        (item.kind === 'tailscale' ? 'tailscale' : item.kind === 'remote' ? 'vps' : 'auto')
+      );
+    return new URL(item.url).origin === location.origin;
+  }
+  function connectionKey(item) {
+    return item.kind === 'tailscale'
+      ? 'remote.tailscale'
+      : item.kind === 'remote'
+        ? 'remote.vps'
+        : item.kind === 'auto'
+          ? 'remote.auto'
+          : '';
+  }
+
   function close() {
     view = '';
     dialog?.close();
@@ -210,19 +229,25 @@
       {#each items as item (item.id)}
         <button
           class="hub-connection"
-          class:hub-current={new URL(item.url).origin === location.origin}
+          class:hub-current={currentConnection(item)}
           disabled={busy ||
-            new URL(item.url).origin === location.origin ||
+            currentConnection(item) ||
             (item.kind === 'local' && /iPhone|iPad|iPod|Android/.test(navigator.userAgent))}
           onclick={() => run('connect', item.id)}
         >
           {@html icon(Link2, { size: 18 })}
           <span
-            ><strong>{item.name || t('hub.connection.' + item.kind)}</strong><small
-              >{item.description || t('hub.connection.' + item.kind + '.hint')}</small
-            ><small>{item.url}</small></span
+            ><strong
+              >{connectionKey(item)
+                ? t(connectionKey(item))
+                : item.name || t('hub.connection.' + item.kind)}</strong
+            ><small
+              >{connectionKey(item)
+                ? t(connectionKey(item) + 'Hint')
+                : item.description || t('hub.connection.' + item.kind + '.hint')}</small
+            ></span
           >
-          {#if new URL(item.url).origin === location.origin}<small>{t('hub.current')}</small>{/if}
+          {#if currentConnection(item)}<small>{t('hub.current')}</small>{/if}
         </button>
       {/each}
       <p class="hub-hint">{t('hub.hostAwake')}</p>

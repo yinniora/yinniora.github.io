@@ -16,8 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pion/webrtc/v4"
-
 	"pi-web/internal/agentdir"
 	"pi-web/internal/auth"
 	"pi-web/internal/frontend"
@@ -78,10 +76,7 @@ func Main(version string) {
 		authMiddleware.AllowAnyHost()
 	}
 
-	versionChecker := updater.New(version)
-	if strings.Contains(version, "-personal.") {
-		versionChecker = updater.NewManual(version)
-	}
+	versionChecker := updater.NewManual(version)
 	deviceEnabled := os.Getenv("PI_WEB_DEVICE_AUTH") == "1"
 	var remoteHost *relay.Host
 	if deviceEnabled {
@@ -92,21 +87,34 @@ func Main(version string) {
 			os.Exit(1)
 		}
 	}
-	bootstrapRemote := func() map[string]any {
-		fingerprint := ""
-		if remoteHost != nil {
-			fingerprint = remoteHost.Fingerprint
+	var remoteControl *relay.Controller
+	if remoteHost != nil {
+		var err error
+		remoteControl, err = relay.NewController(remoteHost, filepath.Join(agentDir, "remote", "connection.json"), relay.ConnectionConfig{
+			ClientURL: os.Getenv("PI_WEB_REMOTE_CLIENT_URL"), SignalURL: os.Getenv("PI_WEB_REMOTE_SIGNAL_URL"), ICEURL: os.Getenv("PI_WEB_REMOTE_ICE_URL"), DirectURL: os.Getenv("PI_WEB_REMOTE_DIRECT_URL"),
+			HostToken: os.Getenv("PI_WEB_RELAY_HOST_TOKEN"), TURNHost: os.Getenv("PI_WEB_REMOTE_TURN_IP"), TURNSecret: os.Getenv("PI_WEB_REMOTE_TURN_SECRET"), ClientSecret: os.Getenv("PI_WEB_RELAY_CLIENT_SECRET"),
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "cannot initialize remote configuration")
+			os.Exit(1)
 		}
-		return map[string]any{"version": 1, "fingerprint": fingerprint,
-			"clientUrl": os.Getenv("PI_WEB_REMOTE_CLIENT_URL"), "signalUrl": os.Getenv("PI_WEB_REMOTE_SIGNAL_URL"),
-			"iceUrl": os.Getenv("PI_WEB_REMOTE_ICE_URL"), "directUrl": os.Getenv("PI_WEB_REMOTE_DIRECT_URL")}
+	}
+	bootstrapRemote := func() map[string]any {
+		if remoteControl != nil {
+			return remoteControl.Bootstrap()
+		}
+		return nil
 	}
 	approvePair := func(ctx context.Context, name string) error {
 		helper := os.Getenv("PI_WEB_PAIR_APPROVER")
 		if !filepath.IsAbs(helper) {
 			return fmt.Errorf("Mac approval helper is not configured")
 		}
-		output, err := exec.CommandContext(ctx, helper, name).Output()
+		args := []string{name}
+		if strings.HasPrefix(name, "remote-server:") {
+			args = []string{"--remote-server", strings.TrimPrefix(name, "remote-server:")}
+		}
+		output, err := exec.CommandContext(ctx, helper, args...).Output()
 		if err != nil || strings.TrimSpace(string(output)) != "approved" {
 			return fmt.Errorf("Mac system authentication was not completed")
 		}
@@ -150,6 +158,7 @@ func Main(version string) {
 		EnforceDeviceAuth:   deviceEnabled,
 		PairApprover:        approvePair,
 		RemoteBootstrap:     bootstrapRemote,
+		RemoteControl:       remoteControl,
 		ChatSender:          manager,
 		Cache:               sessions.NewCache(),
 		RenderExportSession: ui.RenderExportSessionPage,
@@ -159,10 +168,7 @@ func Main(version string) {
 		},
 		Updater: versionChecker,
 		RunInstall: func(ctx context.Context) error {
-			if strings.Contains(version, "-personal.") {
-				return fmt.Errorf("personal builds are updated from the maintained fork")
-			}
-			return runInstall(ctx)
+			return fmt.Errorf("this fork is updated from its maintained source repository")
 		},
 		RunRestart:            runRestart,
 		DisableBackgroundJobs: developmentMode,
@@ -183,17 +189,10 @@ func Main(version string) {
 		remoteHost.Handler = func(w http.ResponseWriter, r *http.Request, id string) {
 			mux.ServeHTTP(w, auth.WithApprovedDevice(r, id))
 		}
-		if u, err := url.Parse(os.Getenv("PI_WEB_REMOTE_CLIENT_URL")); err == nil && u.Host != "" {
+		if u, err := url.Parse(remoteControl.Bootstrap()["clientUrl"].(string)); err == nil && u.Host != "" {
 			remoteHost.Origins = []string{u.Host}
 		}
-		remoteHost.ICE = func() []webrtc.ICEServer {
-			ip, secret := os.Getenv("PI_WEB_REMOTE_TURN_IP"), os.Getenv("PI_WEB_REMOTE_TURN_SECRET")
-			if ip == "" || secret == "" {
-				return nil
-			}
-			config := relay.TURNConfiguration(ip, secret)
-			return []webrtc.ICEServer{{URLs: config["urls"].([]string), Username: config["username"].(string), Credential: config["credential"]}}
-		}
+		remoteHost.DeviceIDs = srv.ApprovedRemoteDeviceIDs
 		mux.HandleFunc("/remote-signal", remoteHost.ServeSignal)
 	}
 	ui.RegisterPWAHandlers(mux)
@@ -309,16 +308,7 @@ func Main(version string) {
 			}()
 			defer directServer.Close()
 		}
-		endpoint := os.Getenv("PI_WEB_REMOTE_SIGNAL_URL")
-		if endpoint != "" {
-			u, err := url.Parse(endpoint)
-			if err == nil && u.Scheme == "wss" {
-				q := u.Query()
-				q.Set("role", "host")
-				u.RawQuery = q.Encode()
-				go remoteHost.ConnectBroker(ctx, u.String(), os.Getenv("PI_WEB_RELAY_HOST_TOKEN"))
-			}
-		}
+		remoteControl.Start(ctx)
 		defer remoteHost.Close()
 	}
 

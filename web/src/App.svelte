@@ -1,6 +1,7 @@
 <script>
   import HubPanel from './components/shared/HubPanel.svelte';
   import DevicePanel from './components/shared/DevicePanel.svelte';
+  import { createAppEvents } from './shared/app-events.js';
   import { onMount, untrack } from 'svelte';
   import SessionsPage from './routes/SessionsPage.svelte';
   import SessionPage from './routes/SessionPage.svelte';
@@ -34,6 +35,11 @@
   // changes neither (e.g. FullScreenSheet's mobile back-button trap, which
   // pushes the same URL) is a no-op.
   onMount(() => {
+    const remoteEvents = createAppEvents({
+      event: 'remote-config',
+      onEvent: (config) => window.__PI_REMOTE_CLIENT__?.updateConfiguration(config),
+    });
+    if (window.__PI_REMOTE_CLIENT__) remoteEvents.connect();
     const syncPath = () => {
       path = window.location.pathname;
       search = window.location.search;
@@ -57,6 +63,7 @@
     window.addEventListener('popstate', syncPath);
     window.addEventListener('pi:locationchange', syncPath);
     return () => {
+      remoteEvents.cleanup();
       window.removeEventListener('popstate', syncPath);
       window.removeEventListener('pi:locationchange', syncPath);
       if (history.pushState?.__piOriginal === originalPush) history.pushState = originalPush;

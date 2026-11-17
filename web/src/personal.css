@@ -1203,3 +1203,92 @@
   padding: 0;
   accent-color: var(--accent);
 }
+
+#spa-root .device-details {
+  flex: 1;
+  min-width: 0;
+}
+#spa-root .device-row {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+#spa-root .device-row-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+#spa-root .device-row .device-features {
+  color: var(--text-soft);
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+#spa-root .device-row .device-presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+}
+#spa-root .device-presence i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+#spa-root .device-presence.device-online i {
+  background: #35a46a;
+}
+#spa-root .device-short-id code {
+  font-size: 10px;
+  color: var(--text-soft);
+}
+#spa-root .device-remove-actions {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--dim);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+#spa-root .device-remove-actions p {
+  flex-basis: 100%;
+  margin: 0 0 3px;
+  font-size: 11px;
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+#spa-root .device-revoke-confirm {
+  border-color: var(--danger, #c66);
+  color: var(--danger, #c66);
+}
+#spa-root .device-remove-cancel {
+  border: 1px solid var(--dim);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-soft);
+  padding: 7px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+#spa-root .session-header-title:has(.connection-status) {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+#spa-root #session-header-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#spa-root .personal-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#spa-root .mac-path-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-soft);
+  margin: 12px 0 7px;
+}

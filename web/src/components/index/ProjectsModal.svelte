@@ -1,4 +1,5 @@
 <script>
+  import MacFolderPicker from '../shared/MacFolderPicker.svelte';
   import { icon, Trash2, FolderGit2 } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { sessionsCountLabel } from '../../index/sessions.js';
@@ -238,6 +239,7 @@
           }
         }}
       />
+      <MacFolderPicker value={addPath} disabled={busy} onSelect={(path) => (addPath = path)} />
       <div class="modal-error" id="projectsModalError">{error}</div>
       <div class="modal-actions">
         <button class="btn-secondary" id="projectsDoneBtn" type="button" onclick={onClose}

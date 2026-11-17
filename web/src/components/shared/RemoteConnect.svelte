@@ -1,4 +1,5 @@
 <script>
+  import ConnectionStatus from './ConnectionStatus.svelte';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { t } from '../../shared/i18n.js';
   import { icon, Camera, Link2, X, Loader } from '../../shared/icons.js';
@@ -134,7 +135,9 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- Lucide icons only -->
 <section class="connect-card">
-  <div class="connect-brand">Pi</div>
+  <div class="connect-brand">
+    Pi <ConnectionStatus fallback={busy ? 'connecting' : 'unpaired'} />
+  </div>
   <h1>{t('remote.welcome')}</h1>
   <p class="connect-intro">{t('remote.appHint')}</p>
   <fieldset disabled={busy} class="connect-routes">

@@ -1,4 +1,5 @@
 <script>
+  import ConnectionStatus from '../shared/ConnectionStatus.svelte';
   import { onMount } from 'svelte';
   import {
     icon,
@@ -128,7 +129,9 @@
       ><span class="session-header-projects-label">{t('index.manageProjects')}</span></button
     >
   </div>
-  <span class="session-header-title" id="session-header-title">{sessionTitle.name || title}</span>
+  <div class="session-header-title">
+    <span id="session-header-title">{sessionTitle.name || title}</span><ConnectionStatus />
+  </div>
   <div class="session-header-right">
     <a
       href="/schedules"

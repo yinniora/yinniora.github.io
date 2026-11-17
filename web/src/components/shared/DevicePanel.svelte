@@ -1,8 +1,9 @@
 <script>
+  import RemoteSettings from '../settings/RemoteSettings.svelte';
   import { onMount } from 'svelte';
   import QRCode from 'qrcode';
   import { icon, Plus, Trash2, Link2 } from '../../shared/icons.js';
-  import { t } from '../../shared/i18n.js';
+  import { t, getLocale } from '../../shared/i18n.js';
   import { copyToClipboard } from '../../shared/clipboard.js';
   import { getJSON, postJSON } from '../../shared/api.js';
   import FullScreenSheet from '../session/FullScreenSheet.svelte';
@@ -10,6 +11,7 @@
   let open = $state(false);
   let devices = $state([]);
   let canManage = $state(false);
+  let canPair = $state(true);
   let enabled = $state(false);
   let busy = $state(false);
   let error = $state('');
@@ -20,13 +22,41 @@
   let expires = $state(0);
   let now = $state(Date.now());
   let confirmRevoke = $state('');
+  let refreshVersion = 0;
   const remaining = $derived(Math.max(0, Math.ceil((expires - now) / 1000)));
 
   async function refresh() {
+    const version = ++refreshVersion;
     const data = await getJSON('/api/devices');
-    devices = data.devices || [];
+    if (version !== refreshVersion) return;
+    devices = (Array.isArray(data.devices) ? data.devices : []).filter(
+      (device) => !device.revokedAt,
+    );
     canManage = !!data.canManage;
+    canPair = data.canPair !== false;
     enabled = !!data.enabled;
+  }
+  function dateLabel(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return t('devices.unknownTime');
+    return new Intl.DateTimeFormat(getLocale(), {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZoneName: 'short',
+    }).format(date);
+  }
+  function featureLabel(device) {
+    const { os, browser, app } = device.features || {};
+    return (
+      [os, browser, app ? t(`devices.${app === 'standalone' ? 'standalone' : 'browser'}`) : '']
+        .filter(Boolean)
+        .join(' · ') || t('devices.featuresPending')
+    );
   }
   async function show() {
     open = true;
@@ -62,18 +92,26 @@
   async function revoke(id) {
     busy = true;
     error = '';
+    refreshVersion++;
     try {
-      await postJSON('/api/devices', { action: 'revoke', id });
+      await postJSON('/api/devices', { action: 'delete', id });
+      devices = devices.filter((device) => device.id !== id);
       confirmRevoke = '';
-      await refresh();
+      await refresh().catch(() => {
+        error = t('devices.refreshFailed');
+      });
     } catch {
-      error = t('devices.revokeFailed');
+      error = t('devices.removeFailed');
     } finally {
       busy = false;
     }
   }
   onMount(() => {
     window.addEventListener('pi:devices', show);
+    const configured = () => {
+      if (open) refresh().catch(() => {});
+    };
+    window.addEventListener('pi:remote-config-saved', configured);
     const clock = setInterval(() => {
       now = Date.now();
     }, 1000);
@@ -82,6 +120,7 @@
     }, 5000);
     return () => {
       window.removeEventListener('pi:devices', show);
+      window.removeEventListener('pi:remote-config-saved', configured);
       clearInterval(clock);
       clearInterval(refreshTimer);
     };
@@ -98,18 +137,21 @@
     {#if !enabled}<p class="device-notice">{t('devices.notEnabled')}</p>
     {:else if !canManage}<p class="device-notice">{t('devices.macOnly')}</p>
     {:else}
+      <details class="device-server-settings">
+        <summary>{t('remoteSettings.title')}</summary><RemoteSettings showDevices={false} />
+      </details>
       <div class="device-pair-form">
         <label for="device-name">{t('devices.name')}</label>
         <div>
           <input id="device-name" bind:value={name} maxlength="100" /><button
             onclick={pair}
-            disabled={busy}
+            disabled={busy || !canPair}
             >{@html icon(Plus, { size: 16 })}{busy
               ? t('devices.authenticating')
               : t('devices.createCode')}</button
           >
         </div>
-        <p>{t('devices.authHint')}</p>
+        <p>{t(canPair ? 'devices.authHint' : 'remoteSettings.configureFirst')}</p>
       </div>
       {#if qr}
         <div class="device-qr">
@@ -129,29 +171,52 @@
       <div class="device-list-heading">{t('devices.whitelist')}</div>
       {#if !devices.length}<p class="device-empty">{t('devices.empty')}</p>{/if}
       {#each devices as device (device.id)}
-        <div class="device-row" class:revoked={!!device.revokedAt}>
-          <div>
-            <strong>{device.name}</strong><span
-              >{device.revokedAt ? t('devices.revoked') : t('devices.approved')} · {new Date(
-                device.lastSeen,
-              ).toLocaleDateString()}</span
+        <div class="device-row">
+          <div class="device-details">
+            <div class="device-row-heading">
+              <strong>{device.name}</strong><span
+                class:device-online={device.connected}
+                class="device-presence"
+                ><i aria-hidden="true"></i>{t(
+                  device.connected ? 'devices.connected' : 'devices.offline',
+                )}</span
+              >
+            </div>
+            <span class="device-features">{featureLabel(device)}</span>
+            <span
+              >{t('devices.pairedAt')}
+              <time datetime={device.createdAt}>{dateLabel(device.createdAt)}</time></span
+            >
+            <span
+              >{t('devices.lastConnected')}
+              <time datetime={device.lastSeen}>{dateLabel(device.lastSeen)}</time></span
+            >
+            <span class="device-short-id"
+              >{t('devices.identifier')} <code>{String(device.id).slice(0, 12)}</code></span
             >
           </div>
-          {#if !device.revokedAt}
-            {#if confirmRevoke === device.id}<button
+          {#if confirmRevoke === device.id}<div class="device-remove-actions">
+              <p>{t('devices.removeHint')}</p>
+              <button
                 class="device-revoke-confirm"
                 disabled={busy}
-                onclick={() => revoke(device.id)}>{t('devices.confirmRevoke')}</button
+                onclick={() => revoke(device.id)}
+                >{busy ? t('devices.removing') : t('devices.confirmRemove')}</button
+              ><button
+                class="device-remove-cancel"
+                disabled={busy}
+                onclick={() => (confirmRevoke = '')}>{t('common.cancel')}</button
               >
-            {:else}<button
-                class="device-revoke"
-                title={t('devices.revoke')}
-                aria-label={`${t('devices.revoke')} ${device.name}`}
-                onclick={() => {
-                  confirmRevoke = device.id;
-                }}>{@html icon(Trash2, { size: 16 })}</button
-              >{/if}
-          {/if}
+            </div>
+          {:else}<button
+              class="device-revoke"
+              title={t('devices.remove')}
+              aria-label={`${t('devices.remove')} ${device.name} ${String(device.id).slice(0, 12)}`}
+              disabled={busy}
+              onclick={() => {
+                confirmRevoke = device.id;
+              }}>{@html icon(Trash2, { size: 16 })}</button
+            >{/if}
         </div>
       {/each}
     {/if}

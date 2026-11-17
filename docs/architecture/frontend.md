@@ -140,3 +140,14 @@ The live SPA shell uses `theme.css`, `index.css`, `settings.css`, `schedules.css
 The live client adds `OutputGallery` with confined asset URLs and scriptless SVG previews, plus `personal.css` for desktop/mobile layout. `remote-entry.js` boots the independent DTLS client before mounting the same SPA. Its service worker sends native media/download requests through that authenticated channel; it does not cache private content. See [remote security](remote-security.md). Static exports remain independent.
 
 `ProjectsModal` offers project deletion for discovered and registered folders. Its confirmation defaults to preserving files; selecting a Mac Trash move opens a second confirmation covering the entire folder and its descendants, without a typed challenge. The client supplies the existing API confirmation field only after that second click. Live thinking and tool calls use native `ActivityDisclosure` details/summary controls. The existing toggle controller persists per-entry overrides and exposes expand/collapse-all through `ActivityControls`. Static exports retain their existing markup.
+
+`DevicePanel` lists active approvals with precise enrollment/connection times,
+coarse system/browser/app labels, short key IDs and live presence. Removal uses
+a second click, removes the row immediately, and rejects stale list responses.
+`MacFolderPicker` browses authenticated Mac-home directory listings from either
+the project or new-session modal; it never opens a phone file-upload control.
+`ConnectionStatus` subscribes to the actual remote client: connection/reconnection,
+initial synchronization and finite request loading (SSE excluded). P2P/Relay
+comes from the selected WebRTC candidate pair. `RemoteSettings` exposes the
+local-only Mac-authenticated server configuration, with separate relay credentials
+and no browser-storage persistence. See [self-hosted remote setup](self-hosted-remote.md).

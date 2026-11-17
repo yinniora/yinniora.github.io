@@ -27,3 +27,5 @@ website/.vitepress/cache/
 website/.vitepress/locales.generated.json
 
 /node_modules
+# Private self-hosted relay configuration generated locally.
+/relay-private/

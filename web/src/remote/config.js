@@ -13,6 +13,7 @@ export function publicRemoteConfig(config) {
     'iceUrl',
     'directUrl',
     'locale',
+    'relayAuth',
   ])
     if (config[key] !== undefined) result[key] = config[key];
   return validateRemoteConfig(result);
@@ -40,7 +41,16 @@ export function parsePairingLink(input, { origin = location.origin, now = Date.n
       error.code = 'expiredPairing';
       throw error;
     }
-    return { ...publicRemoteConfig(config), ticket: config.ticket };
+    if (
+      config.relayTicket &&
+      (typeof config.relayTicket !== 'string' || config.relayTicket.length > 512)
+    )
+      throw new Error();
+    return {
+      ...publicRemoteConfig(config),
+      ticket: config.ticket,
+      ...(config.relayTicket ? { relayTicket: config.relayTicket } : {}),
+    };
   } catch (error) {
     if (error.code === 'expiredPairing') throw error;
     const invalid = new Error('remote.invalidPairing');

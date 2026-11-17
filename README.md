@@ -11,6 +11,10 @@ Mac owns its identity and device whitelist; a VPS only forwards signaling and
 encrypted packets. Every new pairing QR requires Mac system authentication.
 See [the security architecture](docs/architecture/remote-security.md) for trust
 boundaries, runtime configuration, revocation and build instructions.
+To connect a different Mac or use your own protected relay, follow
+[the self-hosted setup guide](docs/architecture/self-hosted-remote.md).
+The Mac settings include server verification and native authentication; the
+phone shows actual P2P/Relay and synchronization/loading status.
 
 Personal releases are pinned and disable upstream automatic installation.
 Upstream changes are reviewed and tested before a new personal version is

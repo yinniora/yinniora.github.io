@@ -1,0 +1,185 @@
+<script>
+  import { onDestroy } from 'svelte';
+  import { t } from '../../shared/i18n.js';
+  import { getJSON } from '../../shared/api.js';
+  import { icon, Folder, FolderOpen, ArrowUp, X } from '../../shared/icons.js';
+  let { value = '', disabled = false, onSelect = () => {} } = $props();
+  let open = $state(false),
+    busy = $state(false),
+    error = $state(''),
+    listing = $state(null),
+    query = $state('');
+  let version = 0;
+  const folders = $derived(
+    (listing?.folders || []).filter((item) =>
+      item.name.toLowerCase().includes(query.trim().toLowerCase()),
+    ),
+  );
+  async function browse(path = '') {
+    const request = ++version;
+    open = true;
+    busy = true;
+    error = '';
+    query = '';
+    try {
+      const data = await getJSON(
+        '/api/project-folders' + (path ? '?path=' + encodeURIComponent(path) : ''),
+      );
+      if (request === version) listing = data;
+    } catch {
+      if (request === version) error = t('folders.unavailable');
+    } finally {
+      if (request === version) busy = false;
+    }
+  }
+  function close() {
+    version++;
+    open = false;
+    busy = false;
+  }
+  onDestroy(close);
+</script>
+
+<!-- eslint-disable svelte/no-at-html-tags -- Lucide icons only -->
+<div class="mac-folder-picker">
+  <p class="mac-folder-hint">{t('folders.macHint')}</p>
+  {#if !open}
+    <button class="mac-folder-browse" type="button" {disabled} onclick={() => browse(value)}
+      >{@html icon(FolderOpen, { size: 16 })}{t('folders.browse')}</button
+    >
+  {:else}
+    <section class="mac-folder-browser" aria-label={t('folders.browse')}>
+      <div class="mac-folder-toolbar">
+        <button type="button" disabled={busy} onclick={() => browse()}>{t('folders.home')}</button>
+        <button
+          type="button"
+          disabled={busy || !listing?.parent}
+          onclick={() => browse(listing.parent)}
+          >{@html icon(ArrowUp, { size: 14 })}{t('folders.parent')}</button
+        >
+        <button type="button" aria-label={t('common.close')} onclick={close}
+          >{@html icon(X, { size: 15 })}</button
+        >
+      </div>
+      {#if listing}<code class="mac-folder-path">{listing.path}</code>{/if}
+      {#if error}<p class="mac-folder-error" role="alert">{error}</p>{/if}
+      {#if busy}<p role="status">{t('folders.loading')}</p>
+      {:else if !error && listing}
+        <input
+          type="search"
+          aria-label={t('folders.search')}
+          placeholder={t('folders.search')}
+          bind:value={query}
+        />
+        <div class="mac-folder-list">
+          {#each folders as folder (folder.path)}<button
+              type="button"
+              onclick={() => browse(folder.path)}
+              >{@html icon(Folder, { size: 15 })}<span>{folder.name}</span></button
+            >{:else}<p>{t('folders.empty')}</p>{/each}
+        </div>
+        {#if listing.truncated}<p class="mac-folder-hint">{t('folders.truncated')}</p>{/if}
+        <button
+          class="mac-folder-select"
+          type="button"
+          {disabled}
+          onclick={() => {
+            onSelect(listing.path);
+            close();
+          }}>{t('folders.choose')}</button
+        >
+      {/if}
+    </section>
+  {/if}
+</div>
+
+<style>
+  .mac-folder-picker {
+    margin: 10px 0 14px;
+    font-size: 12px;
+  }
+  .mac-folder-hint {
+    color: var(--text-soft);
+    font-size: 11px;
+    line-height: 1.7;
+    margin: 8px 0 10px;
+  }
+  button {
+    font: inherit;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--dim);
+    border-radius: 8px;
+    padding: 9px 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .mac-folder-browser {
+    border: 1px solid var(--dim);
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--body-bg);
+  }
+  .mac-folder-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mac-folder-toolbar button:last-child {
+    margin-left: auto;
+  }
+  .mac-folder-path {
+    display: block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    color: var(--text-soft);
+    font-size: 11px;
+    padding: 12px 0;
+  }
+  .mac-folder-browser input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 9px 10px;
+    color: var(--text);
+    background: var(--input-bg);
+    border: 1px solid var(--dim);
+    border-radius: 7px;
+  }
+  .mac-folder-list {
+    max-height: 230px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin: 8px 0;
+  }
+  .mac-folder-list button {
+    display: flex;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 10px 7px;
+  }
+  .mac-folder-list button span {
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+  .mac-folder-list button:hover {
+    background: var(--hover);
+  }
+  .mac-folder-select {
+    width: 100%;
+    justify-content: center;
+    background: var(--text);
+    color: var(--body-bg);
+  }
+  .mac-folder-error {
+    color: var(--danger);
+    line-height: 1.7;
+  }
+</style>

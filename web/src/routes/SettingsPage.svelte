@@ -1,4 +1,6 @@
 <script>
+  import RemoteSettings from '../components/settings/RemoteSettings.svelte';
+  import ConnectionStatus from '../components/shared/ConnectionStatus.svelte';
   import { onMount } from 'svelte';
   import AboutSettings from '../components/settings/AboutSettings.svelte';
   import AppearanceSettings from '../components/settings/AppearanceSettings.svelte';
@@ -28,6 +30,7 @@
     { id: 'artifacts', labelKey: 'settings.artifacts' },
     { id: 'notifications', labelKey: 'settings.notifications' },
     { id: 'catGatekeeper', labelKey: 'settings.catGatekeeper' },
+    { id: 'remote', labelKey: 'remoteSettings.title' },
     { id: 'about', labelKey: 'settings.about' },
   ];
   const sectionIds = new Set(sections.map((s) => s.id));
@@ -165,7 +168,7 @@
   <span class="session-header-title">
     {isMobile && mobileShowingPane ? activeLabel : t('settings.title')}
   </span>
-  <div class="session-header-right"></div>
+  <div class="session-header-right"><ConnectionStatus /></div>
 </div>
 
 <div
@@ -206,6 +209,8 @@
       <NotificationSettings {settings} onSave={saveSetting} onSaved={flashSaved} />
     {:else if activeSection === 'catGatekeeper'}
       <CatGatekeeperSettings {settings} onSave={saveSetting} />
+    {:else if activeSection === 'remote'}
+      <RemoteSettings />
     {:else if activeSection === 'about'}
       <AboutSettings />
     {/if}

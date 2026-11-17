@@ -1,4 +1,6 @@
 import { t } from '../shared/i18n.js';
+import { deviceFeatures } from './device-features.js';
+import { authenticateRelay, relayICEAuthorization } from './relay-auth.js';
 import { normalizeTransport, saveRemoteConfig, TRANSPORT_KEY } from './config.js';
 import {
   base64ToBytes,
@@ -13,8 +15,9 @@ import {
 const originalFetch = window.fetch.bind(window);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export class RemoteClient {
+export class RemoteClient extends EventTarget {
   constructor(config, { preference = 'auto' } = {}) {
+    super();
     this.config = validateRemoteConfig(config);
     this.preference = normalizeTransport(preference);
     this.pending = new Map();
@@ -22,19 +25,103 @@ export class RemoteClient {
     this.peer = null;
     this.channel = null;
     this.blocked = false;
+    this.connection = 'disconnected';
+    this.everConnected = false;
+    this.syncing = false;
+    this.transport = '';
+  }
+
+  get status() {
+    if (this.blocked) return 'blocked';
+    if (this.connection !== 'connected') return this.connection;
+    if (this.syncing) return 'syncing';
+    return [...this.pending.values()].some((request) => request.loading) ? 'loading' : 'connected';
+  }
+
+  emitStatus() {
+    this.dispatchEvent(new CustomEvent('status', { detail: this.status }));
+  }
+
+  setSyncing(value) {
+    this.syncing = value;
+    this.emitStatus();
+  }
+
+  updateConfiguration(config) {
+    if (config?.fingerprint !== this.config.fingerprint) return;
+    try {
+      this.config = validateRemoteConfig({ ...this.config, ...config });
+      saveRemoteConfig(this.config);
+    } catch {
+      /* A metadata refresh cannot replace the scanned Mac identity. */
+    }
+  }
+
+  async updateTransport(peer = this.peer) {
+    if (!peer?.getStats) return;
+    try {
+      const stats = await peer.getStats();
+      if (this.peer !== peer) return;
+      const entries = [...stats.values()];
+      const selected = entries.find(
+        (entry) => entry.type === 'transport' && entry.selectedCandidatePairId,
+      );
+      const pair =
+        (selected && stats.get(selected.selectedCandidatePairId)) ||
+        entries.find(
+          (entry) =>
+            entry.type === 'candidate-pair' &&
+            entry.state === 'succeeded' &&
+            (entry.selected || entry.nominated),
+        );
+      if (!pair) return;
+      const local = stats.get(pair.localCandidateId),
+        remote = stats.get(pair.remoteCandidateId);
+      if (!local || !remote) return;
+      this.transport =
+        local.candidateType === 'relay' || remote.candidateType === 'relay' ? 'relay' : 'p2p';
+      this.emitStatus();
+    } catch {
+      /* Keep the mode unknown until the browser exposes the selected pair. */
+    }
   }
 
   async connect() {
-    if (['failed', 'closed'].includes(this.peer?.connectionState)) {
+    if (['failed', 'closed', 'disconnected'].includes(this.peer?.connectionState)) {
       this.peer.close();
       this.authorized = false;
     }
     if (this.channel?.readyState === 'open' && this.authorized) return;
     if (this.blocked) throw new Error(t('remote.denied'));
     if (this.connecting) return this.connecting;
-    this.connecting = this.openConnection().finally(() => {
-      this.connecting = null;
-    });
+    this.connection = this.everConnected ? 'reconnecting' : 'connecting';
+    this.transport = '';
+    this.emitStatus();
+    this.connecting = this.openConnection()
+      .then(async () => {
+        this.setSyncing(true);
+        try {
+          const response = await this.fetch('/api/devices', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'identify', features: deviceFeatures() }),
+            signal: AbortSignal.timeout(8000),
+          });
+          await response.arrayBuffer();
+        } catch {
+          /* Older servers and offline metadata sync do not block the workspace. */
+        } finally {
+          this.setSyncing(false);
+        }
+      })
+      .catch((error) => {
+        this.connection = 'disconnected';
+        this.emitStatus();
+        throw error;
+      })
+      .finally(() => {
+        this.connecting = null;
+      });
     return this.connecting;
   }
 
@@ -50,12 +137,20 @@ export class RemoteClient {
     let iceServers = [];
     if (this.preference !== 'tailscale') {
       try {
-        const response = await originalFetch(this.config.iceUrl, {
+        const options = {
           cache: 'no-store',
           credentials: 'omit',
           redirect: 'error',
           signal: AbortSignal.timeout(8000),
-        });
+        };
+        if (this.config.relayAuth)
+          options.headers = { Authorization: await relayICEAuthorization(identity, this.config) };
+        let response = await originalFetch(this.config.iceUrl, options);
+        if (response.status === 401 && !options.headers) {
+          options.headers = { Authorization: await relayICEAuthorization(identity, this.config) };
+          response = await originalFetch(this.config.iceUrl, options);
+        }
+        if (!response.ok) throw new Error(t('remote.relayDenied'));
         const reader = response.body.getReader();
         const chunks = [];
         let size = 0;
@@ -83,10 +178,20 @@ export class RemoteClient {
     this.peer = peer;
     this.channel = channel;
     peer.onconnectionstatechange = () => {
+      if (this.peer !== peer) return;
+      if (['disconnected', 'failed', 'closed'].includes(peer.connectionState)) {
+        this.connection = 'disconnected';
+        this.emitStatus();
+      } else if (peer.connectionState === 'connecting') {
+        this.connection = this.everConnected ? 'reconnecting' : 'connecting';
+        this.emitStatus();
+      }
       if (peer.connectionState === 'failed') peer.close();
+      if (peer.connectionState === 'connected') this.updateTransport(peer);
     };
     this.authorized = false;
     let socket;
+    let answerTimer;
     const approved = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error(t('remote.timeout'))), 45000);
       channel.onmessage = async (event) => {
@@ -117,7 +222,12 @@ export class RemoteClient {
         } else if (message.type === 'authorized') {
           clearTimeout(timeout);
           this.authorized = true;
+          this.connection = 'connected';
+          this.everConnected = true;
+          this.emitStatus();
           delete this.config.ticket;
+          delete this.config.relayTicket;
+          this.updateTransport(peer);
           saveRemoteConfig(this.config);
           if (location.hash.startsWith('#pair='))
             history.replaceState({}, '', location.pathname + location.search);
@@ -125,17 +235,23 @@ export class RemoteClient {
         } else if (message.type === 'denied') {
           clearTimeout(timeout);
           this.blocked = true;
+          this.emitStatus();
           reject(new Error(t('remote.denied')));
         } else this.receive(message);
       };
       channel.onclose = () => {
         clearTimeout(timeout);
-        this.authorized = false;
-        for (const request of this.pending.values()) {
+        if (this.channel === channel) {
+          this.authorized = false;
+          this.connection = 'disconnected';
+        }
+        for (const [id, request] of this.pending) {
+          if (request.channel !== channel) continue;
           request.reject(new Error(t('remote.disconnected')));
           request.controller?.error(new Error(t('remote.disconnected')));
+          this.pending.delete(id);
         }
-        this.pending.clear();
+        this.emitStatus();
         reject(new Error(t('remote.disconnected')));
       };
     });
@@ -177,8 +293,13 @@ export class RemoteClient {
       } finally {
         for (const candidate of sockets) if (candidate !== socket) candidate.close();
       }
+      const relayReady =
+        this.config.directUrl && socket.url === new URL(this.config.directUrl).href
+          ? Promise.resolve()
+          : authenticateRelay(socket, identity, this.config);
+      relayReady.catch(() => {});
       const answerPromise = new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(t('remote.timeout'))), 30000);
+        answerTimer = setTimeout(() => reject(new Error(t('remote.timeout'))), 30000);
         socket.onmessage = (event) => {
           let message;
           try {
@@ -187,15 +308,16 @@ export class RemoteClient {
             return;
           }
           if (message.type === 'answer') {
-            clearTimeout(timer);
+            clearTimeout(answerTimer);
             resolve(message.sdp);
           }
           if (message.type === 'offline') {
-            clearTimeout(timer);
+            clearTimeout(answerTimer);
             reject(new Error(t('remote.offline')));
           }
         };
       });
+      answerPromise.catch(() => {});
       const gathered = new Promise((resolve) => {
         peer.onicegatheringstatechange = () => {
           if (peer.iceGatheringState === 'complete') resolve();
@@ -203,13 +325,18 @@ export class RemoteClient {
       });
       await peer.setLocalDescription(await peer.createOffer());
       await Promise.race([gathered, delay(10000)]);
+      await relayReady;
       socket.send(JSON.stringify({ type: 'offer', sdp: peer.localDescription.sdp }));
       const sdp = await answerPromise;
       verifyRemoteSDP(sdp, this.config.fingerprint);
       await peer.setRemoteDescription({ type: 'answer', sdp });
+      peer.sctp?.transport?.iceTransport?.addEventListener?.('selectedcandidatepairchange', () =>
+        this.updateTransport(peer),
+      );
       await approved;
       this.socket = socket;
     } catch (error) {
+      clearTimeout(answerTimer);
       peer.close();
       socket?.close();
       if (error instanceof AggregateError)
@@ -249,6 +376,7 @@ export class RemoteClient {
     else if (message.type === 'end') {
       request.controller?.close();
       this.pending.delete(message.id);
+      this.emitStatus();
     }
   }
 
@@ -261,14 +389,22 @@ export class RemoteClient {
     if (body.length > 36 * 1024 * 1024) throw new Error(t('remote.tooLarge'));
     const id = crypto.randomUUID();
     const response = new Promise((resolve, reject) =>
-      this.pending.set(id, { resolve, reject, method: request.method }),
+      this.pending.set(id, {
+        resolve,
+        reject,
+        method: request.method,
+        channel: this.channel,
+        loading: new URL(request.url).pathname !== '/events',
+      }),
     );
+    this.emitStatus();
     const abort = () => {
       this.send({ type: 'cancel', id }).catch(() => {});
       const pending = this.pending.get(id);
       pending?.reject(new DOMException('Aborted', 'AbortError'));
       pending?.controller?.error(new DOMException('Aborted', 'AbortError'));
       this.pending.delete(id);
+      this.emitStatus();
     };
     request.signal.addEventListener('abort', abort, { once: true });
     if (request.signal.aborted) {
@@ -294,6 +430,7 @@ export class RemoteClient {
     } catch (error) {
       this.pending.get(id)?.reject(error);
       this.pending.delete(id);
+      this.emitStatus();
     }
     return response;
   }

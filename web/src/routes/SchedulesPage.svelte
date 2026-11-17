@@ -1,4 +1,5 @@
 <script>
+  import ConnectionStatus from '../components/shared/ConnectionStatus.svelte';
   import { onMount } from 'svelte';
   import { navigate } from '../shared/navigation.js';
   import { t } from '../shared/i18n.js';
@@ -350,7 +351,7 @@
       }}><span>←</span> {backHref === '/' ? t('session.back') : t('common.back')}</a
     >
   </div>
-  <span class="session-header-title">{t('schedules.title')}</span>
+  <span class="session-header-title">{t('schedules.title')} <ConnectionStatus /></span>
   <div class="session-header-right">
     <button
       type="button"

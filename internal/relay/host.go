@@ -19,21 +19,26 @@ import (
 )
 
 type Signal struct {
-	Type string `json:"type"`
-	ID   string `json:"id,omitempty"`
-	SDP  string `json:"sdp,omitempty"`
+	Type    string   `json:"type"`
+	ID      string   `json:"id,omitempty"`
+	SDP     string   `json:"sdp,omitempty"`
+	Devices []string `json:"devices,omitempty"`
 }
 
 type Host struct {
-	Certificate *webrtc.Certificate
-	Fingerprint string
-	ICE         func() []webrtc.ICEServer
-	Authorize   func(context.Context, string, json.RawMessage, string) error
-	WatchDevice func(string, func()) func()
-	Handler     func(http.ResponseWriter, *http.Request, string)
-	Origins     []string
-	peers       sync.Map
-	slots       chan struct{}
+	Certificate  *webrtc.Certificate
+	Fingerprint  string
+	ICE          func() []webrtc.ICEServer
+	Authorize    func(context.Context, string, json.RawMessage, string) error
+	WatchDevice  func(string, func()) func()
+	Handler      func(http.ResponseWriter, *http.Request, string)
+	Origins      []string
+	peers        sync.Map
+	DeviceIDs    func() []string
+	brokerMu     sync.Mutex
+	brokerSyncMu sync.Mutex
+	brokerConn   *websocket.Conn
+	slots        chan struct{}
 }
 
 func NewHost(identityFile string) (*Host, error) {
@@ -212,6 +217,10 @@ func (h *Host) ConnectBroker(ctx context.Context, endpoint, token string) {
 		conn, _, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{HTTPHeader: header})
 		if err == nil {
 			conn.SetReadLimit(70 * 1024)
+			h.brokerMu.Lock()
+			h.brokerConn = conn
+			h.brokerMu.Unlock()
+			h.SyncDevices()
 			for {
 				var signal Signal
 				if err := wsjson.Read(ctx, conn, &signal); err != nil {
@@ -231,6 +240,11 @@ func (h *Host) ConnectBroker(ctx context.Context, endpoint, token string) {
 				}
 			}
 			_ = conn.CloseNow()
+			h.brokerMu.Lock()
+			if h.brokerConn == conn {
+				h.brokerConn = nil
+			}
+			h.brokerMu.Unlock()
 		}
 		select {
 		case <-ctx.Done():
@@ -238,4 +252,22 @@ func (h *Host) ConnectBroker(ctx context.Context, endpoint, token string) {
 		case <-time.After(3 * time.Second):
 		}
 	}
+}
+
+func (h *Host) SyncDevices() {
+	h.brokerSyncMu.Lock()
+	defer h.brokerSyncMu.Unlock()
+	if h.DeviceIDs == nil {
+		return
+	}
+	devices := h.DeviceIDs()
+	h.brokerMu.Lock()
+	conn := h.brokerConn
+	h.brokerMu.Unlock()
+	if conn == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = wsjson.Write(ctx, conn, Signal{Type: "devices", Devices: devices})
 }

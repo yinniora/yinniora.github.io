@@ -1,4 +1,5 @@
 <script>
+  import ConnectionStatus from '../components/shared/ConnectionStatus.svelte';
   import { onMount, tick } from 'svelte';
   import CommandPalette from '../components/shared/CommandPalette.svelte';
   import HomeMenu from '../components/index/HomeMenu.svelte';
@@ -393,7 +394,7 @@
   </aside>
   <main class="personal-home-main">
     <section class="personal-welcome">
-      <div class="personal-eyebrow">Pi</div>
+      <div class="personal-eyebrow">Pi <ConnectionStatus /></div>
       <h1>{t('home.headline')}</h1>
       <form
         class="personal-start-box"

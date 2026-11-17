@@ -28,7 +28,6 @@ export default {
   'hub.hostAwake': '请保持主机开机并连接互联网，以支持远程对话和电脑控制。',
   'hub.logout': '在此设备上退出登录',
   'hub.connectionFailed': '连接切换失败，请重试。',
-
   'common.closeNamed': '关闭 {name}',
   'index.dateToday': '今天',
   'index.dateYesterday': '昨天',
@@ -44,7 +43,6 @@ export default {
   'menu.loadMessagesFailed': '加载消息失败',
   'menu.cloneFailed': '克隆失败',
   'menu.notImplemented': '尚未实现',
-  // ── Diff review modal ──
   'diff.title': 'Diff',
   'diff.loading': '正在加载差异…',
   'diff.timeout': 'Diff 超时 — 请重试。',
@@ -88,7 +86,6 @@ export default {
   'common.userDocs': '用户文档',
   'common.telegram': '社区 Telegram',
   'common.version': '版本',
-
   'index.title': '会话',
   'index.searchSessions': '搜索会话...',
   'index.sessionsCount': '{count} 个会话',
@@ -107,7 +104,7 @@ export default {
   'index.searchProjects': '搜索项目…',
   'index.deselectAll': '取消全选',
   'index.selectAll': '全选',
-  'index.registerFolder': '注册文件夹',
+  'index.registerFolder': '添加 Mac 文件夹',
   'index.loadingSessions': '正在加载会话…',
   'index.loadingSessionsHint': '正在获取最新的会话列表。',
   'index.noSessions': '没有可显示的会话',
@@ -118,14 +115,12 @@ export default {
   'index.sessionLayout': '会话布局',
   'index.closeNewSession': '关闭开始新会话',
   'index.closeManageProjects': '关闭管理项目',
-
   'palette.listSessions': '列出会话',
   'palette.closeSearch': '关闭搜索',
   'palette.actions': '操作',
   'palette.newSession': '新建会话',
   'palette.noSessionsFound': '未找到会话',
   'palette.failedLoadSessions': '加载会话失败',
-
   'session.back': '会话',
   'session.toggleTree': '切换会话树',
   'session.new': '新建',
@@ -161,7 +156,6 @@ export default {
   'session.loadingEarlier': '正在加载…',
   'session.loadEarlierFailed': '加载失败：{error}',
   'session.labelSaveFailed': 'Failed to save label',
-
   'menu.searchSessions': '搜索会话',
   'menu.rename': '重命名',
   'menu.share': '分享',
@@ -171,7 +165,6 @@ export default {
   'menu.tree': '树',
   'menu.diff': '差异',
   'menu.modelUsage': '模型用量',
-
   'sidebar.scratchpad': '便笺',
   'sidebar.annotations': '批注',
   'sidebar.artifacts': '产物',
@@ -180,7 +173,6 @@ export default {
   'sidebar.hidePanel': '隐藏面板',
   'sidebar.scratchpadPlaceholder': '编写项目级笔记、便笺、任务...',
   'sidebar.resizeScratchpad': '调整便笺侧边栏大小',
-
   'composer.placeholder': '继续此 pi 会话…',
   'composer.send': '发送',
   'composer.steer': '引导',
@@ -222,7 +214,6 @@ export default {
   'composer.focusShortcut': 'Shift + i 以聚焦',
   'composer.cancelRunning': '取消正在进行的响应',
   'composer.contextDetails': '点击查看详情',
-
   'settings.title': '设置',
   'settings.appearance': '外观',
   'settings.theme': '主题',
@@ -252,7 +243,6 @@ export default {
   'settings.fontDetect': '检测已安装的字体…',
   'settings.fontCustomOption': '自定义…',
   'settings.fontFamilyPlaceholder': '字体族名称',
-
   'settings.language': '语言',
   'settings.languageHint': '应用界面的语言。更改后会重新加载页面。',
   'settings.customLanguages': '自定义语言',
@@ -260,7 +250,6 @@ export default {
     '以 JSON 添加或覆盖语言——一个由 { "code", "label", "strings": { … } } 组成的数组。缺失的键回退到英文。使用“复制英文键”获取起始模板，然后“保存并应用”。',
   'settings.copyEnglishKeys': '复制英文键',
   'settings.saveApply': '保存并应用',
-
   'settings.sessionsList': '会话列表',
   'settings.spinnerStyle': '加载动画样式',
   'settings.spinnerStyleHint': '在运行中的会话旁显示的动画。',
@@ -268,7 +257,6 @@ export default {
   'settings.defaultLayoutHint': '加载时会话列表的分组方式。',
   'settings.showBtw': '在列表中显示 btw 聊天',
   'settings.showBtwHint': '在会话列表中包含临时的 btw 草稿聊天。默认隐藏。',
-
   'settings.sessionTitles': '会话标题',
   'settings.autoTitle': '自动生成标题',
   'settings.autoTitleHint': '让 pi-web 根据第一条消息自动为会话命名。',
@@ -280,7 +268,6 @@ export default {
   'settings.titleModelHint':
     '内置是免费、即时的词语启发式（无 AI）。选择一个模型以获得更智能的标题——小而快的模型最为理想。',
   'settings.titleBuiltin': '内置启发式（无 AI）',
-
   'settings.sessionDisplay': '会话显示',
   'settings.thinkingExpanded': '默认展示思考',
   'settings.thinkingExpandedHint':
@@ -289,7 +276,6 @@ export default {
   'settings.toolsVisibleHint': '关闭后，加载时隐藏工具调用与折叠摘要 — 适用于小屏幕。',
   'settings.toolOutputsExpanded': '默认展开工具输出',
   'settings.toolOutputsExpandedHint': '开启后，工具输出块以展开状态而非折叠状态加载。',
-
   'settings.artifacts': '产物',
   'settings.showArtifacts': '显示产物面板',
   'settings.showArtifactsHint':
@@ -297,13 +283,11 @@ export default {
   'settings.includeFilter': '包含过滤器',
   'settings.includeFilterHint':
     '以逗号分隔的通配符（例如 *.md, *.html, artifacts/**）。仅显示匹配的文件。留空则显示全部；任何过滤器也会隐藏零散的聊天代码片段。',
-
   'settings.notifications': '通知',
   'settings.notifyReady': '响应就绪时通知',
   'settings.notifyReadyHint': '聊天完成时播放声音并显示通知。',
   'settings.doneSound': '完成提示音',
   'settings.doneSoundHint': '响应就绪时播放的声音。',
-
   'settings.catGatekeeper': '猫咪守门员',
   'settings.catEnable': '启用猫咪守门员',
   'settings.catEnableHint': '到了该休息的时候，会出现一只猫。',
@@ -317,7 +301,6 @@ export default {
   'settings.catWakeupHint': '猫让你回来的时间。',
   'settings.catSleep': '睡眠提醒（分钟）',
   'settings.catSleepHint': '困倦的猫在锁定前停留多长时间。',
-
   'settings.about': '关于',
   'settings.docs': '文档',
   'settings.docsHint': 'pi-web 的指南和架构文档。',
@@ -328,7 +311,6 @@ export default {
   'settings.sponsor': '赞助',
   'settings.sponsorHint': '通过赞助创建者来支持 pi-web 的持续开发。',
   'settings.becomeSponsor': '成为赞助者',
-
   'shortcuts.title': '键盘快捷键',
   'shortcuts.searchPlaceholder': '搜索快捷键...',
   'shortcuts.searchAria': '搜索键盘快捷键',
@@ -352,7 +334,6 @@ export default {
   'shortcuts.scrollBottom': '滚动到底部',
   'shortcuts.noteOutsideInput': '输入框外',
   'shortcuts.noteInsideInput': '输入框内',
-
   'git.createPr': '创建 PR',
   'git.createDraftPr': '创建草稿 PR',
   'git.createPrManually': '手动创建 PR',
@@ -365,7 +346,6 @@ export default {
   'git.renameBranch': '重命名分支',
   'git.newBranchName': '新分支名称',
   'git.moreActions': '更多 git 操作',
-
   'btw.newChat': '新建 btw 聊天',
   'btw.new': '新建',
   'btw.inputPlaceholder': '输入点什么...',
@@ -373,7 +353,6 @@ export default {
   'btw.stop': '停止',
   'btw.emptyHasSession': '还没有消息——打个招呼吧。',
   'btw.emptyNoSession': '输入消息以开始 btw 聊天，或点击“新建”。',
-
   'artifactHelp.intro':
     '<strong>产物</strong>是代理写入的文件以及它分享的较大代码块，从对话中提取出来，便于你在一个地方查找、阅读、复制或下载。',
   'artifactHelp.viewing':
@@ -383,7 +362,6 @@ export default {
   'artifactHelp.upToDate':
     '<strong>保持最新。</strong>代理<em>写入</em>或<em>编辑</em>的文件会自动更新，简单的重命名或删除（<code>mv</code>、<code>git mv</code>、<code>rm</code>）也会被跟踪。但通过其他 shell 命令所做的更改——例如 <code>sed</code> 或输出重定向——无法从对话中跟踪，因此产物偶尔可能显示较旧的版本。如有疑问，请检查磁盘上的文件。',
   'artifactHelp.note': '产物仅属于实时视图，不会包含在导出的快照中。',
-
   'common.back': '返回',
   'common.copied': '已复制',
   'common.copyFailed': '复制失败',
@@ -446,8 +424,6 @@ export default {
   'settings.clipboardUnavailable': '剪贴板不可用——已将模板插入下方。',
   'settings.invalidJson': 'JSON 无效：{error}',
   'settings.expectedArray': '应为 { "code", "label", "strings" } 对象的数组。',
-
-  // ── Schedules ──
   'schedules.navTitle': '计划任务',
   'schedules.title': '计划任务',
   'schedules.new': '新建计划',
@@ -515,13 +491,10 @@ export default {
   'schedules.weekday4': '星期四',
   'schedules.weekday5': '星期五',
   'schedules.weekday6': '星期六',
-  // ── Not found (404) ──
   'notFound.heading': '这个页面走丢了',
   'notFound.message': '连猫都找不到它。我们回首页吧。',
   'notFound.back': '返回会话',
   'notFound.catAlt': '一只困惑的猫',
-
-  // Machine translated from en.js through Pi.
   'common.retry': '重试',
   'session.closeSidebar': '关闭侧边栏',
   'session.sidebarTabs': '会话侧边栏',
@@ -565,13 +538,13 @@ export default {
   'remote.preparing': '正在准备安全连接…',
   'devices.title': '设备',
   'devices.headline': '仅限你批准的设备',
-  'devices.intro': '设备审批在 Mac 上完成。Tailscale 和中继仅负责传输连接。',
+  'devices.intro': '设备审批始终在 Mac 上完成。P2P 和中继仅负责传输连接。',
   'devices.name': '设备名称',
   'devices.createCode': '验证并显示二维码',
   'devices.authenticating': '正在等待 Mac 验证…',
   'devices.authHint': '每次创建新的配对码都需要通过 Touch ID 或 Mac 账户验证。',
   'devices.qrAlt': '一次性设备配对二维码',
-  'devices.scan': '使用 iPhone 相机扫描',
+  'devices.scan': '在 iPhone 上的 Pi App 中扫描',
   'devices.expires': '一次性 · {seconds} 秒后过期',
   'devices.expired': '此配对码已过期。请在 Mac 上验证以重新创建。',
   'devices.whitelist': '已批准的设备',
@@ -588,8 +561,6 @@ export default {
   'outputs.open': '打开',
   'outputs.previewUnavailable': '无法预览。你可以下载文件后打开。',
   'outputs.downloadToOpen': '下载此文件，以便在兼容的应用中打开。',
-
-  // Machine translated from en.js through Pi.
   'projects.delete': '删除项目',
   'projects.confirmTitle': '删除此项目？',
   'projects.sessionsToTrash': '{count} 个对话将移至 Pi 回收站，可随时恢复。',
@@ -635,15 +606,86 @@ export default {
   'remote.expiredPairing': '此配对码已过期。请在 Mac 上验证身份以生成新的配对码。',
   'remote.transport': '连接方式',
   'remote.auto': '自动',
-  'remote.tailscale': 'Tailscale',
-  'remote.vps': 'VPS',
-  'remote.autoHint': '优先直连，失败时改用 VPS 中继。',
-  'remote.tailscaleHint': '请在 Mac 和 iPhone 上都启用 Tailscale。',
+  'remote.tailscale': '优先 P2P',
+  'remote.vps': '中继',
+  'remote.autoHint': '优先使用 P2P，失败时回退到加密中继。',
+  'remote.tailscaleHint': '在可用的本地或私有网络上优先使用直连。',
   'remote.tailscaleUnavailable': 'Mac 尚未启用 Tailscale HTTPS 入口。请暂时使用自动或 VPS。',
-  'remote.vpsHint': '通过加密的 VPS 中继连接，无需 Tailscale。',
+  'remote.vpsHint': '无法直连时使用加密中继。',
   'remote.storageUnavailable': '此 App 无法保存设备身份。请允许网站存储后重试。',
   'remote.repair': '重新配对此 App',
   'remote.startFailed': '安全 App 无法启动。请检查连接后重试。',
   'devices.copyPairLink': '复制配对链接',
   'devices.appPairHint': '在主屏幕 Pi App 中轻点“扫描二维码”。也可以复制此链接，粘贴到该 App 中。',
+  'devices.pairedAt': '首次配对',
+  'devices.lastConnected': '上次连接',
+  'devices.identifier': '设备 ID',
+  'devices.connected': '已连接',
+  'devices.offline': '离线',
+  'devices.standalone': '主屏幕 App',
+  'devices.browser': '浏览器',
+  'devices.featuresPending': '此设备重新打开最新的 Pi 页面后将显示系统详情。',
+  'devices.unknownTime': '时间未知',
+  'devices.remove': '移除设备',
+  'devices.confirmRemove': '移除并断开连接',
+  'devices.removeHint': '此操作将断开设备连接并撤销其授权。重新连接需要在 Mac 上批准新的二维码。',
+  'devices.removing': '正在移除…',
+  'devices.removeFailed': '无法移除设备,请重试。',
+  'devices.refreshFailed': '设备已移除,但剩余列表无法刷新。请重新打开“设备”以重试。',
+  'folders.pathLabel': 'Mac 上的文件夹',
+  'folders.macHint':
+    '这些文件夹位于你的 Mac 上,文件保留在 Mac 中。你也可以在 Mac 上添加项目,然后在此处刷新。',
+  'folders.browse': '浏览 Mac 文件夹',
+  'folders.home': '主目录',
+  'folders.parent': '上一级',
+  'folders.search': '搜索此文件夹',
+  'folders.loading': '正在加载 Mac 文件夹…',
+  'folders.empty': '此处没有匹配的文件夹。',
+  'folders.choose': '选择此文件夹',
+  'folders.truncated': '部分文件夹未显示。如有需要,请在上方输入 Mac 路径。',
+  'folders.unavailable':
+    '无法浏览此文件夹。请尝试主目录、输入其 Mac 路径,或在 Mac 上添加后在此处刷新。',
+  'connection.connected': '已连接',
+  'connection.connecting': '正在连接',
+  'connection.reconnecting': '正在重新连接',
+  'connection.syncing': '正在同步',
+  'connection.loading': '正在加载',
+  'connection.disconnected': '已断开连接',
+  'connection.blocked': '请重新配对',
+  'connection.unpaired': '未连接',
+  'connection.p2p': 'P2P',
+  'connection.relay': '中继',
+  'remote.relayDenied': '中继访问未获授权。请重试，或在 Mac 上生成新的配对码。',
+  'remoteSettings.title': '远程控制与设备',
+  'remoteSettings.intro': '通过你自己的中继服务器连接。设备审批和 Mac 身份始终保留在 Mac 上。',
+  'remoteSettings.loading': '正在加载远程设置…',
+  'remoteSettings.setupRequired': '请安装并配置 Mac 设备审批助手以启用远程控制。',
+  'remoteSettings.macOnly': '请在 Mac 上打开此设置以管理其远程服务器。',
+  'remoteSettings.automatic': 'Pi 会自动在可用网络上尝试 P2P，失败后回退到你的中继。',
+  'remoteSettings.server': '你的中继服务器地址',
+  'remoteSettings.import': '导入服务器连接设置',
+  'remoteSettings.configuration': '私有服务器连接配置',
+  'remoteSettings.importButton': '导入配置',
+  'remoteSettings.credentials': '服务器凭据',
+  'remoteSettings.keepSecrets':
+    '对于相同的服务器和路由 ID，密钥字段留空即可保留原值。更换服务器需提供对应凭据。',
+  'remoteSettings.credentialsHint':
+    '请使用 pi-relay 安装生成的连接配置。这些凭据与 Pi 或模型 API 密钥无关。',
+  'remoteSettings.room': '路由 ID',
+  'remoteSettings.hostToken': 'Mac 至中继凭据',
+  'remoteSettings.clientSecret': '注册签名密钥',
+  'remoteSettings.turnSecret': 'TURN 共享密钥',
+  'remoteSettings.authHint':
+    '保存需在此 Mac 上进行身份验证。Pi 会在应用更改前验证 HTTPS 服务器及所有中继凭据。',
+  'remoteSettings.saved': '服务器已验证并保存。已连接的设备将收到新的连接设置。',
+  'remoteSettings.authenticating': '正在等待 Mac 身份验证和服务器验证…',
+  'remoteSettings.save': '验证身份、校验并保存',
+  'remoteSettings.devices': '管理已连接设备',
+  'remoteSettings.invalidImport': '这不是有效的服务器连接配置。',
+  'remoteSettings.saveFailed': '无法保存。请检查 Mac 身份验证、HTTPS 访问及服务器连接凭据。',
+  'remoteSettings.configureFirst': '请先配置远程服务器，再创建配对码。',
+  'remoteSettings.macAuthFailed': 'Mac 身份验证未完成。已保留你的服务器设置。',
+  'remoteSettings.httpsFailed': '无法通过经验证的 HTTPS 连接到服务器。请检查地址和证书。',
+  'remoteSettings.credentialsFailed':
+    '请检查路由 ID 和所有服务器凭据。不同的服务器需要各自的凭据。',
 };

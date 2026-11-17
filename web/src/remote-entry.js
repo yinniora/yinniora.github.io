@@ -160,6 +160,12 @@ async function launchWorkspace(client) {
       }
     });
     window.addEventListener('online', () => transportClient.connect().catch(() => {}));
+    window.addEventListener('offline', () => {
+      transportClient.peer?.close();
+      transportClient.socket?.close();
+      transportClient.connection = 'disconnected';
+      transportClient.emitStatus();
+    });
   }
   window.__PI_REMOTE_CLIENT__ = client;
   await navigator.serviceWorker.register('/remote-sw.js', { scope: '/' });
@@ -180,12 +186,12 @@ async function launchWorkspace(client) {
       navigator.serviceWorker.addEventListener('controllerchange', ready, { once: true });
       if (navigator.serviceWorker.controller) ready();
     });
+  client.setSyncing(true);
   try {
     const response = await client.fetch('/api/devices');
     const data = await response.json();
     if (data.connection?.fingerprint === client.config.fingerprint) {
-      client.config = { ...client.config, ...data.connection };
-      saveRemoteConfig(client.config);
+      client.updateConfiguration(data.connection);
     }
   } catch {
     /* Existing pinned transport remains usable while settings sync is unavailable. */
@@ -197,6 +203,7 @@ async function launchWorkspace(client) {
       { storage: localStorage, documentImpl: document, windowImpl: window, reload: () => {} },
     );
   resetI18n();
+  client.setSyncing(false);
   document.getElementById('remote-status').hidden = true;
   await import('./main.js');
 }
