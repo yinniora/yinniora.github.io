@@ -145,3 +145,62 @@ func TestResponseFlowCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestForgedSDPFingerprintCannotImpersonateMac(t *testing.T) {
+	pinned, err := NewHost(filepath.Join(t.TempDir(), "real-mac.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pinned.Close()
+	fake, err := NewHost(filepath.Join(t.TempDir(), "compromised-relay.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fake.Close()
+	var calls atomic.Int32
+	fake.Authorize = func(context.Context, string, json.RawMessage, string) error { calls.Add(1); return nil }
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pc.Close()
+	opened := make(chan struct{}, 1)
+	failed := make(chan struct{}, 1)
+	dc, _ := pc.CreateDataChannel("pi-workspace-v1", nil)
+	dc.OnOpen(func() { opened <- struct{}{} })
+	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		if state == webrtc.PeerConnectionStateFailed {
+			select {
+			case failed <- struct{}{}:
+			default:
+			}
+		}
+	})
+	offer, _ := pc.CreateOffer(nil)
+	gather := webrtc.GatheringCompletePromise(pc)
+	pc.SetLocalDescription(offer)
+	<-gather
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	answer, err := fake.Answer(ctx, "fake", pc.LocalDescription().SDP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A hostile broker can copy the public pin into SDP, but cannot produce a
+	// DTLS handshake with the real Mac's private key.
+	answer = strings.ReplaceAll(answer, strings.ToUpper(fake.Fingerprint), strings.ToUpper(pinned.Fingerprint))
+	answer = strings.ReplaceAll(answer, fake.Fingerprint, pinned.Fingerprint)
+	if err = pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-failed:
+		if calls.Load() != 0 {
+			t.Fatal("fake Mac reached device authentication")
+		}
+	case <-opened:
+		t.Fatal("forged fingerprint opened a channel")
+	case <-ctx.Done():
+		t.Fatal("native DTLS did not reject the forged identity in time")
+	}
+}
