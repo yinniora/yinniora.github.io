@@ -10,6 +10,7 @@
     formatAssetSize,
   } from '../../session/artifacts/outputs.js';
   import FullScreenSheet from './FullScreenSheet.svelte';
+  import { SvelteSet } from 'svelte/reactivity';
 
   let { model, sessionId = '', cwd = '', fetchImpl = null } = $props();
   let assets = $state([]);
@@ -17,6 +18,7 @@
   let previewOpen = $state(false);
   let previewText = $state('');
   let error = $state('');
+  const failedVideos = new SvelteSet();
   const outputs = $derived(
     collectOutputs(model?.activePath || model?.entries, assets, cwd, sessionId),
   );
@@ -56,6 +58,20 @@
   }
 
   async function open(output) {
+    if (output.kind === 'image' || (output.kind === 'svg' && output.content)) {
+      window.dispatchEvent(
+        new CustomEvent('pi:image-preview', {
+          detail: {
+            src:
+              output.kind === 'svg'
+                ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(output.content)
+                : output.previewUrl,
+            alt: output.title,
+          },
+        }),
+      );
+      return;
+    }
     selected = output;
     previewText = output.content || '';
     error = '';
@@ -136,13 +152,20 @@
             >
           </div>
           {#if output.kind === 'svg' && output.content}
-            <iframe
-              class="output-inline-preview"
-              title={output.title}
-              sandbox=""
-              referrerpolicy="no-referrer"
-              srcdoc={outputDocument(output.content)}
-            ></iframe>
+            <div class="output-svg-preview">
+              <iframe
+                class="output-inline-preview"
+                title={output.title}
+                sandbox=""
+                referrerpolicy="no-referrer"
+                srcdoc={outputDocument(output.content)}
+              ></iframe>
+              <button
+                class="output-svg-enlarge"
+                aria-label={`${t('media.enlarge')} ${output.title}`}
+                onclick={() => open(output)}
+              ></button>
+            </div>
           {:else if output.kind === 'image'}
             <button
               class="output-image-button"
@@ -158,7 +181,13 @@
               playsinline
               preload="metadata"
               src={output.previewUrl}
+              onerror={() => failedVideos.add(output.id)}
             ></video>
+            {#if failedVideos.has(output.id)}<p class="output-media-help">
+                {t('media.videoUnsupported')}<button onclick={() => download(output)}
+                  >{t('artifact.download')}</button
+                >
+              </p>{/if}
           {:else if output.kind === 'audio'}
             <audio class="output-audio" controls preload="metadata" src={output.previewUrl}></audio>
           {/if}
@@ -201,6 +230,7 @@
           playsinline
           preload="metadata"
           src={selected.previewUrl}
+          onerror={() => (error = t('media.videoUnsupported'))}
         ></video>
       {:else if selected.kind === 'audio'}
         <audio class="output-audio" controls src={selected.previewUrl}></audio>

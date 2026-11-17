@@ -5,6 +5,7 @@
   import { navigate } from '../../shared/navigation.js';
   import { setSessionTitle } from '../../session/session-title.svelte.js';
   import { icon, X, Pencil, Trash2, Download, Link2 } from '../../shared/icons.js';
+  import { SvelteSet } from 'svelte/reactivity';
 
   let view = $state('');
   let id = $state('');
@@ -13,6 +14,13 @@
   let busy = $state(false);
   let error = $state('');
   let purgeId = $state('');
+  let cleanupEnabled = $state(false);
+  let cleanupFiles = $state([]);
+  let cleanupLoading = $state(false);
+  let cleanupError = $state('');
+  let fileDeleteConfirm = $state(false);
+  const selectedFiles = new SvelteSet();
+  let fileRequest = 0;
   let dialog;
   let previousFocus;
 
@@ -36,9 +44,34 @@
   }
 
   function close() {
+    fileRequest += 1;
     view = '';
     dialog?.close();
     previousFocus?.focus?.();
+  }
+
+  async function loadCleanupFiles() {
+    if (!cleanupEnabled) {
+      fileRequest += 1;
+      cleanupLoading = false;
+      cleanupFiles = [];
+      selectedFiles.clear();
+      return;
+    }
+    const request = ++fileRequest;
+    cleanupLoading = true;
+    cleanupError = '';
+    try {
+      const data = await getJSON('/api/session-files?id=' + encodeURIComponent(id));
+      if (request !== fileRequest || !cleanupEnabled) return;
+      cleanupFiles = Array.isArray(data.files) ? data.files : [];
+      selectedFiles.clear();
+      for (const file of cleanupFiles) selectedFiles.add(file.path);
+    } catch {
+      if (request === fileRequest) cleanupError = t('cleanup.loadFailed');
+    } finally {
+      if (request === fileRequest) cleanupLoading = false;
+    }
   }
 
   async function load() {
@@ -75,6 +108,12 @@
           id: itemId,
           restore: action === 'restore',
           permanent: action === 'purge',
+          ...(view === 'session' && action !== 'restore' && cleanupEnabled && selectedFiles.size
+            ? {
+                files: cleanupFiles.filter((file) => selectedFiles.has(file.path)),
+                confirmFiles: true,
+              }
+            : {}),
         });
         window.dispatchEvent(new CustomEvent('pi:hub-updated'));
         purgeId = '';
@@ -124,6 +163,13 @@
       error = '';
       items = [];
       purgeId = '';
+      cleanupEnabled = false;
+      cleanupFiles = [];
+      selectedFiles.clear();
+      cleanupError = '';
+      cleanupLoading = false;
+      fileDeleteConfirm = false;
+      fileRequest += 1;
       await tick();
       if (!dialog.open) dialog.showModal();
       await load();
@@ -175,23 +221,80 @@
         >{@html icon(Download)}{t('hub.export')}</a
       >
       <p class="hub-hint">{t('hub.deleteHint')}</p>
-      <button class="hub-action hub-danger" disabled={busy} onclick={() => run('delete')}
-        >{@html icon(Trash2)}{t('hub.delete')}</button
-      >
+      <section class="session-file-cleanup">
+        <label class="cleanup-toggle"
+          ><input
+            type="checkbox"
+            bind:checked={cleanupEnabled}
+            disabled={busy}
+            onchange={loadCleanupFiles}
+          />{t('cleanup.includeFiles')}</label
+        >
+        {#if cleanupEnabled}
+          <p class="hub-hint">{t('cleanup.hint')}</p>
+          {#if cleanupLoading}<p role="status">{t('hub.loading')}</p>{/if}
+          {#if cleanupError}<p class="hub-error" role="alert">{cleanupError}</p>
+            <button onclick={loadCleanupFiles}>{t('common.retry')}</button>{/if}
+          {#if !cleanupLoading && !cleanupError && !cleanupFiles.length}<p class="hub-hint">
+              {t('cleanup.noFiles')}
+            </p>{/if}
+          {#each cleanupFiles as file (file.path)}
+            <label class="cleanup-file"
+              ><input
+                type="checkbox"
+                checked={selectedFiles.has(file.path)}
+                disabled={busy}
+                onchange={(event) => {
+                  if (event.currentTarget.checked) selectedFiles.add(file.path);
+                  else selectedFiles.delete(file.path);
+                  fileDeleteConfirm = false;
+                }}
+              /><span>{file.path}<small>{Math.max(1, Math.ceil(file.size / 1024))} KB</small></span
+              ></label
+            >
+          {/each}
+        {/if}
+      </section>
+      {#if fileDeleteConfirm}
+        <div class="hub-purge-confirm" role="alert">
+          <p>{t('cleanup.confirmWarning', { count: selectedFiles.size })}</p>
+          <div class="hub-confirm-buttons">
+            <button disabled={busy} onclick={() => (fileDeleteConfirm = false)}
+              >{t('common.cancel')}</button
+            ><button
+              class="hub-danger"
+              disabled={busy || cleanupLoading}
+              onclick={() => run('delete')}>{t('cleanup.confirmDelete')}</button
+            >
+          </div>
+        </div>
+      {:else}<button
+          class="hub-action hub-danger"
+          disabled={busy || cleanupLoading}
+          onclick={() => {
+            if (cleanupEnabled && selectedFiles.size) fileDeleteConfirm = true;
+            else run('delete');
+          }}>{@html icon(Trash2)}{t('hub.delete')}</button
+        >{/if}
       {#if purgeId === id}
         <div class="hub-purge-confirm" role="alert">
           <p>{t('hub.purgeWarning')}</p>
+          {#if cleanupEnabled && selectedFiles.size}<p>
+              {t('cleanup.confirmWarning', { count: selectedFiles.size })}
+            </p>{/if}
           <div class="hub-confirm-buttons">
             <button disabled={busy} onclick={() => (purgeId = '')}>{t('common.cancel')}</button>
-            <button class="hub-danger" disabled={busy} onclick={() => run('purge')}
-              >{t('hub.purgeConfirm')}</button
+            <button
+              class="hub-danger"
+              disabled={busy || cleanupLoading}
+              onclick={() => run('purge')}>{t('hub.purgeConfirm')}</button
             >
           </div>
         </div>
       {:else}
         <button
           class="hub-action hub-danger hub-purge-direct"
-          disabled={busy}
+          disabled={busy || cleanupLoading}
           onclick={() => (purgeId = id)}>{@html icon(Trash2)}{t('hub.purge')}</button
         >
       {/if}
@@ -259,6 +362,41 @@
 </dialog>
 
 <style>
+  .session-file-cleanup {
+    border: 1px solid var(--dim);
+    border-radius: 12px;
+    padding: 12px;
+    margin-top: 16px;
+  }
+  .cleanup-toggle,
+  .cleanup-file {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    min-height: 44px;
+    font-size: 13px;
+    line-height: 1.7;
+    padding: 8px 0;
+    cursor: pointer;
+  }
+  .cleanup-toggle input,
+  .cleanup-file input {
+    flex: 0 0 18px;
+    width: 18px;
+    min-height: 18px;
+    height: 18px;
+    margin-top: 3px;
+    padding: 0;
+    accent-color: var(--accent);
+  }
+  .cleanup-file {
+    border-top: 1px solid var(--dim);
+  }
+  .cleanup-file > span {
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+
   .hub-dialog {
     padding: 0;
     width: min(480px, calc(100vw - 24px));

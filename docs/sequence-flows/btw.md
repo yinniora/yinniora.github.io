@@ -84,3 +84,12 @@ session. The `__global__` sentinel parent is never reaped.
 | Event | Topic | Payload | Meaning |
 |-------|-------|---------|---------|
 | `btw-changed` | parent session id (or `__global__`) | `{"sessionId": "<id or empty>"}` | The active btw for this parent changed (created, switched, or cleared). Windows opened from that page re-sync; empty id means "no btw". |
+
+## Mobile presentation
+
+The window opens without focusing the keyboard on phones and uses the App's
+visual viewport height and offset. The introduction explains that BTW has fresh
+context but the same project folder; it remains visible when resuming a thread.
+**Add reply to main chat** attaches the latest textual assistant reply to the
+main composer's draft, without sending it. The user can review or remove the
+attachment before sending. Closing the window does not cancel the worker.

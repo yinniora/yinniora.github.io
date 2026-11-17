@@ -14,6 +14,10 @@ import '../../internal/ui/embedded/styles/session.css';
 import '../../internal/ui/embedded/styles/menu.css';
 import '../../internal/ui/embedded/styles/palette.css';
 import './personal.css';
+import { lockPageZoom, trackVisualViewport } from './shared/visual-viewport.js';
+
+lockPageZoom();
+trackVisualViewport();
 
 const platformFetch = window.fetch.bind(window);
 let transportClient = null;

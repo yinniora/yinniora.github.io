@@ -5,6 +5,7 @@
     icon,
     CalendarClock,
     FolderGit2,
+    ArrowLeft,
     PanelLeft,
     Plus,
     SquarePen,
@@ -108,7 +109,9 @@
 <div class="session-header-bar">
   <div class="session-header-left">
     <a href="/" class="session-header-back" onclick={(event) => handleNavClick(event, '/')}
-      ><span>←</span> {t('session.back')}</a
+      ><span aria-hidden="true">{@html icon(ArrowLeft, { size: 20 })}</span><span
+        >{t('mobile.home')}</span
+      ></a
     >
     <button
       id="tree-toggle"

@@ -8,6 +8,7 @@
 // Lucide icon here and render it with icon(). See AGENTS.md.
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   BookOpen,
   CalendarClock,
@@ -27,6 +28,7 @@ import {
   FileDiff,
   Folder,
   FolderGit2,
+  FolderPlus,
   FolderOpen,
   Ghost,
   GitFork,
@@ -35,6 +37,8 @@ import {
   ListTree,
   Loader,
   Maximize2,
+  MessageSquare,
+  Minus,
   Moon,
   MoreHorizontal,
   PanelLeft,
@@ -146,6 +150,7 @@ export function setThemeIconElement(el, theme, opts = {}) {
 
 export {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   BookOpen,
   CalendarClock,
@@ -165,6 +170,7 @@ export {
   FileDiff,
   Folder,
   FolderGit2,
+  FolderPlus,
   FolderOpen,
   Ghost,
   GitFork,
@@ -173,6 +179,8 @@ export {
   ListTree,
   Loader,
   Maximize2,
+  MessageSquare,
+  Minus,
   Moon,
   MoreHorizontal,
   PanelLeft,

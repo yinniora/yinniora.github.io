@@ -317,7 +317,7 @@
     color: var(--text, #242424);
     padding: 12px;
     font-family: inherit;
-    font-size: 13px;
+    font-size: 16px;
     line-height: 1.5;
     resize: vertical;
     min-height: 70px;

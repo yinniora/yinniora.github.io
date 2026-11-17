@@ -6,6 +6,8 @@
 
   let {
     open = false,
+    addOnly = false,
+    initialProject = null,
     projects = [],
     filterEnabled = false,
     error = '',
@@ -26,7 +28,11 @@
   const basename = (path) =>
     String(path).replaceAll('\\', '/').split('/').filter(Boolean).at(-1) || '';
   $effect(() => {
-    if (!open) {
+    if (open && initialProject) {
+      deleting = initialProject;
+      deleteFiles = false;
+      confirmFiles = false;
+    } else if (!open) {
       deleting = null;
       deleteFiles = false;
       confirmFiles = false;
@@ -90,10 +96,10 @@
         onclick={onClose}
       >
         <span aria-hidden="true">←</span>
-        <span>{t('index.manageProjectsTitle')}</span>
+        <span>{t(addOnly ? 'mobile.newProject' : 'index.manageProjectsTitle')}</span>
       </button>
     </div>
-    <h2>{t('index.manageProjectsTitle')}</h2>
+    <h2>{t(addOnly ? 'mobile.newProject' : 'index.manageProjectsTitle')}</h2>
     {#if deleting}
       <section class="project-delete-confirm" aria-label={t('projects.confirmTitle')}>
         <h3>{t(confirmFiles ? 'projects.confirmFilesTitle' : 'projects.confirmTitle')}</h3>
@@ -146,7 +152,7 @@
           >
         </div>
       </section>
-    {:else}
+    {:else if !addOnly}
       <label class="projects-filter-switch">
         <span class="projects-filter-text">
           <span class="projects-filter-title">{t('index.filterProjects')}</span>

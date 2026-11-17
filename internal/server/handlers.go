@@ -342,9 +342,17 @@ func (s *Server) handleNewSession(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Path            string `json:"path"`
 		SourceSessionID string `json:"sourceSessionId"`
+		Ordinary        bool   `json:"ordinary"`
 	}
 	if !decodeJSONBody(w, r, &body) {
 		return
+	}
+	if body.Ordinary {
+		body.Path = s.defaultWorkspace()
+		if err := os.MkdirAll(body.Path, 0700); err != nil {
+			writeJSONError(w, 500, "cannot create the conversations workspace")
+			return
+		}
 	}
 	if body.Path == "" {
 		writeJSONError(w, http.StatusBadRequest, "path is required")

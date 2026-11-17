@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -89,14 +90,16 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ID        string `json:"id"`
-		Restore   bool   `json:"restore"`
-		Permanent bool   `json:"permanent"`
+		ID           string        `json:"id"`
+		Restore      bool          `json:"restore"`
+		Permanent    bool          `json:"permanent"`
+		Files        []sessionFile `json:"files"`
+		ConfirmFiles bool          `json:"confirmFiles"`
 	}
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
-	if body.Restore && body.Permanent {
+	if body.Restore && (body.Permanent || len(body.Files) > 0) {
 		writeJSONError(w, 400, "choose either restore or permanent deletion")
 		return
 	}
@@ -107,6 +110,56 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := resolved.Session.ID
+	filesFinished := false
+	var finishFiles func(bool) error
+	if len(body.Files) > 0 {
+		if !body.ConfirmFiles {
+			writeJSONError(w, 400, "confirm selected file deletion")
+			return
+		}
+		if s.readSessionStatus(id) != nil || (s.chatSender != nil && s.chatSender.Status(id).State == workers.WorkerStateRunning) {
+			writeJSONError(w, 409, "Stop the running task before deleting its files.")
+			return
+		}
+		var rollback func()
+		if s.chatSender != nil {
+			retirer, ok := s.chatSender.(interface{ RetireIdle(string) (func(), error) })
+			if !ok {
+				writeJSONError(w, 503, "worker retirement unavailable")
+				return
+			}
+			rollback, err = retirer.RetireIdle(id)
+			if err != nil {
+				writeJSONError(w, 409, "Stop the running task before deleting its files.")
+				return
+			}
+		}
+		defer func() {
+			if !filesFinished && rollback != nil {
+				rollback()
+			}
+		}()
+		finishFiles, err = s.stageSessionFiles(id, body.Files)
+		if err != nil {
+			writeJSONError(w, 409, "File list changed or cannot be verified. Reload it before deleting.")
+			return
+		}
+		defer func() {
+			if !filesFinished {
+				_ = finishFiles(false)
+			}
+		}()
+	}
+	commitFiles := func() bool {
+		filesFinished = true
+		if finishFiles != nil {
+			if err := finishFiles(true); err != nil {
+				writeJSONError(w, 500, "Conversation updated, but some files remain in the .pi-session-cleanup folder in the project. Recover them on the Mac.")
+				return false
+			}
+		}
+		return true
+	}
 	if body.Permanent {
 		fileRemoved := false
 		var rollbackRetirement func()
@@ -119,7 +172,7 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, 409, "Stop the running task before permanent deletion.")
 			return
 		}
-		if s.chatSender != nil {
+		if s.chatSender != nil && len(body.Files) == 0 {
 			retirer, ok := s.chatSender.(interface{ RetireIdle(string) (func(), error) })
 			if !ok {
 				writeJSONError(w, 503, "worker retirement unavailable")
@@ -155,7 +208,10 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.broadcast("__all__", "new-session")
-		writeJSON(w, 200, map[string]any{"ok": true, "id": id})
+		if !commitFiles() {
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "id": id, "filesDeleted": len(body.Files)})
 		return
 	}
 	if body.Restore {
@@ -169,6 +225,9 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeJSONError(w, 500, "cannot update trash")
+		return
+	}
+	if !commitFiles() {
 		return
 	}
 	if body.Restore {
@@ -269,7 +328,14 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, 405, "method not allowed")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"connections": configuredConnections(), "defaultWorkspace": os.Getenv("PI_WEB_DEFAULT_WORKSPACE")})
+	writeJSON(w, 200, map[string]any{"connections": configuredConnections(), "defaultWorkspace": s.defaultWorkspace()})
+}
+
+func (s *Server) defaultWorkspace() string {
+	if path := os.Getenv("PI_WEB_DEFAULT_WORKSPACE"); filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(s.agentDir, "workspace")
 }
 
 func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {

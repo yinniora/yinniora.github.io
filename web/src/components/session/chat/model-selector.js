@@ -74,16 +74,19 @@ export function setupModelSelector({
     popup.style.display = 'flex';
     if (popupSearch) {
       popupSearch.value = '';
-      popupSearch.focus();
+      if (!documentImpl.defaultView?.matchMedia?.('(max-width: 900px)').matches)
+        popupSearch.focus({ preventScroll: true });
     }
     renderPopupList('');
   }
 
   function closePopup(focusTextarea = false) {
+    if (documentImpl.activeElement === popupSearch) popupSearch?.blur?.();
     if (popup) popup.style.display = 'none';
     if (focusTextarea) {
       const textarea = documentImpl.getElementById('pi-chat-message');
-      if (textarea) textarea.focus();
+      if (textarea && !documentImpl.defaultView?.matchMedia?.('(max-width: 900px)').matches)
+        textarea.focus({ preventScroll: true });
     }
   }
 

@@ -287,3 +287,37 @@ describe('BtwPopup', () => {
     expect(btn.getAttribute('aria-expanded')).toBe('false');
   });
 });
+
+it('explains the separate context and adds a reply to the main draft without sending', async () => {
+  setupEnv({
+    fetchImpl: router({
+      btw: { sessionId: 'side.jsonl' },
+      session: {
+        entries: [
+          {
+            type: 'message',
+            message: {
+              role: 'assistant',
+              content: [{ type: 'text', text: 'A useful side answer' }],
+            },
+          },
+        ],
+      },
+    }),
+  });
+  render(BtwPopup, { parentId: 'parent.jsonl', cwd: '/work' });
+  document.getElementById('pi-btw-button').click();
+  await settle();
+  expect(document.querySelector('.pi-btw-intro').textContent).toContain(
+    'without the main chat history',
+  );
+  const added = vi.fn();
+  window.addEventListener('pi-chat-attach-text', added);
+  const action = [...document.querySelectorAll('.pi-btw-result-bar button')][0];
+  action.click();
+  await settle();
+  expect(added).toHaveBeenCalledOnce();
+  expect(added.mock.calls[0][0].detail.original).toBe('A useful side answer');
+  expect(window.fetch.mock.calls.filter(([url]) => url.startsWith('/api/chat?'))).toHaveLength(0);
+  window.removeEventListener('pi-chat-attach-text', added);
+});

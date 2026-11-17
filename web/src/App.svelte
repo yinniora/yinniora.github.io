@@ -9,6 +9,7 @@
   import SchedulesPage from './routes/SchedulesPage.svelte';
   import NotFoundPage from './routes/NotFoundPage.svelte';
   import VersionController from './components/shared/VersionController.svelte';
+  import { trackVisualViewport } from './shared/visual-viewport.js';
 
   let {
     path: initialPath = typeof window !== 'undefined' ? window.location.pathname : '/',
@@ -35,6 +36,7 @@
   // changes neither (e.g. FullScreenSheet's mobile back-button trap, which
   // pushes the same URL) is a no-op.
   onMount(() => {
+    const stopViewport = trackVisualViewport();
     const remoteEvents = createAppEvents({
       event: 'remote-config',
       onEvent: (config) => window.__PI_REMOTE_CLIENT__?.updateConfiguration(config),
@@ -63,6 +65,7 @@
     window.addEventListener('popstate', syncPath);
     window.addEventListener('pi:locationchange', syncPath);
     return () => {
+      stopViewport();
       remoteEvents.cleanup();
       window.removeEventListener('popstate', syncPath);
       window.removeEventListener('pi:locationchange', syncPath);

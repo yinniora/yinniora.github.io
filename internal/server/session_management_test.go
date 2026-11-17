@@ -149,7 +149,7 @@ func TestManagementRoutesRequireAuthentication(t *testing.T) {
 	s.auth = auth.New("test-token")
 	mux := http.NewServeMux()
 	s.Register(mux)
-	for _, path := range []string{"/api/trash", "/api/connections", "/api/connect", "/api/export-markdown", "/api/logout"} {
+	for _, path := range []string{"/api/trash", "/api/connections", "/api/connect", "/api/export-markdown", "/api/logout", "/api/session-files"} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest("POST", path, strings.NewReader(`{}`)))
 		if w.Code != 401 {
@@ -175,5 +175,26 @@ func TestMarkdownExportOmitsToolsAndAttachesDownload(t *testing.T) {
 	}
 	if !strings.Contains(w.Header().Get("Content-Disposition"), "attachment") {
 		t.Fatal("not a download")
+	}
+}
+
+func TestOrdinarySessionUsesDedicatedWorkspace(t *testing.T) {
+	s := newTestServer(t)
+	t.Setenv("PI_WEB_DEFAULT_WORKSPACE", "")
+	w := httptest.NewRecorder()
+	s.handleNewSession(w, httptest.NewRequest("POST", "/api/new-session", strings.NewReader(`{"ordinary":true,"path":"/ignored-client-path"}`)))
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body)
+	}
+	var body struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &body)
+	resolved, err := s.cache.Resolve(s.sessionsDir, body.ID)
+	if err != nil || resolved.Session.Project != filepath.Join(s.agentDir, "workspace") {
+		t.Fatal("ordinary workspace mismatch", err)
+	}
+	if info, err := os.Stat(resolved.Session.Project); err != nil || !info.IsDir() {
+		t.Fatal("workspace missing")
 	}
 }

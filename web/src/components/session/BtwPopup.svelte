@@ -7,7 +7,7 @@
   import { onMount } from 'svelte';
   import { getSpinnerConfig } from '../../session/live/chat-preview.js';
   import { t } from '../../shared/i18n.js';
-  import { icon, X, Square, Send } from '../../shared/icons.js';
+  import { icon, X, Square, Send, MessageSquare, CornerDownRight } from '../../shared/icons.js';
   import {
     enableBtwDrag,
     loadBtwGeometry,
@@ -38,6 +38,7 @@
   let sessionId = $state('');
   let spinnerChar = $state('');
   let spinnerStyle = $state('');
+  let notice = $state('');
 
   let winEl, headerEl, bodyEl, inputEl;
   // Non-reactive runtime handles.
@@ -256,6 +257,7 @@
   // ── open / close ──
   function openWindow() {
     open = true;
+    notice = '';
     // Clear `hidden` synchronously (Svelte's flush from `open` is async) so the
     // window has real dimensions when initial placement measures it.
     if (winEl) winEl.hidden = false;
@@ -283,7 +285,7 @@
         }
       })
       .catch(() => {});
-    inputEl?.focus();
+    if (!isMobile()) inputEl?.focus({ preventScroll: true });
   }
   function closeWindow() {
     open = false;
@@ -297,6 +299,24 @@
   function toggle() {
     if (open) closeWindow();
     else openWindow();
+  }
+
+  function bringToChat() {
+    const last = [...entries]
+      .reverse()
+      .find(
+        (entry) =>
+          entry.message?.role === 'assistant' && btwContentText(entry.message.content).trim(),
+      );
+    const text = last ? btwContentText(last.message.content).trim() : '';
+    if (!text) return;
+    window.dispatchEvent(
+      new CustomEvent('pi-chat-attach-text', {
+        detail: { original: text, note: t('btw.resultTitle') },
+      }),
+    );
+    notice = t('btw.addedToChat');
+    if (isMobile()) closeWindow();
   }
 
   function onSubmit(e) {
@@ -322,13 +342,14 @@
 
   onMount(() => {
     if (winEl) document.body.appendChild(winEl);
+    let resizeObserver;
     if (winEl && headerEl) {
       enableBtwDrag(winEl, headerEl, {
         documentImpl: document,
         windowImpl: window,
         saveGeometry: saveGeom,
       });
-      persistBtwResize(winEl, { windowImpl: window, saveGeometry: saveGeom });
+      resizeObserver = persistBtwResize(winEl, { windowImpl: window, saveGeometry: saveGeom });
     }
     const onBodyScroll = () => {
       nearBottom = atBottom();
@@ -357,6 +378,7 @@
     if (initialGeom && initialGeom.open && !isMobile()) openWindow();
 
     return () => {
+      resizeObserver?.disconnect();
       unsubscribe();
       unsubscribeGlobal();
       stopStatusPolling();
@@ -374,7 +396,9 @@
 
 <div class="pi-btw-window" role="dialog" aria-label="btw" bind:this={winEl} hidden={!open}>
   <div class="pi-btw-header" bind:this={headerEl}>
-    <span class="pi-btw-title">btw</span>
+    <span class="pi-btw-title"
+      >{@html icon(MessageSquare, { size: 17 })} BTW <small>{t('btw.sideChat')}</small></span
+    >
     <div class="pi-btw-actions">
       <button type="button" class="pi-btw-new" title={t('btw.newChat')} onclick={startNewSession}
         >{t('btw.new')}</button
@@ -386,6 +410,10 @@
         onclick={closeWindow}>{@html icon(X, { size: 16 })}</button
       >
     </div>
+  </div>
+  <div class="pi-btw-intro">
+    <strong>{t('btw.introTitle')}</strong>
+    <p>{t('btw.introBody')}</p>
   </div>
   <div class="pi-btw-body" id="pi-btw-body" bind:this={bodyEl}>
     {#if isEmpty}
@@ -418,6 +446,18 @@
         </div>
       {/if}
     {/if}
+  </div>
+  <div class="pi-btw-result-bar">
+    <span role="status">{notice || t('btw.savedHint')}</span>
+    <button
+      type="button"
+      disabled={running ||
+        !entries.some(
+          (entry) =>
+            entry.message?.role === 'assistant' && btwContentText(entry.message.content).trim(),
+        )}
+      onclick={bringToChat}>{@html icon(CornerDownRight, { size: 14 })}{t('btw.addToChat')}</button
+    >
   </div>
   <form class="pi-btw-input-row" id="pi-btw-form" onsubmit={onSubmit}>
     <input

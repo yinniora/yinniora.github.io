@@ -166,3 +166,13 @@ The `e2e` job in `.github/workflows/ci.yml`: `npm ci` →
    `e2e/lib/sessions.ts`; never mutate the committed fixtures.
 
 Keep this doc in sync when specs, fixtures, or the project matrix change.
+
+## Personal mobile workspace checks
+
+`mobile-workspace.spec.ts` covers the Home project collapse controls, a stable
+Home return action, a simulated shrinking visual viewport, the model panel close
+button's actual hit target, image/SVG zoom, BTW's introduction and explicit main
+chat attachment, and native H.264 playback plus HTTP Range. `fixtures/media/clip.mp4`
+is a silent synthetic 64px video, with no user recording. The keyboard test
+simulates visual viewport events; real iPhone keyboard behavior still needs a
+physical-device check. Generated screenshots remain in ignored test-results.

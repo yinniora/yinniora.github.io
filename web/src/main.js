@@ -2,6 +2,9 @@ import { mount } from 'svelte';
 import App from './App.svelte';
 import './personal.css';
 import { prepareStartupSettings } from './shared/startup-settings.js';
+import { lockPageZoom } from './shared/visual-viewport.js';
+
+if (typeof document !== 'undefined') lockPageZoom();
 
 function defaultTarget() {
   if (typeof document === 'undefined') return null;

@@ -146,3 +146,45 @@ it('switches transport modes on the same phone entry instead of disabling every 
   await fireEvent.click(relay);
   await waitFor(() => expect(reconnect).toHaveBeenCalledWith('vps'));
 });
+
+it('defaults file cleanup off and requires confirmation before deleting only selected files', async () => {
+  const files = [
+    { path: 'output.svg', size: 20, digest: 'digest1' },
+    { path: 'notes.txt', size: 10, digest: 'digest2' },
+  ];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (path, options) =>
+        new Response(JSON.stringify(options?.method === 'POST' ? { ok: true } : { files })),
+    ),
+  );
+  const view = render(HubPanel);
+  await open({ view: 'session', id: 'owned.jsonl' });
+  expect(fetch).not.toHaveBeenCalled();
+  const include = view.getByLabelText('Also delete files created by this conversation');
+  expect(include.checked).toBe(false);
+  await fireEvent.click(include);
+  await view.findByText('output.svg');
+  await fireEvent.click(view.getByLabelText(/notes.txt/));
+  await fireEvent.click(view.getByRole('button', { name: 'Move to Trash' }));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(view.getByText(/Permanently delete the 1 selected/)).toBeTruthy();
+  await fireEvent.click(
+    view.getByRole('button', { name: 'Delete conversation and selected files' }),
+  );
+  await waitFor(() =>
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/trash',
+      expect.objectContaining({
+        body: JSON.stringify({
+          id: 'owned.jsonl',
+          restore: false,
+          permanent: false,
+          files: [files[0]],
+          confirmFiles: true,
+        }),
+      }),
+    ),
+  );
+});

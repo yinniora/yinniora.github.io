@@ -1,6 +1,44 @@
 // English — the source of truth for pi-web UI strings and the fallback for every
 // other locale. Keys are dot-namespaced by area. Add new strings here first.
 export default {
+  'mobile.home': 'Home',
+  'mobile.workspace': 'Your workspace',
+  'mobile.workspaceHint': 'Projects and conversations, all in one place.',
+  'mobile.newProject': 'New project',
+  'mobile.newOrdinarySession': 'New conversation',
+  'mobile.ordinarySessions': 'Conversations',
+  'mobile.projects': 'Projects',
+  'mobile.manageProject': 'Manage project {name}',
+  'mobile.newSessionIn': 'New conversation in {name}',
+  'mobile.firstSession': 'Start the first conversation',
+  'mobile.emptyWorkspace': 'Create a project or start a conversation to get going.',
+  'mobile.loadSessionsFailed': 'Could not load conversations.',
+  'mobile.menu': 'Open menu',
+  'media.image': 'Image preview',
+  'media.enlarge': 'Enlarge',
+  'media.zoomIn': 'Zoom in',
+  'media.zoomOut': 'Zoom out',
+  'media.resetZoom': 'Reset zoom',
+  'media.videoUnsupported':
+    'This browser could not play the video. Download it to open in a compatible player.',
+  'cleanup.includeFiles': 'Also delete files created by this conversation',
+  'cleanup.hint':
+    'Only verified files created by this conversation are listed. Edited, shared and unverified files are kept. Select the files to permanently delete; the project folder stays.',
+  'cleanup.noFiles':
+    'No files can be safely attributed to this conversation. Files created through shell commands may need to be managed in the project folder on the Mac.',
+  'cleanup.loadFailed': 'Could not verify the file list. Try again before deleting files.',
+  'cleanup.confirmWarning':
+    'Permanently delete the {count} selected files as well? Restoring the conversation will not restore these files.',
+  'cleanup.confirmDelete': 'Delete conversation and selected files',
+  'btw.sideChat': 'Side chat',
+  'btw.introTitle': 'A quick question on the side',
+  'btw.introBody':
+    'BTW starts a separate conversation without the main chat history. Use it for quick questions while keeping your place. It shares this project folder, so tool actions can change the same files. Add a reply to the main chat when you want to use it there.',
+  'btw.savedHint': 'Saved separately. Closing does not stop a reply.',
+  'btw.addToChat': 'Add reply to main chat',
+  'btw.resultTitle': 'Reply from BTW',
+  'btw.addedToChat': 'Added to the main chat draft. Send it when ready.',
+
   'hub.purge': 'Delete permanently',
   'hub.purgeWarning':
     'This conversation and its queued messages will be deleted from the host computer. This cannot be undone. Project files are kept.',

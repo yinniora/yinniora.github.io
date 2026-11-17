@@ -1,4 +1,5 @@
 <script>
+  import MobileHome from '../components/index/MobileHome.svelte';
   import ConnectionStatus from '../components/shared/ConnectionStatus.svelte';
   import { onMount, tick } from 'svelte';
   import CommandPalette from '../components/shared/CommandPalette.svelte';
@@ -66,6 +67,11 @@
   let projectsBusy = $state(false);
   let projectsError = $state('');
   let refreshInflight = false;
+  let mobile = $state(window.matchMedia?.('(max-width: 900px)').matches || false);
+  let defaultWorkspace = $state('');
+  let homeRevision = $state(0);
+  let projectsAddOnly = $state(false);
+  let projectToDelete = $state(null);
   let homePrompt = $state('');
   let homeError = $state('');
 
@@ -192,7 +198,7 @@
       recentLocations = [];
     }
     await tick();
-    document.getElementById('sessionPath')?.focus();
+    if (!mobile) document.getElementById('sessionPath')?.focus({ preventScroll: true });
   }
 
   function closeNewSessionModal() {
@@ -243,7 +249,9 @@
     }
   }
 
-  async function openProjectsModal() {
+  async function openProjectsModal({ addOnly = false, project = null } = {}) {
+    projectsAddOnly = addOnly;
+    projectToDelete = project;
     closeMenu();
     newSessionOpen = false;
     projectsOpen = true;
@@ -266,6 +274,8 @@
       if (action === 'delete') {
         window.dispatchEvent(new CustomEvent('pi:hub-updated'));
       }
+      homeRevision += 1;
+      if (action === 'delete' || (action === 'register' && projectsAddOnly)) closeProjectsModal();
       return true;
     } catch (error) {
       projectsError =
@@ -278,11 +288,45 @@
     }
   }
 
+  async function createProjectSession(path = defaultWorkspace, ordinary = false) {
+    if (!path && !ordinary) {
+      await openNewSessionModal();
+      return;
+    }
+    if (creating) return;
+    creating = true;
+    homeError = '';
+    try {
+      const response = await defaultCreateSession(path, ordinary ? { ordinary: true } : {});
+      if (!response.id) throw new Error(response.error || t('index.failedCreateSession'));
+      navigate('/session?id=' + encodeURIComponent(response.id));
+    } catch (error) {
+      homeError = error.message || t('index.networkError');
+    } finally {
+      creating = false;
+    }
+  }
+
+  async function refreshHome() {
+    await Promise.all([refreshSessions({ preserveWindow: true }), refreshProjectsList()]);
+    homeRevision += 1;
+  }
+
   function openPalette() {
     openSessionPalette();
   }
 
   onMount(() => {
+    const media = window.matchMedia?.('(max-width: 900px)');
+    const resize = () => {
+      mobile = !!media?.matches;
+    };
+    media?.addEventListener('change', resize);
+    getJSON('/api/connections')
+      .then((data) => {
+        defaultWorkspace = data.defaultWorkspace || '';
+      })
+      .catch(() => {});
     const previousTitle = document.title;
     document.title = window.__PI_REMOTE_CLIENT__ ? 'Pi' : 'Pi Sessions';
     configureSettingsSync({ fetchImpl: window.fetch.bind(window) });
@@ -303,7 +347,7 @@
       onSnapshot: (snapshot) => setRunningSessions(snapshot),
       onDelta: (status) => setSessionRunning(status.id, status.running, status),
       onMessage: (message) => {
-        if (message === 'new-session') refreshSessions({ preserveWindow: true });
+        if (message === 'new-session') refreshHome();
         if (message === 'reload') scheduleReload();
       },
     });
@@ -347,11 +391,12 @@
     const click = () => closeMenu();
     window.addEventListener('click', click);
 
-    refreshSessions();
-    const hubUpdated = () => refreshSessions({ preserveWindow: true });
+    refreshHome();
+    const hubUpdated = () => refreshHome();
     window.addEventListener('pi:hub-updated', hubUpdated);
 
     return () => {
+      media?.removeEventListener('change', resize);
       window.removeEventListener('pi:hub-updated', hubUpdated);
       document.title = previousTitle;
       document.body?.classList.remove('modal-sheet-open');
@@ -393,50 +438,83 @@
     <div class="personal-nav-caption">{t('home.privateWorkspace')}</div>
   </aside>
   <main class="personal-home-main">
-    <section class="personal-welcome">
-      <div class="personal-eyebrow">Pi <ConnectionStatus /></div>
-      <h1>{t('home.headline')}</h1>
-      <form
-        class="personal-start-box"
-        onsubmit={(event) => {
-          event.preventDefault();
-          startPrompt();
-        }}
-      >
-        <textarea
-          aria-label={t('composer.placeholder')}
-          placeholder={t('composer.placeholder')}
-          bind:value={homePrompt}
-          rows="2"
-          onkeydown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-              event.preventDefault();
-              startPrompt();
-            }
+    {#if mobile}
+      <MobileHome
+        {projects}
+        {defaultWorkspace}
+        revision={homeRevision}
+        loading={loading || projectsBusy}
+        error={homeError || projectsError}
+        {creating}
+        {menuOpen}
+        {runningSessionIds}
+        {runningStatuses}
+        onNewProject={() => openProjectsModal({ addOnly: true })}
+        onNewSession={() => createProjectSession(defaultWorkspace, true)}
+        onProjectSession={createProjectSession}
+        onDeleteProject={(project) => openProjectsModal({ project })}
+        onSearch={openPalette}
+        onMenu={toggleMenu}
+        onRetry={refreshHome}
+      />
+    {:else}
+      <section class="personal-welcome">
+        <div class="personal-eyebrow">Pi <ConnectionStatus /></div>
+        <h1>{t('home.headline')}</h1>
+        <form
+          class="personal-start-box"
+          onsubmit={(event) => {
+            event.preventDefault();
+            startPrompt();
           }}
-        ></textarea>
-        <div class="personal-start-footer">
-          <span>{t('home.localFirst')}</span><button
-            type="submit"
-            disabled={creating || !homePrompt.trim()}
-            aria-label={t('composer.send')}
-            >{@html icon(creating ? Plus : Send, { size: 18 })}</button
-          >
-        </div>
-      </form>
-      {#if homeError}<p class="output-error">{homeError}</p>{/if}
-    </section>
+        >
+          <textarea
+            aria-label={t('composer.placeholder')}
+            placeholder={t('composer.placeholder')}
+            bind:value={homePrompt}
+            rows="2"
+            onkeydown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+                event.preventDefault();
+                startPrompt();
+              }
+            }}
+          ></textarea>
+          <div class="personal-start-footer">
+            <span>{t('home.localFirst')}</span><button
+              type="submit"
+              disabled={creating || !homePrompt.trim()}
+              aria-label={t('composer.send')}
+              >{@html icon(creating ? Plus : Send, { size: 18 })}</button
+            >
+          </div>
+        </form>
+        {#if homeError}<p class="output-error">{homeError}</p>{/if}
+      </section>
 
-    <IndexHeader
-      {layout}
-      {totalSessionsLabel}
-      {runningCount}
-      runningVisible={runningCount > 0}
-      onSearch={openPalette}
-      onToggleMenu={toggleMenu}
-      onLayoutChange={setLayout}
-      onSchedules={() => navigate('/schedules', { state: backState() })}
-    />
+      <IndexHeader
+        {layout}
+        {totalSessionsLabel}
+        {runningCount}
+        runningVisible={runningCount > 0}
+        onSearch={openPalette}
+        onToggleMenu={toggleMenu}
+        onLayoutChange={setLayout}
+        onSchedules={() => navigate('/schedules', { state: backState() })}
+      />
+
+      <SessionsList
+        {sessions}
+        {layout}
+        {runningSessionIds}
+        {runningStatuses}
+        {loading}
+        {layoutReady}
+        {hasMore}
+        {loadingMore}
+        onLoadMore={loadMore}
+      />
+    {/if}
 
     <HomeMenu
       open={menuOpen}
@@ -445,32 +523,10 @@
       onManageProjects={openProjectsModal}
     />
 
-    <button
-      class="new-session-btn new-session-btn-mobile"
-      id="newSessionBtn"
-      type="button"
-      data-new-session-btn
-      aria-label={t('index.startNewSession')}
-      title={t('index.newSession')}
-      onclick={openNewSessionModal}>+</button
-    >
-
     <CommandPalette
       onNewSession={openNewSessionModal}
       {runningSessionIds}
       navigate={(url) => navigate(url)}
-    />
-
-    <SessionsList
-      {sessions}
-      {layout}
-      {runningSessionIds}
-      {runningStatuses}
-      {loading}
-      {layoutReady}
-      {hasMore}
-      {loadingMore}
-      onLoadMore={loadMore}
     />
 
     <NewSessionModal
@@ -485,6 +541,8 @@
 
     <ProjectsModal
       open={projectsOpen}
+      addOnly={projectsAddOnly}
+      initialProject={projectToDelete}
       {projects}
       filterEnabled={projectsFilterEnabled}
       error={projectsError}

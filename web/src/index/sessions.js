@@ -136,8 +136,8 @@ export function defaultFetchSessions({ limit, offset, query, project } = {}) {
 export function defaultFetchRecent() {
   return getJSON('/api/recent-locations');
 }
-export function defaultCreateSession(path) {
-  return postJSON('/api/new-session', { path });
+export function defaultCreateSession(path, options = {}) {
+  return postJSON('/api/new-session', { ...options, path });
 }
 export function defaultFetchProjects({
   limit,

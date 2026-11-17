@@ -356,6 +356,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/devices", s.auth.Wrap(s.handleDevices))
 	mux.HandleFunc("/api/remote-settings", s.auth.Wrap(s.handleRemoteSettings))
 	mux.HandleFunc("/api/trash", s.auth.Wrap(s.handleTrash))
+	mux.HandleFunc("/api/session-files", s.auth.Wrap(s.handleSessionFiles))
 	mux.HandleFunc("/api/export-markdown", s.auth.Wrap(s.visibleSession(s.handleMarkdownExport)))
 	mux.HandleFunc("/api/connections", s.auth.Wrap(s.handleConnections))
 	mux.HandleFunc("/api/connect", s.auth.Wrap(s.handleConnect))

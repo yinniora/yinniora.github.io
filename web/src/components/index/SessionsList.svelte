@@ -149,7 +149,7 @@
                 : sessionsCountLabel(group.sessions.length)}
             </span>
           </button>
-          <div class="session-grid">
+          <div class="session-grid" hidden={isCollapsed}>
             {#each group.sessions as session (session.id)}
               <SessionCard
                 {session}

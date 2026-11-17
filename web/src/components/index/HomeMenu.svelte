@@ -11,6 +11,7 @@
     Trash2,
     ChevronRight,
     X,
+    CalendarClock,
   } from '../../shared/icons.js';
   import { openVersionModal } from '../../shared/version.js';
   import { USER_DOCS_URL } from '../../shared/links.js';
@@ -46,6 +47,21 @@
     >
   </div>
   <div class="home-menu-group">
+    <a
+      class="home-menu-row"
+      role="menuitem"
+      href="/schedules"
+      data-schedules-menu
+      onclick={(event) => {
+        onClose();
+        handleNavClick(event, '/schedules');
+      }}
+    >
+      <span class="home-menu-icon">{@html icon(CalendarClock, { size: 18 })}</span><span
+        >{t('schedules.navTitle')}</span
+      >
+      <span class="home-menu-chevron">{@html icon(ChevronRight, { size: 14 })}</span>
+    </a>
     <button
       class="home-menu-row home-menu-new"
       role="menuitem"

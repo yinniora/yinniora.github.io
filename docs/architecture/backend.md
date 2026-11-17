@@ -429,3 +429,22 @@ Status changes are broadcast as SSE `status-delta` events to `__all__` subscribe
 `internal/relay` carries bounded HTTP over standard WebRTC DTLS. `devices.go` owns native-approved single-use tickets, public-key whitelisting and immediate revocation. `assets.go` confines media access with `os.OpenRoot` and supports byte ranges. Remote requests never receive the global Pi token. See [remote security](remote-security.md).
 
 Project deletion retires idle RPC workers before updating trash/prefs/schedules in one SQLite transaction. Running jobs reject deletion. Optional filesystem moves use the configured native `PI_WEB_PROJECT_TRASH_HELPER`; protected runtime/configuration paths and roots are refused. Restore releases the worker retirement marker. Session creation and timer scheduling coordinate through the session-management lock.
+
+### Optional conversation file cleanup
+
+`GET /api/session-files?id=...` is authenticated and never uses recent-mtime
+workspace discovery as deletion authority. On macOS it lists only regular,
+non-symlink files born after the session began, with bytes matching a successful
+structured `write` and no path reference from another session (including Trash).
+Ambiguous shell outputs, shared/edited files, hardlinks and unsupported platforms
+are preserved. Verification is bounded to 16 MiB per file and 2,000 sessions.
+
+`POST /api/trash` optionally accepts selected `{path,digest}` files and
+`confirmFiles:true`, for either recoverable conversation Trash or permanent
+conversation deletion. File deletion is permanent and confirmed separately in
+the UI; restoring the conversation does not restore deleted files. The server
+rechecks ownership/digests, retires idle workers, atomically stages only the
+selected files inside `os.Root`, rechecks inode identity, then commits metadata
+before removing staged files. Errors before commit restore staged files. It
+never recursively deletes a project directory or accepts unchecked arbitrary
+paths. File cleanup is off by default.

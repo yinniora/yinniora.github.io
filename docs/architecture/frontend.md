@@ -151,3 +151,35 @@ initial synchronization and finite request loading (SSE excluded). P2P/Relay
 comes from the selected WebRTC candidate pair. `RemoteSettings` exposes the
 local-only Mac-authenticated server configuration, with separate relay credentials
 and no browser-storage persistence. See [self-hosted remote setup](self-hosted-remote.md).
+
+### Mobile workspace and media
+
+At <=900px, `MobileHome` presents projects and ordinary conversations on the
+home route. `HomeProject` independently pages each expanded folder, persists
+collapse state, and provides new-conversation and project-delete controls.
+Empty registered projects remain visible. Ordinary conversation creation uses a
+dedicated Mac workspace (configured default or the agent workspace folder),
+without asking the phone to pick a folder. The session header returns Home;
+the redundant mobile left drawer and session-creation/device shortcuts are
+hidden. Desktop keeps the existing sidebar and home composer.
+
+`trackVisualViewport` is installed once at App mount. The whole mobile session,
+model picker, sheets and BTW window use the same visible-height/offset variables.
+Editable controls use at least 16px text. Model selection and BTW opening do
+not automatically focus a text field on mobile; page zoom is blocked by viewport metadata, touch-action and non-passive mobile
+gesture guards. Only image-viewer controls scale an image, never the page. All
+phone routes scroll inside a bounded root; the outer document cannot pan or
+overscroll horizontally. The unpaired standalone entry installs the same guards
+before mounting the connection screen. Scroll remains inside the transcript, model results or sheet body.
+
+`ImageModal` handles transcript/Markdown images and gallery images/SVGs in a
+native modal with an explicit close button, blank/letterbox dismissal, zoom and reset controls.
+Tapping the image or dragging a zoomed view does not dismiss it. SVG zoom uses an image resource
+(no script execution); inline SVG remains sandboxed. Videos keep native controls,
+inline playback, fullscreen through the viewer and an unsupported-format download
+fallback. The authenticated asset bridge continues supporting Range requests.
+
+BTW opens with a short explanation of its independent context and shared project
+files. A reply can be explicitly attached to the main composer draft; this never
+automatically sends a message. Closing BTW leaves its saved conversation and
+any running reply intact.

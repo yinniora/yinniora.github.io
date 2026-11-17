@@ -1,8 +1,23 @@
 <script>
   import { t } from '../../../shared/i18n.js';
+  import { icon, X } from '../../../shared/icons.js';
 </script>
 
+<!-- eslint-disable svelte/no-at-html-tags -- Lucide icons only -->
 <div id="pi-chat-model-popup" class="pi-chat-model-popup" style="display: none">
+  <div class="mobile-model-heading">
+    <strong>{t('composer.switchModel')}</strong>
+    <button
+      type="button"
+      aria-label={t('common.close')}
+      onclick={(event) => {
+        event.currentTarget.closest('.pi-chat-model-popup').style.display = 'none';
+      }}
+      >{@html icon(X, {
+        size: 20,
+      })}</button
+    >
+  </div>
   <input
     type="text"
     id="pi-chat-model-search"

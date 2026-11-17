@@ -124,40 +124,6 @@ export function setupSessionGlobals({ windowImpl, documentImpl }) {
     });
   }
 
-  // Visual Viewport handling — keep the fixed top header in view when the mobile
-  // virtual keyboard opens.
-  if (target.visualViewport) {
-    const handleVisualViewportChange = () => {
-      const height = target.visualViewport.height;
-      documentImpl.documentElement.style.setProperty('--viewport-height', `${height}px`);
-      const offsetTop = Math.max(0, target.visualViewport.offsetTop);
-      const header = documentImpl.querySelector('.session-header-bar');
-      if (header) header.style.transform = `translateY(${offsetTop}px)`;
-    };
-    on(target.visualViewport, 'resize', handleVisualViewportChange);
-    on(target.visualViewport, 'scroll', handleVisualViewportChange);
-    handleVisualViewportChange();
-  }
-
-  // Prevent the mobile browser from auto-scrolling the layout viewport when the
-  // keyboard opens.
-  on(target, 'scroll', () => {
-    if (target.scrollY !== 0 || target.scrollX !== 0) target.scrollTo(0, 0);
-  });
-  on(documentImpl, 'scroll', () => {
-    if (
-      documentImpl.documentElement.scrollTop !== 0 ||
-      documentImpl.documentElement.scrollLeft !== 0
-    ) {
-      documentImpl.documentElement.scrollTop = 0;
-      documentImpl.documentElement.scrollLeft = 0;
-    }
-    if (documentImpl.body.scrollTop !== 0 || documentImpl.body.scrollLeft !== 0) {
-      documentImpl.body.scrollTop = 0;
-      documentImpl.body.scrollLeft = 0;
-    }
-  });
-
   return () => {
     for (const fn of cleanups) fn();
     cleanups.length = 0;

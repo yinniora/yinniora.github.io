@@ -238,9 +238,13 @@ export function runChatComposer({
     });
     submission.setRefreshWorkerStatus(workerStatus.refresh);
 
-    // Focus the message textarea on page load so the user can start typing immediately.
-    if (textarea && typeof textarea.focus === 'function') {
-      textarea.focus();
+    // Phones open on the transcript; the user opens the keyboard by tapping.
+    if (
+      textarea &&
+      typeof textarea.focus === 'function' &&
+      !window.matchMedia?.('(max-width: 900px)').matches
+    ) {
+      textarea.focus({ preventScroll: true });
     }
 
     const contextPopover = setupContextPopover({
