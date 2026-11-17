@@ -68,7 +68,12 @@ remote-build` emits the program-only client in `web/dist-remote`. Publish that
 directory to a separate HTTPS origin with root service-worker scope. It contains
 no private runtime configuration. `make build-relay` builds the standalone
 broker (no embedded frontend required). `python3 scripts/build_macos.py` builds
-the native window and authentication helper; install both locally.
+the native window and authentication helper in `build/macos.noindex`; install
+both locally. The builder explicitly targets macOS 13 and checks the Mach-O
+minimum OS, regardless of the invoking shell's deployment-target environment.
+The `.noindex` build directory keeps build copies out of application search.
+Archive old backup bundles rather than leaving extra `.app` directories in
+indexed workspaces, and register only the installed copies with LaunchServices.
 
 Mac environment variables: `PI_WEB_DEVICE_AUTH`, `PI_WEB_PAIR_APPROVER`,
 `PI_WEB_REMOTE_CLIENT_URL`, `PI_WEB_REMOTE_SIGNAL_URL`, `PI_WEB_REMOTE_ICE_URL`,
