@@ -214,8 +214,14 @@ func (b *httpBridge) start(message packet) {
 		}
 		request.RemoteAddr = "approved-device:0"
 		request.ContentLength = message.Size
-		for _, key := range []string{"Accept", "Content-Type", "Range", "If-Modified-Since", "If-None-Match", "Last-Event-Id"} {
-			for _, value := range message.Headers.Values(key) {
+		for name, values := range message.Headers {
+			key := http.CanonicalHeaderKey(name)
+			switch key {
+			case "Accept", "Content-Type", "Range", "If-Modified-Since", "If-None-Match", "Last-Event-Id":
+			default:
+				continue
+			}
+			for _, value := range values {
 				if len(value) < 8192 && !strings.ContainsAny(value, "\r\n") {
 					request.Header.Add(key, value)
 				}

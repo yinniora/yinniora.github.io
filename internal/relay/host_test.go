@@ -69,7 +69,7 @@ func TestEncryptedHTTPRequiresDeviceProof(t *testing.T) {
 					return
 				}
 				if kind == "authorized" {
-					b, _ := json.Marshal(packet{Type: "request", ID: "media", Method: "GET", Path: "/api/asset?path=movie.mp4", Headers: http.Header{"Range": {"bytes=2-5"}, "Authorization": {"Bearer stolen"}, "Cookie": {"stolen=1"}}})
+					b, _ := json.Marshal(packet{Type: "request", ID: "media", Method: "GET", Path: "/api/asset?path=movie.mp4", Headers: http.Header{"range": {"bytes=2-5"}, "authorization": {"Bearer stolen"}, "cookie": {"stolen=1"}}})
 					dc.SendText(string(b))
 					dc.SendText(`{"type":"body-end","id":"media"}`)
 					return
