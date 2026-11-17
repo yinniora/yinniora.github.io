@@ -1,0 +1,154 @@
+[
+  {
+    "name": "@pierre/diffs",
+    "version": "1.2.10"
+  },
+  {
+    "name": "@pierre/theme",
+    "version": "1.0.3"
+  },
+  {
+    "name": "@pierre/theming",
+    "version": "0.0.1"
+  },
+  {
+    "name": "@shikijs/core",
+    "version": "4.2.0"
+  },
+  {
+    "name": "@shikijs/engine-javascript",
+    "version": "4.2.0"
+  },
+  {
+    "name": "@shikijs/engine-oniguruma",
+    "version": "4.2.0"
+  },
+  {
+    "name": "@shikijs/langs",
+    "version": "4.2.0"
+  },
+  {
+    "name": "@shikijs/primitive",
+    "version": "4.2.0"
+  },
+  {
+    "name": "@shikijs/themes",
+    "version": "4.2.0"
+  },
+  {
+    "name": "@shikijs/transformers",
+    "version": "4.2.0"
+  },
+  {
+    "name": "@shikijs/types",
+    "version": "4.2.0"
+  },
+  {
+    "name": "@shikijs/vscode-textmate",
+    "version": "10.0.2"
+  },
+  {
+    "name": "ccount",
+    "version": "2.0.1"
+  },
+  {
+    "name": "character-entities-html4",
+    "version": "2.1.0"
+  },
+  {
+    "name": "character-entities-legacy",
+    "version": "3.0.0"
+  },
+  {
+    "name": "clsx",
+    "version": "2.1.1"
+  },
+  {
+    "name": "comma-separated-tokens",
+    "version": "2.0.3"
+  },
+  {
+    "name": "diff",
+    "version": "8.0.3"
+  },
+  {
+    "name": "dijkstrajs",
+    "version": "1.0.3"
+  },
+  {
+    "name": "hast-util-to-html",
+    "version": "9.0.5"
+  },
+  {
+    "name": "hast-util-whitespace",
+    "version": "3.0.0"
+  },
+  {
+    "name": "highlight.js",
+    "version": "11.11.1"
+  },
+  {
+    "name": "html-void-elements",
+    "version": "3.0.0"
+  },
+  {
+    "name": "jsqr",
+    "version": "1.4.0"
+  },
+  {
+    "name": "lucide",
+    "version": "1.17.0"
+  },
+  {
+    "name": "marked",
+    "version": "18.0.3"
+  },
+  {
+    "name": "oniguruma-parser",
+    "version": "0.12.2"
+  },
+  {
+    "name": "oniguruma-to-es",
+    "version": "4.3.6"
+  },
+  {
+    "name": "property-information",
+    "version": "7.2.0"
+  },
+  {
+    "name": "qrcode",
+    "version": "1.5.4"
+  },
+  {
+    "name": "regex",
+    "version": "6.1.0"
+  },
+  {
+    "name": "regex-recursion",
+    "version": "6.0.2"
+  },
+  {
+    "name": "regex-utilities",
+    "version": "2.3.0"
+  },
+  {
+    "name": "shiki",
+    "version": "4.2.0"
+  },
+  {
+    "name": "space-separated-tokens",
+    "version": "2.0.2"
+  },
+  {
+    "name": "stringify-entities",
+    "version": "4.0.4"
+  },
+  {
+    "name": "svelte",
+    "version": "5.56.2"
+  },
+  {
+    "name": "zwitch",
+    "version": "2.0.4"
+  }
+]

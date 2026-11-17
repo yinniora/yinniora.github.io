@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Pi",
-  "short_name": "Pi",
+  "name": "YuGo Pi",
+  "short_name": "YuGo Pi",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
