@@ -1,5 +1,28 @@
 # Backend Architecture
 
+## Labeled model keys and applied models
+
+`/api/model-settings` is authenticated for the local window and approved encrypted
+remote devices. GET exposes labels, API formats, sanitized endpoints, cached
+available models and applied metadata, never API keys or custom headers. POST
+adds a labeled key, refreshes only that endpoint, additively applies a multi-model
+selection, or removes an applied model. Existing compatible `models.json` providers
+appear automatically; their auth.json credentials and unrelated metadata remain
+untouched. New keys use escaped literal values in a mode-0600 atomic models.json
+write, avoiding Pi's credential-command/environment interpolation. Revision
+checks reject stale mutations and malformed/symlink configurations fail closed.
+
+Discovery supports OpenAI Chat/Responses and New API, Anthropic Messages and
+Google Gemini formats, with bounded same-endpoint pagination, timeouts and
+response sizes. HTTPS is required except on loopback; redirects never receive
+keys. Error responses do not include upstream response bodies. Refresh is a
+read-only model listing, not an inference request, and does not apply models.
+
+`/api/models` overlays canonical custom definitions on the Pi cache,
+omits removed models and strips private headers. Worker configuration generations
+reload an idle process on its next model selection; active replies remain intact.
+Removing a model keeps the key, JSONL history and any running response.
+
 ## YuGo update tracking
 
 The application uses `updater.NewTracking`: public official commit metadata is

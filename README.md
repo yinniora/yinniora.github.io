@@ -15,7 +15,7 @@ Bug reports and contributions for this variant belong in this repository.
 - Projects and conversations on the phone home screen, project menus and new
   conversation controls, persistent collapse, and a clear Home return action.
 - Stable mobile keyboard layout, bounded scrolling and page zoom protection.
-- Expandable model thinking and tool activity, image/SVG zoom, native video
+- Expandable model thinking and tool activity, image/SVG pinch zoom, native video
   and audio, file downloads, and a separate BTW side chat with an introduction
   and explicit attachment of replies to the main draft.
 - Conversation Trash and permanent deletion, optional verified generated-file
@@ -24,6 +24,8 @@ Bug reports and contributions for this variant belong in this repository.
   device details. Your Mac owns the identity and access decisions.
 - Your own authenticated relay, automatic P2P attempts, encrypted WebRTC/DTLS,
   actual P2P/Relay status, and synchronization/loading indicators.
+
+- Settings → Models: labeled API keys, per-key model refresh, multi-select application, applied-model removal and shared Mac/mobile conversation pickers.
 
 ## Build and install
 
@@ -35,7 +37,7 @@ relay credentials or certificates are distributed with the source.
 git clone https://github.com/yinniora/yugo-pi.git
 cd yugo-pi
 make check
-make build remote-build VERSION=0.1.0-yugo.2
+make build remote-build VERSION=0.1.0-yugo.3
 python3 scripts/collect_notices.py
 python3 scripts/build_macos.py
 python3 scripts/install_remote_macos.py --client https://YOUR-INDEPENDENT-CLIENT/

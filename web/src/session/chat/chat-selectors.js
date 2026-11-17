@@ -10,7 +10,7 @@ export function groupModelsByProvider(models, filter = '') {
   models.forEach((model) => {
     if (q) {
       const name = (model.name || model.id || model.modelId || '').toLowerCase();
-      const provider = (model.provider || '').toLowerCase();
+      const provider = `${model.provider || ''} ${model.providerLabel || ''}`.toLowerCase();
       if (!name.includes(q) && !provider.includes(q)) return;
     }
     const provider = model.provider || 'unknown';
@@ -69,5 +69,5 @@ export function detectCurrentThinkingLevel(entries) {
 
 export function modelDisplayLabel(model, fallbackId = '') {
   const id = model?.name || model?.id || model?.modelId || fallbackId;
-  return id + (model?.provider ? ' @ ' + model.provider : '');
+  return id + (model?.provider ? ' @ ' + (model.providerLabel || model.provider) : '');
 }

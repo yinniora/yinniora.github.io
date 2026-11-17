@@ -69,11 +69,13 @@ type ChatWorker interface {
 type Factory func(sessionID, sessionPath string) (ChatWorker, error)
 
 type Manager struct {
-	mu       sync.Mutex
-	workers  map[string]ChatWorker
-	creating map[string]*createCall
-	factory  Factory
-	retired  map[string]bool
+	modelEpoch  uint64
+	workerEpoch map[string]uint64
+	mu          sync.Mutex
+	workers     map[string]ChatWorker
+	creating    map[string]*createCall
+	factory     Factory
+	retired     map[string]bool
 
 	// pendingSends counts Send calls that have been accepted but whose prompt
 	// has not been acked yet. Spawning a worker (process start + switch_session
@@ -107,6 +109,7 @@ func NewManager(factory Factory) *Manager {
 func NewManagerWithTTL(factory Factory, ttl time.Duration) *Manager {
 	m := &Manager{
 		workers:      make(map[string]ChatWorker),
+		workerEpoch:  make(map[string]uint64),
 		creating:     make(map[string]*createCall),
 		factory:      factory,
 		retired:      make(map[string]bool),
@@ -231,12 +234,32 @@ func (m *Manager) Status(sessionID string) WorkerStatus {
 }
 
 func (m *Manager) SetModel(ctx context.Context, sessionID, sessionPath, provider, modelID string) error {
-	worker, err := m.workerFor(sessionID, sessionPath)
-	if err != nil {
-		return err
+	for {
+		worker, err := m.workerFor(sessionID, sessionPath)
+		if err != nil {
+			return err
+		}
+		m.mu.Lock()
+		if m.workerEpoch[sessionID] == m.modelEpoch {
+			m.mu.Unlock()
+			return worker.SetModel(ctx, provider, modelID)
+		}
+		if m.pendingSends[sessionID] > 0 || worker.Status().State == WorkerStateRunning {
+			m.mu.Unlock()
+			return errors.New("finish the current reply before selecting a newly configured model")
+		}
+		// Close the idle worker before a replacement can be created for this session.
+		err = worker.Close()
+		delete(m.workers, sessionID)
+		m.mu.Unlock()
+		if err != nil {
+			return err
+		}
 	}
-	return worker.SetModel(ctx, provider, modelID)
 }
+
+// Active replies keep their process; the next idle model selection reloads config.
+func (m *Manager) ModelsChanged() { m.mu.Lock(); m.modelEpoch++; m.mu.Unlock() }
 
 func (m *Manager) SetThinkingLevel(ctx context.Context, sessionID, sessionPath, level string) error {
 	worker, err := m.workerFor(sessionID, sessionPath)
@@ -335,6 +358,7 @@ func (m *Manager) workerFor(sessionID, sessionPath string) (ChatWorker, error) {
 			return call.worker, nil
 		}
 		call := &createCall{done: make(chan struct{})}
+		epoch := m.modelEpoch
 		m.creating[sessionID] = call
 		m.mu.Unlock()
 
@@ -347,6 +371,7 @@ func (m *Manager) workerFor(sessionID, sessionPath string) (ChatWorker, error) {
 				worker = existing
 			} else {
 				m.workers[sessionID] = worker
+				m.workerEpoch[sessionID] = epoch
 			}
 		}
 		delete(m.creating, sessionID)

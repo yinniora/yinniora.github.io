@@ -13,6 +13,46 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+function pointer(target, type, id, x, y) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, { pointerId: id, pointerType: 'touch', clientX: x, clientY: y, button: 0 });
+  target.dispatchEvent(event);
+}
+
+it('pinches only the image, keeps the pinch center, pans, and does not dismiss on gesture release', async () => {
+  render(ImageModal);
+  window.dispatchEvent(
+    new CustomEvent('pi:image-preview', { detail: { src: 'data:image/png;base64,EEE' } }),
+  );
+  await tick();
+  const viewport = document.querySelector('.image-viewport'),
+    img = document.getElementById('modal-image');
+  viewport.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 600 });
+  pointer(img, 'pointerdown', 1, 100, 200);
+  pointer(img, 'pointerdown', 2, 200, 200);
+  pointer(img, 'pointermove', 2, 300, 200);
+  await tick();
+  await tick();
+  expect(img.style.width).toBe('200%');
+  expect(viewport.scrollLeft).toBe(100);
+  pointer(img, 'pointerup', 2, 300, 200);
+  pointer(img, 'pointermove', 1, 80, 180);
+  await tick();
+  expect(viewport.scrollLeft).toBe(120);
+  pointer(img, 'pointerup', 1, 80, 180);
+  viewport.click();
+  await tick();
+  expect(document.getElementById('image-modal')).toHaveClass('open');
+  pointer(img, 'pointerdown', 3, 100, 200);
+  pointer(img, 'pointerdown', 4, 300, 200);
+  pointer(img, 'pointermove', 4, 150, 200);
+  await tick();
+  expect(img.style.width).toBe('100%');
+  expect(document.documentElement.style.zoom).toBe('');
+  pointer(img, 'pointercancel', 3, 100, 200);
+  pointer(img, 'pointercancel', 4, 150, 200);
+});
+
 // The component installs document-level delegated listeners, so the "zoomable"
 // images live outside the component (as they do in the real transcript/composer).
 function addImage(className, srcValue, altValue = '') {

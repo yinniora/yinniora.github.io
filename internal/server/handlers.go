@@ -484,6 +484,7 @@ func (s *Server) handleRecentLocations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAvailableModels(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodGet {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -509,7 +510,12 @@ func (s *Server) handleAvailableModels(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "invalid model list payload: "+err.Error())
 		return
 	}
-	writeJSON(w, 0, map[string]any{"models": payload.Models})
+	models, err := s.appliedModels(payload.Models)
+	if err != nil {
+		writeJSONError(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 0, map[string]any{"models": models})
 }
 
 func isBrokenPipe(err error) bool {

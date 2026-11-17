@@ -1,5 +1,6 @@
 import { copyFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createServer } from "node:http";
 import { test, expect, collapseScratchpad, isMobileLayout } from "../lib/test";
 import {
   buildSession,
@@ -8,6 +9,173 @@ import {
   writeSession,
   assistantTextEntry,
 } from "../lib/sessions";
+
+test("model settings refresh labeled keys and explicitly apply and remove multiple models", async ({
+  page,
+}, testInfo) => {
+  let sawKey = false;
+  const endpoint = createServer((request, response) => {
+    sawKey = request.headers.authorization === "Bearer fixture-e2e-key-only";
+    response.setHeader("Content-Type", "application/json");
+    response.end(
+      JSON.stringify({
+        data: [{ id: "yugo-chat-one" }, { id: "yugo-chat-two" }],
+      }),
+    );
+  });
+  await new Promise<void>((resolve) =>
+    endpoint.listen(0, "127.0.0.1", resolve),
+  );
+  try {
+    const port = (endpoint.address() as { port: number }).port;
+    const label = "Personal " + testInfo.project.name;
+    await page.goto("/settings?section=models");
+    await page.getByRole("button", { name: "Add key", exact: true }).click();
+    await page.getByLabel("Key label", { exact: true }).fill(label);
+    await page
+      .getByLabel("API base URL", { exact: true })
+      .fill(`http://127.0.0.1:${port}`);
+    await page
+      .getByLabel("API key", { exact: true })
+      .fill("fixture-e2e-key-only");
+    await page.getByRole("button", { name: "Save key", exact: true }).click();
+    await expect(page.getByLabel("API key", { exact: true })).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Refresh models", exact: true })
+      .click();
+    await expect(
+      page.getByText("Model list refreshed. Select models, then apply them."),
+    ).toBeVisible();
+    expect(sawKey).toBe(true);
+    await expect(
+      page.locator(".model-applied-row").filter({ hasText: label }),
+    ).toHaveCount(0);
+    await page
+      .getByRole("checkbox", { name: "yugo-chat-one", exact: true })
+      .check();
+    await page
+      .getByRole("checkbox", { name: "yugo-chat-two", exact: true })
+      .check();
+    await page
+      .getByRole("button", { name: "Apply 2 selected models", exact: true })
+      .click();
+    await expect(
+      page.locator(".model-applied-row").filter({ hasText: label }),
+    ).toHaveCount(2);
+    let payload = await (
+      await page.request.get("/api/models")
+    ).json();
+    expect(
+      payload.models.filter((m: any) => m.providerLabel === label),
+    ).toHaveLength(2);
+    expect(JSON.stringify(payload)).not.toContain("fixture-e2e-key-only");
+    await page
+      .getByRole("button", {
+        name: `Remove yugo-chat-one from ${label}`,
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.locator(".model-applied-row").filter({ hasText: label }),
+    ).toHaveCount(1);
+    payload = await (await page.request.get("/api/models")).json();
+    expect(
+      payload.models
+        .filter((m: any) => m.providerLabel === label)
+        .map((m: any) => m.id),
+    ).toEqual(["yugo-chat-two"]);
+    await page.screenshot({
+      path: testInfo.outputPath("model-settings.png"),
+      scale: "css",
+    });
+  } finally {
+    await new Promise<void>((resolve) => endpoint.close(() => resolve()));
+  }
+});
+
+test("two-finger image gestures scale only the image and leave the viewer open", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const { entries, lastId } = buildSession({ cwd: realWorkingDir() });
+  entries.push(
+    assistantTextEntry(
+      lastId,
+      "![Pinch preview](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j8z0AAAAASUVORK5CYII=)",
+    ).entry as any,
+  );
+  const id = writeSession(
+    sessionsDir,
+    uniqueSessionName(testInfo, "pinch"),
+    entries,
+  );
+  await collapseScratchpad(page);
+  await page.goto("/session?id=" + encodeURIComponent(id));
+  await page.locator("#messages img").first().click();
+  const viewer = page.locator("#image-modal"),
+    image = page.locator("#modal-image");
+  await expect(viewer).toBeVisible();
+  const box = (await page.locator(".image-viewport").boundingBox())!;
+  const x = box.x + box.width / 2,
+    y = box.y + box.height / 2;
+  if (testInfo.project.name.includes("Chrome")) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [
+        { id: 1, x: x - 40, y },
+        { id: 2, x: x + 40, y },
+      ],
+    });
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [
+        { id: 1, x: x - 80, y },
+        { id: 2, x: x + 80, y },
+      ],
+    });
+    await expect(page.locator(".image-zoom-reset")).toHaveText("200%");
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await cdp.detach();
+  } else {
+    await image.dispatchEvent("pointerdown", {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: x - 40,
+      clientY: y,
+    });
+    await image.dispatchEvent("pointerdown", {
+      pointerId: 2,
+      pointerType: "touch",
+      clientX: x + 40,
+      clientY: y,
+    });
+    await image.dispatchEvent("pointermove", {
+      pointerId: 2,
+      pointerType: "touch",
+      clientX: x + 120,
+      clientY: y,
+    });
+    await expect(page.locator(".image-zoom-reset")).toHaveText("200%");
+    await image.dispatchEvent("pointerup", {
+      pointerId: 1,
+      pointerType: "touch",
+    });
+    await image.dispatchEvent("pointerup", {
+      pointerId: 2,
+      pointerType: "touch",
+    });
+  }
+  await expect(viewer).toBeVisible();
+  expect(await page.evaluate(() => window.visualViewport?.scale || 1)).toBe(1);
+  await page.locator(".image-zoom-reset").click();
+  await expect(page.locator(".image-zoom-reset")).toHaveText("100%");
+  await viewer.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(viewer).not.toBeVisible();
+});
 
 test("mobile workspace collapses projects, returns home and fits the keyboard viewport", async ({
   page,

@@ -5,6 +5,7 @@ import {
   isScopedModel,
   modelDisplayLabel,
 } from '../../../session/chat/chat-selectors.js';
+import { t } from '../../../shared/i18n.js';
 
 export function renderModelList(
   models,
@@ -12,11 +13,12 @@ export function renderModelList(
 ) {
   const byProvider = groupModelsByProvider(models, filter);
   const providers = Object.keys(byProvider).sort();
-  if (providers.length === 0) return '<div class="model-empty">No models match</div>';
+  if (providers.length === 0)
+    return `<div class="model-empty">${escapeHtml(t('models.noMatches'))}</div>`;
 
   let html = '';
   providers.forEach((provider) => {
-    html += `<div class="model-provider">${escapeHtml(provider)}</div>`;
+    html += `<div class="model-provider">${escapeHtml(byProvider[provider][0]?.providerLabel || provider)}</div>`;
     byProvider[provider].forEach((model) => {
       const id = model.id || model.modelId || '';
       const name = model.name || id;
@@ -65,7 +67,9 @@ export function setupModelSelector({
 
   function renderPopupList(filter) {
     if (!popupList) return;
-    popupList.innerHTML = renderModelList(allModels, { filter, selectedModel, escapeHtml });
+    popupList.innerHTML = allModels.length
+      ? renderModelList(allModels, { filter, selectedModel, escapeHtml })
+      : `<div class="model-empty"><a href="/settings?section=models">${escapeHtml(t('models.noneInPicker'))}</a></div>`;
     popupList.dataset.activeIndex = '-1';
   }
 
@@ -78,6 +82,15 @@ export function setupModelSelector({
         popupSearch.focus({ preventScroll: true });
     }
     renderPopupList('');
+    chatApi
+      .listModels()
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!Array.isArray(data?.models)) return;
+        allModels = data.models;
+        renderPopupList(popupSearch?.value || '');
+      })
+      .catch(() => {});
   }
 
   function closePopup(focusTextarea = false) {
@@ -146,7 +159,12 @@ export function setupModelSelector({
       setKnownModelLabel(newLabel);
       setModelLabel(newLabel);
     } catch (err) {
-      setChatStatus(err.message || String(err), 'error');
+      setChatStatus(
+        err.message?.includes('finish the current reply')
+          ? t('models.finishReply')
+          : err.message || String(err),
+        'error',
+      );
     }
   });
 
@@ -170,8 +188,7 @@ export function setupModelSelector({
       if (!data.models || data.models.length === 0) {
         allModels = [];
         if (popupList) {
-          popupList.innerHTML =
-            '<div class="model-empty">No models configured<br><small>Run <code>pi setup</code> to configure</small></div>';
+          popupList.innerHTML = `<div class="model-empty"><a href="/settings?section=models">${escapeHtml(t('models.noneInPicker'))}</a></div>`;
         }
         return;
       }
@@ -201,8 +218,7 @@ export function setupModelSelector({
     .catch(() => {
       // Model list fetch failed; button still works (shows empty list).
       if (popupList) {
-        popupList.innerHTML =
-          '<div class="model-empty">Failed to load models<br><small>Check that <code>pi</code> is on PATH</small></div>';
+        popupList.innerHTML = `<div class="model-empty">${escapeHtml(t('models.pickerFailed'))}</div>`;
       }
     });
 

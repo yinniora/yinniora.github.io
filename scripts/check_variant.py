@@ -36,6 +36,8 @@ def check(root=ROOT):
         'web/src/components/shared/MacFolderPicker.svelte',
         'web/src/shared/visual-viewport.test.js',
         'web/src/components/session/ImageModal.test.js',
+        'web/src/components/settings/ModelSettings.test.js',
+        'internal/server/model_settings_test.go',
         'web/src/components/session/BtwPopup.test.js',
         'internal/server/session_files_test.go',
         'internal/server/project_delete_test.go',

@@ -174,6 +174,10 @@ before mounting the connection screen. Scroll remains inside the transcript, mod
 
 `ImageModal` handles transcript/Markdown images and gallery images/SVGs in a
 native modal with an explicit close button, blank/letterbox dismissal, zoom and reset controls.
+Two touch pointers pinch around their midpoint (1–4x), with single-finger panning
+when enlarged. Pointer cancellation and capture release do not close the viewer.
+Trackpad pinch uses a non-passive Ctrl-wheel handler. All these gestures scale
+the image alone; the application's global page-zoom lock remains active.
 Tapping the image or dragging a zoomed view does not dismiss it. SVG zoom uses an image resource
 (no script execution); inline SVG remains sandboxed. Videos keep native controls,
 inline playback, fullscreen through the viewer and an unsupported-format download
@@ -190,3 +194,10 @@ on both Mac and phone. Its dialog explains review and patching, links the offici
 comparison and allows a fresh metadata check. Tracking snapshots never expose
 an install/restart action. Dismissal records only the public commit ID locally;
 a different future official commit shows a new reminder.
+
+Settings → Models is shared by desktop and mobile. `ModelSettings` groups keys
+by user labels, refreshes one provider at a time, allows searching and selecting
+multiple models, then explicitly applies them. Applied models have independent
+remove controls and optional new-model context/output, image and thinking settings.
+Key entry uses a password field, is cleared after save, and never uses browser
+storage. The conversation picker refreshes on opening and displays provider labels.
