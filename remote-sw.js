@@ -1,6 +1,6 @@
 // The independently hosted client sends HTTP over the authenticated page's
 // DTLS channel. Media Range requests stream through the same encrypted path.
-const CACHE = 'pi-remote-0.0.1-beta.38-personal.2';
+const CACHE = 'pi-remote-0.0.1-beta.38-personal.3';
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(caches.open(CACHE).then((cache) => cache.add('/')));

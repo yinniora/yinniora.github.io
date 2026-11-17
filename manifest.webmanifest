@@ -1,5 +1,6 @@
 {
-  "name": "Pi Workspace",
+  "id": "/",
+  "name": "Pi",
   "short_name": "Pi",
   "start_url": "/",
   "scope": "/",
