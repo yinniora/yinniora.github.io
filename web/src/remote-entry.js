@@ -21,6 +21,9 @@ let transportInstalled = false;
 
 async function start() {
   try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem('pi-web-theme') ||
+      (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     if (!localStorage.getItem(LOCALE_KEY))
       localStorage.setItem(LOCALE_KEY, navigator.language.startsWith('zh') ? 'zh' : 'en');
   } catch {}

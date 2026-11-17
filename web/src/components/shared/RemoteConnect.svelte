@@ -193,7 +193,7 @@
     box-sizing: border-box;
     margin: 0 auto;
     text-align: left;
-    color: #242424;
+    color: var(--text, #242424);
     font:
       14px/1.6 -apple-system,
       BlinkMacSystemFont,
@@ -214,7 +214,7 @@
   }
   .connect-intro,
   .connect-hint {
-    color: #777;
+    color: var(--text-soft, #52525b);
     font-size: 13px;
     line-height: 1.7;
     margin: 8px 0 16px;
@@ -228,7 +228,7 @@
   }
   legend {
     font-size: 12px;
-    color: #777;
+    color: var(--text-soft, #52525b);
     margin-bottom: 8px;
   }
   .connect-routes label {
@@ -238,7 +238,7 @@
     gap: 6px;
     flex: 1;
     padding: 9px 7px;
-    border: 1px solid #e4e4e7;
+    border: 1px solid var(--dim, #e4e4e7);
     border-radius: 9px;
     cursor: pointer;
   }
@@ -249,8 +249,8 @@
     height: 1px;
   }
   .connect-routes label.selected {
-    background: #f4f4f5;
-    border-color: #777;
+    background: var(--surface-2, #f4f4f5);
+    border-color: var(--text-soft, #52525b);
   }
   button {
     font: inherit;
@@ -276,42 +276,42 @@
     outline-offset: 3px;
   }
   .connect-primary {
-    background: #242424;
-    color: white;
-    border: 1px solid #242424;
+    background: var(--text, #242424);
+    color: var(--body-bg, white);
+    border: 1px solid var(--text, #242424);
     margin-top: 24px;
   }
   .connect-secondary {
-    background: #fff;
-    border: 1px solid #d4d4d8;
-    color: #242424;
+    background: var(--surface, #fff);
+    border: 1px solid var(--dim, #d4d4d8);
+    color: var(--text, #242424);
     margin-top: 10px;
   }
   .connect-retry {
     border: 0;
     background: transparent;
-    color: #555;
+    color: var(--text-soft, #52525b);
     margin-top: 9px;
   }
   form {
     margin-top: 26px;
     padding-top: 20px;
-    border-top: 1px solid #eee;
+    border-top: 1px solid var(--dim, #e4e4e7);
   }
   form label {
     display: block;
     font-size: 12px;
-    color: #777;
+    color: var(--text-soft, #52525b);
     margin-bottom: 7px;
   }
   textarea {
     display: block;
     width: 100%;
     box-sizing: border-box;
-    border: 1px solid #d4d4d8;
+    border: 1px solid var(--dim, #d4d4d8);
     border-radius: 9px;
-    background: #fff;
-    color: #242424;
+    background: var(--surface, #fff);
+    color: var(--text, #242424);
     padding: 12px;
     font-family: inherit;
     font-size: 13px;
@@ -330,7 +330,7 @@
     display: flex;
     gap: 9px;
     align-items: center;
-    color: #555;
+    color: var(--text-soft, #52525b);
     padding: 12px 0;
     font-size: 13px;
   }
@@ -357,38 +357,5 @@
     border: 0;
     color: white;
     border-radius: 0;
-  }
-  @media (prefers-color-scheme: dark) {
-    .connect-card {
-      color: #ededed;
-    }
-    .connect-primary {
-      background: #eee;
-      color: #222;
-      border-color: #eee;
-    }
-    .connect-secondary,
-    textarea {
-      background: #252525;
-      color: #ededed;
-      border-color: #484848;
-    }
-    .connect-routes label {
-      border-color: #484848;
-    }
-    .connect-routes label.selected {
-      background: #333;
-      border-color: #aaa;
-    }
-    form {
-      border-color: #383838;
-    }
-    .connect-error {
-      background: #3b2020;
-      color: #f5abab !important;
-    }
-    .connect-retry {
-      color: #bbb;
-    }
   }
 </style>

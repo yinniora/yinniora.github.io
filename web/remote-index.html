@@ -16,8 +16,8 @@
       body {
         margin: 0;
         font: 15px/1.7 system-ui;
-        background: #fff;
-        color: #242424;
+        background: var(--body-bg, #fff);
+        color: var(--text, #242424);
       }
       #remote-status {
         display: grid;
@@ -32,17 +32,11 @@
         font-weight: 600;
       }
       #remote-status p {
-        color: #777;
+        color: var(--text-soft, #52525b);
         max-width: 380px;
       }
       #remote-status[hidden] {
         display: none;
-      }
-      @media (prefers-color-scheme: dark) {
-        body {
-          background: #212121;
-          color: #eee;
-        }
       }
       .failed p {
         color: #ad4040;
