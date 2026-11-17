@@ -87,6 +87,18 @@
     // immediately. The EventSource is shared with <LiveReload> — both attach
     // their own listeners.
     void queueStore.refresh?.();
+    try {
+      const key = `pi-personal:draft:${sessionId}`;
+      const draft = target.sessionStorage.getItem(key);
+      const input = document.getElementById('pi-chat-message');
+      if (draft && input) {
+        input.value = draft;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        target.sessionStorage.removeItem(key);
+      }
+    } catch {
+      /* Draft recovery is optional when browser storage is unavailable. */
+    }
     const onQueueEvent = () => queueStore.refresh?.();
     target.addEventListener('pi-queue-event', onQueueEvent);
     return () => target.removeEventListener('pi-queue-event', onQueueEvent);

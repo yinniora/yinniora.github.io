@@ -3,6 +3,7 @@
   // desktop popover + mobile panel (+ the session-list <CommandPalette>) and, in
   // onMount, wires open/close + the action dispatch. Several actions delegate to
   // shared live runtime helpers or click hidden relay buttons (share/new/terminal).
+  import { openHub } from '../../shared/hub.js';
   import { onMount } from 'svelte';
   import CommandPalette from '../shared/CommandPalette.svelte';
   import { t } from '../../shared/i18n.js';
@@ -22,6 +23,9 @@
     CalendarClock,
     Settings,
     Tag,
+    Trash2,
+    Download,
+    Link2,
   } from '../../shared/icons.js';
   import * as sidebarApi from '../../session/ui/sidebar.js';
   import { openVersionModal } from '../../shared/version.js';
@@ -29,13 +33,12 @@
   import { openSessionPalette } from '../../shared/command-palette-runtime.js';
   import { openModelUsage, openFork, openDiff } from '../../session/session-modals.svelte.js';
   import { showToast } from '../../shared/toast.js';
-  import { sessionTitle, setSessionTitle } from '../../session/session-title.svelte.js';
+  import { sessionTitle } from '../../session/session-title.svelte.js';
   import { USER_DOCS_URL, TELEGRAM_INVITE_URL } from '../../shared/links.js';
   import {
     cloneSession,
     forkSession,
     loadForkEntries,
-    renameSession,
   } from '../../session/session-menu-actions.js';
 
   let { sessionId = '', runningSessionIds = null } = $props();
@@ -49,7 +52,8 @@
   // render on desktop only.
   const primaryItems = [
     { action: 'list-sessions', icon: Search, label: 'menu.searchSessions', kbd: '⌘K' },
-    { action: 'rename', icon: Pencil, label: 'menu.rename' },
+    { action: 'manage', icon: Pencil, label: 'hub.session' },
+    { action: 'export-markdown', icon: Download, label: 'hub.export' },
     { action: 'share', icon: Share2, label: 'menu.share' },
     { action: 'fork', icon: GitFork, label: 'menu.fork' },
     { action: 'clone', icon: Copy, label: 'menu.clone' },
@@ -61,6 +65,8 @@
 
   // Footer links/rows. desktopOnly items (the version row) are dropped on mobile.
   const footerItems = [
+    { kind: 'action', action: 'connections', icon: Link2, label: 'hub.connections' },
+    { kind: 'action', action: 'trash', icon: Trash2, label: 'hub.trash' },
     { kind: 'action', action: 'user-docs', icon: BookOpen, label: 'common.userDocs' },
     {
       kind: 'link',
@@ -167,20 +173,22 @@
           openModelUsage();
           closeMenu();
           break;
-        case 'rename': {
-          const current = sessionTitle.name;
-          const next = window.prompt(t('menu.renamePrompt'), current);
-          const trimmed = next ? next.trim() : '';
+        case 'manage':
           closeMenu();
-          if (!trimmed || trimmed === current) break;
-          renameSession(sessionId, trimmed)
-            .then((data) => {
-              setSessionTitle((data && data.name) || trimmed);
-              toast(t('menu.renamed'));
-            })
-            .catch(() => toast(t('git.renameFailed')));
+          openHub('session', { id: sessionId, name: sessionTitle.name });
           break;
-        }
+        case 'export-markdown':
+          closeMenu();
+          window.location.assign('/api/export-markdown?id=' + encodeURIComponent(sessionId));
+          break;
+        case 'connections':
+          closeMenu();
+          openHub('connections');
+          break;
+        case 'trash':
+          closeMenu();
+          openHub('trash');
+          break;
         case 'fork': {
           closeMenu();
           loadForkEntries(sessionId)

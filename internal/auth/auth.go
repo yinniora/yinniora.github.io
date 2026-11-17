@@ -1,23 +1,47 @@
 package auth
 
 import (
+	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"pi-web/internal/ui"
 )
 
 const TokenCookieName = "pi_token"
 
+type deviceContextKey struct{}
+
+// WithApprovedDevice is used only after the Mac's device gateway verifies its
+// own persistent whitelist. Request headers can never populate this context.
+func WithApprovedDevice(r *http.Request, id string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), deviceContextKey{}, id))
+}
+
+func ApprovedDeviceID(r *http.Request) string {
+	id, _ := r.Context().Value(deviceContextKey{}).(string)
+	return id
+}
+
 type Middleware struct {
 	token          string
 	allowedHostsMu sync.RWMutex
 	allowedHosts   map[string]struct{}
 	allowAnyHost   bool
+	pairMu         sync.Mutex
+	pairs          map[string]pairingTicket
+}
+
+type pairingTicket struct {
+	expires time.Time
+	host    string
 }
 
 func New(token string) *Middleware {
@@ -64,12 +88,18 @@ func (a *Middleware) AllowAnyHost() {
 // a plain 401.
 func (a *Middleware) Wrap(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Referrer-Policy", "no-referrer")
 		if !a.Enabled() && !a.allowsTokenlessHost(r.Host) {
 			http.Error(w, "unrecognized host", http.StatusForbidden)
 			return
 		}
 		if !allowsBrowserOrigin(r) {
 			http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+			return
+		}
+		if ApprovedDeviceID(r) != "" {
+			h(w, r)
 			return
 		}
 		if !a.Enabled() {
@@ -80,6 +110,22 @@ func (a *Middleware) Wrap(h http.HandlerFunc) http.HandlerFunc {
 		got := ""
 		fromQuery := false
 		fromPost := false
+		if ticket := r.URL.Query().Get("pair"); ticket != "" {
+			a.pairMu.Lock()
+			pair, ok := a.pairs[ticket]
+			matchesHost := ok && strings.EqualFold(pair.host, r.Host)
+			if matchesHost || (ok && time.Now().After(pair.expires)) {
+				delete(a.pairs, ticket)
+			}
+			a.pairMu.Unlock()
+			if matchesHost && time.Now().Before(pair.expires) {
+				got = a.token
+				fromQuery = true
+			} else {
+				http.Error(w, "Pairing link expired. Return to the signed-in page and try again.", http.StatusUnauthorized)
+				return
+			}
+		}
 
 		// Browser login form submissions should prefer the submitted token over
 		// any stale token that may still be present in the URL query string.
@@ -148,6 +194,42 @@ func (a *Middleware) Wrap(h http.HandlerFunc) http.HandlerFunc {
 
 		h(w, r)
 	}
+}
+
+// PairingURL hands a signed-in browser to another configured origin using a
+// single-use, short-lived ticket. The persistent bearer token stays HttpOnly.
+func (a *Middleware) PairingURL(target string) string {
+	u, err := url.Parse(target)
+	if err != nil {
+		return ""
+	}
+	if !a.Enabled() {
+		return target
+	}
+	var raw [32]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return ""
+	}
+	ticket := hex.EncodeToString(raw[:])
+	a.pairMu.Lock()
+	if a.pairs == nil {
+		a.pairs = make(map[string]pairingTicket)
+	}
+	for k, pair := range a.pairs {
+		if time.Now().After(pair.expires) {
+			delete(a.pairs, k)
+		}
+	}
+	if len(a.pairs) >= 128 {
+		a.pairMu.Unlock()
+		return ""
+	}
+	a.pairs[ticket] = pairingTicket{expires: time.Now().Add(time.Minute), host: u.Host}
+	a.pairMu.Unlock()
+	q := u.Query()
+	q.Set("pair", ticket)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func (a *Middleware) allowsTokenlessHost(rawHost string) bool {
@@ -244,6 +326,7 @@ func allowsBrowserOrigin(r *http.Request) bool {
 func cleanURL(r *http.Request) string {
 	q := r.URL.Query()
 	q.Del("token")
+	q.Del("pair")
 	q.Del("error")
 	if len(q) == 0 {
 		return r.URL.Path

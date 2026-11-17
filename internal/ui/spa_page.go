@@ -26,6 +26,9 @@ func appStylesheets() template.HTML {
 func RenderAppShell(w io.Writer, bootstrap string) error {
 	scriptSrc := template.HTMLEscapeString(appScriptPath)
 	preload := template.HTML(`<link rel="modulepreload" href="` + scriptSrc + `">`)
+	for _, path := range appStylePaths {
+		preload += template.HTML(`<link rel="stylesheet" href="` + template.HTMLEscapeString(path) + `">`)
+	}
 	bootstrapTag := template.HTML("")
 	if bootstrap != "" {
 		// base64 only (A-Za-z0-9+/=), so it cannot break out of the script tag.

@@ -7,15 +7,21 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/pion/webrtc/v4"
 
 	"pi-web/internal/agentdir"
 	"pi-web/internal/auth"
 	"pi-web/internal/frontend"
+	"pi-web/internal/relay"
 	"pi-web/internal/rpc"
 	"pi-web/internal/server"
 	"pi-web/internal/sessions"
@@ -34,6 +40,7 @@ const developmentEnvVar = "PI_WEB_DEV"
 func Main(version string) {
 	port := flag.String("p", defaultPort, "port to listen on")
 	hostOverride := flag.String("host", "", "host/IP to bind; defaults to 127.0.0.1")
+	extraHost := flag.String("extra-host", "", "optional additional private listener, retried when unavailable")
 	open := flag.Bool("o", false, "auto-open browser")
 	insecure := flag.Bool("insecure", false, "allow non-loopback bind without "+tokenEnvVar+" (DANGEROUS)")
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -57,7 +64,7 @@ func Main(version string) {
 
 	bindHost := chooseBindHost(*hostOverride)
 	token := os.Getenv(tokenEnvVar)
-	tokenRequired := token == "" && !isLoopbackHost(bindHost) && !*insecure
+	tokenRequired := token == "" && (!isLoopbackHost(bindHost) || (*extraHost != "" && !isLoopbackHost(*extraHost))) && !*insecure
 	if tokenRequired {
 		fmt.Fprintf(os.Stderr,
 			"refusing to bind %s without %s set: anyone reachable on this address could view sessions and drive pi.\n"+
@@ -72,6 +79,39 @@ func Main(version string) {
 	}
 
 	versionChecker := updater.New(version)
+	if strings.Contains(version, "-personal.") {
+		versionChecker = updater.NewManual(version)
+	}
+	deviceEnabled := os.Getenv("PI_WEB_DEVICE_AUTH") == "1"
+	var remoteHost *relay.Host
+	if deviceEnabled {
+		var err error
+		remoteHost, err = relay.NewHost(filepath.Join(agentDir, "remote", "identity.pem"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "cannot initialize Mac remote identity:", err)
+			os.Exit(1)
+		}
+	}
+	bootstrapRemote := func() map[string]any {
+		fingerprint := ""
+		if remoteHost != nil {
+			fingerprint = remoteHost.Fingerprint
+		}
+		return map[string]any{"version": 1, "fingerprint": fingerprint,
+			"clientUrl": os.Getenv("PI_WEB_REMOTE_CLIENT_URL"), "signalUrl": os.Getenv("PI_WEB_REMOTE_SIGNAL_URL"),
+			"iceUrl": os.Getenv("PI_WEB_REMOTE_ICE_URL"), "directUrl": os.Getenv("PI_WEB_REMOTE_DIRECT_URL")}
+	}
+	approvePair := func(ctx context.Context, name string) error {
+		helper := os.Getenv("PI_WEB_PAIR_APPROVER")
+		if !filepath.IsAbs(helper) {
+			return fmt.Errorf("Mac approval helper is not configured")
+		}
+		output, err := exec.CommandContext(ctx, helper, name).Output()
+		if err != nil || strings.TrimSpace(string(output)) != "approved" {
+			return fmt.Errorf("Mac system authentication was not completed")
+		}
+		return nil
+	}
 
 	var srv *server.Server
 	manager := workers.NewManager(func(sessionID, sessionPath string) (workers.ChatWorker, error) {
@@ -86,6 +126,9 @@ func Main(version string) {
 		AgentDir:            agentDir,
 		SessionsDir:         sessionsDir,
 		Auth:                authMiddleware,
+		EnforceDeviceAuth:   deviceEnabled,
+		PairApprover:        approvePair,
+		RemoteBootstrap:     bootstrapRemote,
 		ChatSender:          manager,
 		Cache:               sessions.NewCache(),
 		RenderExportSession: ui.RenderExportSessionPage,
@@ -93,8 +136,13 @@ func Main(version string) {
 		Models: func(ctx context.Context) (json.RawMessage, error) {
 			return defaultModelsCache.get(ctx)
 		},
-		Updater:               versionChecker,
-		RunInstall:            runInstall,
+		Updater: versionChecker,
+		RunInstall: func(ctx context.Context) error {
+			if strings.Contains(version, "-personal.") {
+				return fmt.Errorf("personal builds are updated from the maintained fork")
+			}
+			return runInstall(ctx)
+		},
 		RunRestart:            runRestart,
 		DisableBackgroundJobs: developmentMode,
 	})
@@ -108,12 +156,32 @@ func Main(version string) {
 
 	mux := http.NewServeMux()
 	srv.Register(mux)
+	if remoteHost != nil {
+		remoteHost.Authorize = srv.AuthorizeRemoteDevice
+		remoteHost.WatchDevice = srv.WatchRemoteDevice
+		remoteHost.Handler = func(w http.ResponseWriter, r *http.Request, id string) {
+			mux.ServeHTTP(w, auth.WithApprovedDevice(r, id))
+		}
+		if u, err := url.Parse(os.Getenv("PI_WEB_REMOTE_CLIENT_URL")); err == nil && u.Host != "" {
+			remoteHost.Origins = []string{u.Host}
+		}
+		remoteHost.ICE = func() []webrtc.ICEServer {
+			ip, secret := os.Getenv("PI_WEB_REMOTE_TURN_IP"), os.Getenv("PI_WEB_REMOTE_TURN_SECRET")
+			if ip == "" || secret == "" {
+				return nil
+			}
+			config := relay.TURNConfiguration(ip, secret)
+			return []webrtc.ICEServer{{URLs: config["urls"].([]string), Username: config["username"].(string), Credential: config["credential"]}}
+		}
+		mux.HandleFunc("/remote-signal", remoteHost.ServeSignal)
+	}
 	ui.RegisterPWAHandlers(mux)
 	dfs := web.DistFS()
 	if scripts, err := frontend.LoadScripts(dfs, frontend.AppEntry); err == nil {
 		for _, script := range scripts {
 			if script.Entry == frontend.AppEntry {
 				ui.SetAppScriptPath(script.Path)
+				ui.SetAppStylePaths(script.CSS)
 			}
 			mux.HandleFunc(script.Path, frontend.ServeJS(script.JS, true))
 		}
@@ -124,7 +192,7 @@ func Main(version string) {
 	}
 
 	addr := net.JoinHostPort(bindHost, *port)
-	url := fmt.Sprintf("http://%s", net.JoinHostPort(bindHost, *port))
+	localURL := fmt.Sprintf("http://%s", net.JoinHostPort(bindHost, *port))
 	var tailscaleURL string
 	var tailscaleServe bool
 	if *hostOverride == "" && !authMiddleware.Enabled() {
@@ -152,7 +220,7 @@ func Main(version string) {
 			}
 		}
 	}
-	fmt.Printf("Pi Sessions Viewer -> %s\n", url)
+	fmt.Printf("Pi Sessions Viewer -> %s\n", localURL)
 	if tailscaleURL != "" {
 		fmt.Printf("Tailscale HTTPS -> %s\n", tailscaleURL)
 	}
@@ -184,7 +252,7 @@ func Main(version string) {
 	if *open {
 		go func() {
 			time.Sleep(300 * time.Millisecond)
-			openBrowser(url)
+			openBrowser(localURL)
 		}()
 	}
 
@@ -192,7 +260,7 @@ func Main(version string) {
 
 	httpServer := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           srv.WrapDevices(mux, false),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		// WriteTimeout intentionally 0 — SSE streams are long-lived.
@@ -208,8 +276,52 @@ func Main(version string) {
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
+	if remoteHost != nil {
+		// This listener exposes signaling only. Even a local reverse proxy cannot
+		// turn it into a loopback administrator for the workspace HTTP API.
+		if directAddress := os.Getenv("PI_WEB_DIRECT_SIGNAL_ADDR"); directAddress != "" {
+			directServer := &http.Server{Addr: directAddress, Handler: http.HandlerFunc(remoteHost.ServeSignal), ReadHeaderTimeout: 10 * time.Second}
+			go func() {
+				if err := directServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					fmt.Fprintln(os.Stderr, "direct signaling listener:", err)
+				}
+			}()
+			defer directServer.Close()
+		}
+		endpoint := os.Getenv("PI_WEB_REMOTE_SIGNAL_URL")
+		if endpoint != "" {
+			u, err := url.Parse(endpoint)
+			if err == nil && u.Scheme == "wss" {
+				q := u.Query()
+				q.Set("role", "host")
+				u.RawQuery = q.Encode()
+				go remoteHost.ConnectBroker(ctx, u.String(), os.Getenv("PI_WEB_RELAY_HOST_TOKEN"))
+			}
+		}
+		defer remoteHost.Close()
+	}
 
 	go versionChecker.Start(ctx)
+	if *extraHost != "" {
+		authMiddleware.AllowHost(*extraHost)
+		go func() {
+			for ctx.Err() == nil {
+				listener, err := net.Listen("tcp", net.JoinHostPort(*extraHost, *port))
+				if err == nil {
+					fmt.Printf("Private direct listener -> http://%s\n", listener.Addr())
+					err = httpServer.Serve(listener)
+					if err == http.ErrServerClosed {
+						return
+					}
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
+				}
+			}
+		}()
+	}
 
 	shutdownCode := make(chan int, 1)
 	go func() {

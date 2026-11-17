@@ -1,6 +1,40 @@
 // English — the source of truth for pi-web UI strings and the fallback for every
 // other locale. Keys are dot-namespaced by area. Add new strings here first.
 export default {
+  'hub.purge': 'Delete permanently',
+  'hub.purgeWarning':
+    'This conversation and its queued messages will be deleted from the host computer. This cannot be undone. Project files are kept.',
+  'hub.purgeConfirm': 'Confirm permanent deletion',
+
+  'hub.connections': 'Connections',
+  'hub.trash': 'Trash',
+  'hub.session': 'Manage session',
+  'hub.sessionName': 'Session name',
+  'hub.nameRequired': 'Enter a session name.',
+  'hub.manageNamed': 'Manage {name}',
+  'hub.export': 'Export conversation as Markdown',
+  'hub.delete': 'Move to Trash',
+  'hub.deleteHint': 'You can restore this conversation from Trash.',
+  'hub.trashHint':
+    'Deleted conversations stay on the host computer and can be restored here. Project files are unchanged.',
+  'hub.emptyTrash': 'Trash is empty.',
+  'hub.restore': 'Restore',
+  'hub.loading': 'Loading\u2026',
+  'hub.connectionHint':
+    'Your conversations are shared across these connections. Switching keeps the current conversation open.',
+  'hub.connection.remote': 'Remote access',
+  'hub.connection.remote.hint': 'Works over the internet without Tailscale.',
+  'hub.connection.tailscale': 'Tailscale direct',
+  'hub.connection.tailscale.hint':
+    'Enable Tailscale on both devices. A direct route may respond faster.',
+  'hub.connection.local': 'Local access',
+  'hub.connection.local.hint': 'Open on the host computer only. No VPN needed.',
+  'hub.current': 'Current',
+  'hub.hostAwake':
+    'Keep the host computer awake and connected to the internet for remote conversations and computer control.',
+  'hub.logout': 'Sign out on this device',
+  'hub.connectionFailed': 'Connection switch failed. Please try again.',
+
   // ── Common ──
   'common.cancel': 'Cancel',
   'common.close': 'Close',
@@ -479,6 +513,52 @@ export default {
 
   // ── Artifacts panel actions ──
   'artifact.copy': 'Copy',
+  'outputs.title': 'Outputs',
+  'home.navigation': 'Workspace navigation',
+  'home.headline': 'What would you like to work on?',
+  'home.privateWorkspace': 'Your private workspace',
+  'home.localFirst': 'Conversations and files stay on your Mac',
+  'remote.pairFirst':
+    'On your Mac, open Pi Chat → Devices, authenticate, then scan the single-use QR code.',
+  'remote.connecting': 'Verifying the Mac and opening an encrypted connection…',
+  'remote.denied':
+    'This device is not approved or its access was revoked. Authenticate on the Mac and pair again.',
+  'remote.timeout': 'The Mac did not respond. Check that it is online.',
+  'remote.identityFailed': 'Mac identity mismatch. The connection was blocked.',
+  'remote.disconnected': 'The encrypted connection to the Mac was disconnected.',
+  'remote.relayFailed': 'The relay could not be reached.',
+  'remote.offline': 'The Mac is currently offline.',
+  'remote.tooLarge': 'The attachment is too large.',
+  'remote.failed': 'Connection failed. Check that the Mac is online and pair again.',
+  'remote.preparing': 'Preparing a secure connection…',
+  'devices.title': 'Devices',
+  'devices.headline': 'Only the devices you approve',
+  'devices.intro':
+    'Device approval stays on the Mac. Tailscale and the relay only carry the connection.',
+  'devices.name': 'Device name',
+  'devices.createCode': 'Authenticate and show QR code',
+  'devices.authenticating': 'Waiting for Mac authentication…',
+  'devices.authHint':
+    'Touch ID or Mac account authentication is required every time a new pairing code is created.',
+  'devices.qrAlt': 'Single-use device pairing QR code',
+  'devices.scan': 'Scan with the iPhone Camera',
+  'devices.expires': 'Single use · expires in {seconds}s',
+  'devices.expired': 'This code has expired. Authenticate on the Mac to create another.',
+  'devices.whitelist': 'Approved devices',
+  'devices.empty': 'No remote devices have been approved yet.',
+  'devices.approved': 'Approved',
+  'devices.revoked': 'Revoked',
+  'devices.revoke': 'Revoke access',
+  'devices.confirmRevoke': 'Revoke and disconnect',
+  'devices.macOnly': 'Open Pi Chat on the Mac to add or manage approved devices.',
+  'devices.notEnabled': 'Device pairing has not been configured on this installation.',
+  'devices.loadFailed': 'The device list could not be loaded. Try again.',
+  'devices.macApprovalFailed':
+    'Mac authentication was cancelled or unavailable. No pairing code was created.',
+  'devices.revokeFailed': 'Access could not be revoked. Try again.',
+  'outputs.open': 'Open',
+  'outputs.previewUnavailable': 'Preview is unavailable. You can download the file to open it.',
+  'outputs.downloadToOpen': 'Download this file to open it in a compatible app.',
   'artifact.copySource': 'Copy source',
   'artifact.download': 'Download',
   'artifact.preview': 'Preview',

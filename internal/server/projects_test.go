@@ -23,10 +23,13 @@ func newProjectPrefsDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	if _, err := db.Exec(appSettingsSchema); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(projectPrefsSchema); err != nil {
 		t.Fatalf("create project_prefs: %v", err)
 	}
-	if _, err := db.Exec(appSettingsSchema); err != nil {
+	if _, err := db.Exec(sessionTrashSchema); err != nil {
 		t.Fatalf("create app_settings: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })

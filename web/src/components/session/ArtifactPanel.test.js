@@ -175,6 +175,7 @@ describe('ArtifactPanel', () => {
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts');
     expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
     expect(frame.srcdoc).toContain('<h1>hi</h1>');
+    expect(frame.srcdoc).not.toContain('body>svg');
     expect(frame.srcdoc).toContain('Content-Security-Policy');
     expect(frame.srcdoc).toContain("default-src 'none'");
     expect(document.querySelector('[data-action="toggle-preview"]').textContent).toBe(
@@ -206,6 +207,26 @@ describe('ArtifactPanel', () => {
     expect(renderMarkdown).toHaveBeenCalledWith('# Hello');
     expect(document.querySelector('iframe.artifact-preview')).toBeNull();
     expect(document.querySelector('.artifact-markdown h1').textContent).toBe('Hello');
+  });
+
+  it('fits SVG previews to narrow panels without changing the source or iframe sandbox', async () => {
+    const panel = renderPanel();
+    const content =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500" viewBox="0 0 600 500"><circle cx="300" cy="250" r="200"/></svg>';
+    panel.setArtifacts([
+      { id: 's1', kind: 'preview', previewType: 'svg', title: 'drawing.svg', content },
+    ]);
+    await tick();
+    document.querySelector('[data-action="toggle-preview"]').click();
+    await tick();
+
+    const frame = document.querySelector('iframe.artifact-preview');
+    expect(frame.srcdoc).toContain('body>svg{display:block;width:100%;height:100vh}');
+    expect(frame.srcdoc).toContain(content);
+    expect(frame.srcdoc).toContain("default-src 'none'");
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts');
+    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    expect(panel.getArtifact('s1').content).toBe(content);
   });
 
   it('gives the source view an artifact-<id> anchor for annotations', async () => {

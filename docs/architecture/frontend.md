@@ -4,6 +4,18 @@ pi-web uses a single Vite-built Svelte SPA embedded into the Go binary, plus a s
 
 ## Vite App Frontend
 
+Browser startup: `main.js` hydrates shared settings and resets the i18n
+cache before mounting. This preserves the selected language when moving between
+localhost, Tailscale and reverse-proxy origins with independent localStorage caches.
+Vite entry CSS is read from the manifest, linked in the live shell and served
+as `text/css`. Component styles must be included alongside the JS entry.
+
+`HubPanel.svelte` provides responsive session actions, Trash and connection
+switching. `HomeMenu.svelte` uses the existing theme tokens with a desktop
+popover and a mobile bottom sheet. Both direct and Trash permanent deletion
+require an explicit second action in the UI. The client never reads the access
+token: changing origins uses an authenticated API and a single-use pairing URL.
+
 Built with **Vite + Svelte + JavaScript modules**, embedded into the Go binary.
 
 ### Build Pipeline
@@ -122,3 +134,7 @@ The index route listens to `/events?id=__all__` for `new-session`, `status-snaps
 ## Theme System
 
 The live SPA shell uses `theme.css`, `index.css`, `settings.css`, `schedules.css`, `session.css`, `menu.css`, and `palette.css` from `internal/ui/embedded/styles/`. They are inlined into the shell (there are no standalone CSS routes; only `/custom-themes.css` is served). The shell still injects the server-backed theme and font variables before the app starts so first paint matches the installed PWA theme without a flash.
+
+## Personal client
+
+The live client adds `OutputGallery` with confined asset URLs and scriptless SVG previews, plus `personal.css` for desktop/mobile layout. `remote-entry.js` boots the independent DTLS client before mounting the same SPA. Its service worker sends native media/download requests through that authenticated channel; it does not cache private content. See [remote security](remote-security.md). Static exports remain independent.

@@ -4,7 +4,7 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['dist/', 'dist-export/', 'node_modules/'],
+    ignores: ['dist/', 'dist-export/', 'dist-remote/', 'node_modules/'],
   },
   js.configs.recommended,
   ...svelte.configs.recommended,

@@ -135,7 +135,9 @@
             <span class="project-chevron" aria-hidden="true"
               >{@html icon(ChevronDown, { size: 12 })}</span
             >
-            <span class="project-name">{group.project}</span>
+            <span class="project-name" title={group.project}
+              >{group.project.split(/[\\/]/).filter(Boolean).pop() || group.project}</span
+            >
             <span
               class="project-count"
               data-project-count

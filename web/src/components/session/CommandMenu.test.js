@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import CommandMenu from './CommandMenu.svelte';
 import { sessionModals, resetSessionModals } from '../../session/session-modals.svelte.js';
 import { setSessionPaletteApi } from '../../shared/command-palette-runtime.js';
@@ -26,39 +26,19 @@ afterEach(() => {
 });
 
 describe('CommandMenu', () => {
-  it('renames via the API and updates the page title', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve(new Response(JSON.stringify({ name: 'New Name' }), { status: 200 })),
-      ),
-    );
-    window.prompt = vi.fn(() => ' New Name ');
+  it('opens unified session management with the current title', async () => {
+    const opened = vi.fn();
+    window.addEventListener('pi:hub', opened);
     render(CommandMenu, { props: { sessionId: 'session.jsonl' } });
     await tick();
-
-    await fireEvent.click(document.querySelector('[data-action="rename"]'));
-    await waitFor(() => expect(sessionTitle.name).toBe('New Name'));
-    expect(fetch).toHaveBeenCalledWith(
-      '/api/rename-session?id=session.jsonl',
-      expect.objectContaining({ method: 'POST' }),
-    );
-  });
-
-  it('keeps the old title when the rename API fails', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response(JSON.stringify({ error: 'bad' }), { status: 500 }))),
-    );
-    window.prompt = vi.fn(() => 'New Name');
-    render(CommandMenu, { props: { sessionId: 'session.jsonl' } });
-    await tick();
-
-    await fireEvent.click(document.querySelector('[data-action="rename"]'));
-    await waitFor(() =>
-      expect(document.getElementById('command-menu-toast')?.textContent).toBe('Rename failed'),
-    );
-    expect(sessionTitle.name).toBe('Old');
+    await fireEvent.click(document.querySelector('[data-action="manage"]'));
+    expect(opened).toHaveBeenCalledOnce();
+    expect(opened.mock.calls[0][0].detail).toEqual({
+      view: 'session',
+      id: 'session.jsonl',
+      name: 'Old',
+    });
+    window.removeEventListener('pi:hub', opened);
   });
 
   it('closes the actions menu before navigating to /schedules', async () => {

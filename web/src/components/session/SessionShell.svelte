@@ -6,6 +6,7 @@
   import SessionHeader from './SessionHeader.svelte';
   import SessionInfoHeader from './SessionInfoHeader.svelte';
   import SessionContent from './SessionContent.svelte';
+  import OutputGallery from './OutputGallery.svelte';
   import ImageModal from './ImageModal.svelte';
   import ShortcutsModal from './ShortcutsModal.svelte';
   import ModelUsageModal from './ModelUsageModal.svelte';
@@ -218,6 +219,7 @@
       <LoadEarlier model={sessionModel} {sessionId} navigateTo={runtime.navigateTo} />
       <div id="messages">
         <SessionContent model={sessionModel} afterRender={contentRuntime.afterRender} live />
+        <OutputGallery model={sessionModel} {sessionId} {cwd} />
       </div>
     </main>
     <ChatComposer {sessionId} {chatAvailable} {chatDisabledReason} {cwd} {modelLabel} />

@@ -24,6 +24,7 @@ type Script struct {
 	Entry string
 	Path  string
 	JS    string
+	CSS   []string
 }
 
 type frontendScript = Script
@@ -70,7 +71,17 @@ func loadFrontendScript(distFS fs.FS, manifest render.Manifest, entryName string
 	if err != nil {
 		return frontendScript{}, fmt.Errorf("read %s js: %w", entryName, err)
 	}
-	return frontendScript{Entry: entryName, Path: scriptPath, JS: string(content)}, nil
+	styles := []string{}
+	for _, path := range entry.CSS {
+		if strings.HasPrefix(path, "/") || strings.Contains(path, "..") || !strings.HasSuffix(path, ".css") {
+			return frontendScript{}, fmt.Errorf("invalid stylesheet path: %s", path)
+		}
+		if _, err := fs.ReadFile(distFS, path); err != nil {
+			return frontendScript{}, fmt.Errorf("read stylesheet: %w", err)
+		}
+		styles = append(styles, "/static/"+path)
+	}
+	return frontendScript{Entry: entryName, Path: scriptPath, JS: string(content), CSS: styles}, nil
 }
 
 func LoadScripts(distFS fs.FS, entryNames ...string) ([]Script, error) {
@@ -138,6 +149,9 @@ func ServeStaticAssets(dfs fs.FS) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		if strings.HasSuffix(name, ".css") {
+			w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		}
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			w.Header().Set("Content-Encoding", "gzip")

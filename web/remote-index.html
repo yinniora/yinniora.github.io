@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https: wss:; worker-src 'self'; frame-src 'self' blob:; base-uri 'none'; form-action 'self'"
+    />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>Pi Workspace</title>
+    <style>
+      body {
+        margin: 0;
+        font: 15px/1.7 system-ui;
+        background: #fff;
+        color: #242424;
+      }
+      #remote-status {
+        display: grid;
+        place-content: center;
+        min-height: 90dvh;
+        padding: 30px;
+        text-align: center;
+      }
+      #remote-status h1 {
+        font-size: 28px;
+        font-weight: 600;
+      }
+      #remote-status p {
+        color: #777;
+        max-width: 380px;
+      }
+      #remote-status[hidden] {
+        display: none;
+      }
+      .failed p {
+        color: #ad4040;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="remote-status">
+      <h1>Pi Workspace</h1>
+      <p>Preparing a secure connection…</p>
+    </main>
+    <div id="spa-root"></div>
+    <script type="module" src="/src/remote-entry.js"></script>
+  </body>
+</html>

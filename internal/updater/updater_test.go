@@ -139,3 +139,16 @@ func TestCheckUpToDate(t *testing.T) {
 		t.Errorf("expected no update, got %+v", info)
 	}
 }
+
+func TestPersonalForkNeverChecksUpstream(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.Write([]byte(`{"version":"99.0.0"}`)) }))
+	defer srv.Close()
+	c := NewManual("0.0.1-beta.38-personal.1")
+	c.npmURL = srv.URL
+	c.githubAPI = srv.URL
+	info, err := c.Check(context.Background())
+	if err != nil || info.HasUpdate || calls != 0 {
+		t.Fatalf("personal update escaped pin: %+v %v calls=%d", info, err, calls)
+	}
+}

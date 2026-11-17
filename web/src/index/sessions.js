@@ -1,5 +1,5 @@
 import { getJSON, postJSON } from '../shared/api.js';
-import { t } from '../shared/i18n.js';
+import { t, getLocale } from '../shared/i18n.js';
 
 export const layoutStorageKey = 'pi-sessions:view-layout';
 export const collapsedProjectsStorageKey = 'pi-sessions:collapsed-projects';
@@ -43,9 +43,12 @@ export function formatRelativeTime(timestamp, now = Date.now()) {
   ];
   for (const [name, size] of units) {
     const count = Math.floor(seconds / size);
-    if (count >= 1) return `${count} ${name}${count === 1 ? '' : 's'} ago`;
+    if (count >= 1)
+      return new Intl.RelativeTimeFormat(getLocale(), { numeric: 'always' }).format(-count, name);
   }
-  return 'just now';
+  return getLocale() === 'en'
+    ? 'just now'
+    : new Intl.RelativeTimeFormat(getLocale(), { numeric: 'auto' }).format(0, 'second');
 }
 
 export function sessionModelLabel(session = {}) {

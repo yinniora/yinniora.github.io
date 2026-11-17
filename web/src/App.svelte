@@ -1,4 +1,6 @@
 <script>
+  import HubPanel from './components/shared/HubPanel.svelte';
+  import DevicePanel from './components/shared/DevicePanel.svelte';
   import { onMount, untrack } from 'svelte';
   import SessionsPage from './routes/SessionsPage.svelte';
   import SessionPage from './routes/SessionPage.svelte';
@@ -79,3 +81,6 @@
 {/if}
 
 <VersionController />
+
+<HubPanel />
+<DevicePanel />

@@ -19,7 +19,19 @@
     writeSetting,
   } from '../shared/settings-store.js';
   import { navigate, backState } from '../shared/navigation.js';
+  import { getJSON } from '../shared/api.js';
   import { t } from '../shared/i18n.js';
+  import {
+    icon,
+    Plus,
+    Search,
+    FolderGit2,
+    Link2,
+    Trash2,
+    Settings,
+    Send,
+  } from '../shared/icons.js';
+  import { openHub } from '../shared/hub.js';
   import { SvelteSet, SvelteMap } from 'svelte/reactivity';
   import {
     defaultCreateSession,
@@ -53,6 +65,39 @@
   let projectsBusy = $state(false);
   let projectsError = $state('');
   let refreshInflight = false;
+  let homePrompt = $state('');
+  let homeError = $state('');
+
+  async function startPrompt() {
+    const message = homePrompt.trim();
+    if (!message || creating) return;
+    creating = true;
+    homeError = '';
+    try {
+      const connections = await getJSON('/api/connections');
+      const path = connections.defaultWorkspace || recentLocations[0];
+      if (!path) {
+        await openNewSessionModal();
+        return;
+      }
+      const session = await defaultCreateSession(path);
+      if (!session.id) throw new Error(session.error || t('index.failedCreateSession'));
+      const body = new FormData();
+      body.append('message', message);
+      const response = await fetch(`/api/chat?id=${encodeURIComponent(session.id)}`, {
+        method: 'POST',
+        body,
+      });
+      if (!response.ok) {
+        sessionStorage.setItem(`pi-personal:draft:${session.id}`, message);
+      }
+      navigate(`/session?id=${encodeURIComponent(session.id)}`);
+    } catch (error) {
+      homeError = error.message || t('index.networkError');
+    } finally {
+      creating = false;
+    }
+  }
 
   const totalSessionsLabel = $derived(
     total === 1 ? t('index.sessionCountOne') : t('index.sessionsCount', { count: total }),
@@ -140,6 +185,8 @@
     try {
       const response = await defaultFetchRecent();
       recentLocations = (response.locations || []).slice(0, 10);
+      const connections = await getJSON('/api/connections');
+      newSessionPath = recentLocations[0] || connections.defaultWorkspace || '';
     } catch {
       recentLocations = [];
     }
@@ -292,8 +339,11 @@
     window.addEventListener('click', click);
 
     refreshSessions();
+    const hubUpdated = () => refreshSessions({ preserveWindow: true });
+    window.addEventListener('pi:hub-updated', hubUpdated);
 
     return () => {
+      window.removeEventListener('pi:hub-updated', hubUpdated);
       document.title = previousTitle;
       document.body?.classList.remove('modal-sheet-open');
       window.removeEventListener('keydown', keydown, { capture: true });
@@ -305,72 +355,137 @@
   });
 </script>
 
-<IndexHeader
-  {layout}
-  {totalSessionsLabel}
-  {runningCount}
-  runningVisible={runningCount > 0}
-  onSearch={openPalette}
-  onToggleMenu={toggleMenu}
-  onLayoutChange={setLayout}
-  onSchedules={() => navigate('/schedules', { state: backState() })}
-/>
+<!-- eslint-disable svelte/no-at-html-tags -- Lucide icons only -->
+<div class="personal-home">
+  <aside class="personal-home-nav" aria-label={t('home.navigation')}>
+    <a class="personal-brand" href="/">Pi<span>Workspace</span></a>
+    <button class="personal-nav-new" onclick={openNewSessionModal}
+      >{@html icon(Plus, { size: 18 })}{t('index.startNewSession')}</button
+    >
+    <button onclick={openPalette}
+      >{@html icon(Search, { size: 17 })}{t('index.searchSessions')}</button
+    >
+    <button onclick={openProjectsModal}
+      >{@html icon(FolderGit2, { size: 17 })}{t('index.manageProjects')}</button
+    >
+    <div class="personal-nav-spacer"></div>
+    <button onclick={() => window.dispatchEvent(new CustomEvent('pi:devices'))}
+      >{@html icon(Link2, { size: 17 })}{t('devices.title')}</button
+    >
+    <button onclick={() => openHub('connections')}
+      >{@html icon(Link2, { size: 17 })}{t('hub.connections')}</button
+    >
+    <button onclick={() => openHub('trash')}
+      >{@html icon(Trash2, { size: 17 })}{t('hub.trash')}</button
+    >
+    <button onclick={() => navigate('/settings')}
+      >{@html icon(Settings, { size: 17 })}{t('common.settings')}</button
+    >
+    <div class="personal-nav-caption">{t('home.privateWorkspace')}</div>
+  </aside>
+  <main class="personal-home-main">
+    <section class="personal-welcome">
+      <div class="personal-eyebrow">Pi Workspace</div>
+      <h1>{t('home.headline')}</h1>
+      <form
+        class="personal-start-box"
+        onsubmit={(event) => {
+          event.preventDefault();
+          startPrompt();
+        }}
+      >
+        <textarea
+          aria-label={t('composer.placeholder')}
+          placeholder={t('composer.placeholder')}
+          bind:value={homePrompt}
+          rows="2"
+          onkeydown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+              event.preventDefault();
+              startPrompt();
+            }
+          }}
+        ></textarea>
+        <div class="personal-start-footer">
+          <span>{t('home.localFirst')}</span><button
+            type="submit"
+            disabled={creating || !homePrompt.trim()}
+            aria-label={t('composer.send')}
+            >{@html icon(creating ? Plus : Send, { size: 18 })}</button
+          >
+        </div>
+      </form>
+      {#if homeError}<p class="output-error">{homeError}</p>{/if}
+    </section>
 
-<HomeMenu
-  open={menuOpen}
-  onClose={closeMenu}
-  onNewSession={openNewSessionModal}
-  onManageProjects={openProjectsModal}
-/>
+    <IndexHeader
+      {layout}
+      {totalSessionsLabel}
+      {runningCount}
+      runningVisible={runningCount > 0}
+      onSearch={openPalette}
+      onToggleMenu={toggleMenu}
+      onLayoutChange={setLayout}
+      onSchedules={() => navigate('/schedules', { state: backState() })}
+    />
 
-<button
-  class="new-session-btn new-session-btn-mobile"
-  id="newSessionBtn"
-  type="button"
-  data-new-session-btn
-  aria-label={t('index.startNewSession')}
-  title={t('index.newSession')}
-  onclick={openNewSessionModal}>+</button
->
+    <HomeMenu
+      open={menuOpen}
+      onClose={closeMenu}
+      onNewSession={openNewSessionModal}
+      onManageProjects={openProjectsModal}
+    />
 
-<CommandPalette
-  onNewSession={openNewSessionModal}
-  {runningSessionIds}
-  navigate={(url) => navigate(url)}
-/>
+    <button
+      class="new-session-btn new-session-btn-mobile"
+      id="newSessionBtn"
+      type="button"
+      data-new-session-btn
+      aria-label={t('index.startNewSession')}
+      title={t('index.newSession')}
+      onclick={openNewSessionModal}>+</button
+    >
 
-<SessionsList
-  {sessions}
-  {layout}
-  {runningSessionIds}
-  {runningStatuses}
-  {loading}
-  {layoutReady}
-  {hasMore}
-  {loadingMore}
-  onLoadMore={loadMore}
-/>
+    <CommandPalette
+      onNewSession={openNewSessionModal}
+      {runningSessionIds}
+      navigate={(url) => navigate(url)}
+    />
 
-<NewSessionModal
-  open={newSessionOpen}
-  recent={recentLocations}
-  bind:path={newSessionPath}
-  {creating}
-  error={newSessionError}
-  onClose={closeNewSessionModal}
-  onCreate={createSession}
-/>
+    <SessionsList
+      {sessions}
+      {layout}
+      {runningSessionIds}
+      {runningStatuses}
+      {loading}
+      {layoutReady}
+      {hasMore}
+      {loadingMore}
+      onLoadMore={loadMore}
+    />
 
-<ProjectsModal
-  open={projectsOpen}
-  {projects}
-  filterEnabled={projectsFilterEnabled}
-  error={projectsError}
-  busy={projectsBusy}
-  onClose={closeProjectsModal}
-  onToggleProject={(path, enabled) => updateProject(path, enabled ? 'enable' : 'disable')}
-  onToggleAll={(enabled) => updateProject('', enabled ? 'enable-all' : 'disable-all')}
-  onToggleFilter={(enabled) => updateProject('', enabled ? 'enable-filter' : 'disable-filter')}
-  onRegister={(path) => updateProject(path, 'register')}
-  onRemove={(path) => updateProject(path, 'remove')}
-/>
+    <NewSessionModal
+      open={newSessionOpen}
+      recent={recentLocations}
+      bind:path={newSessionPath}
+      {creating}
+      error={newSessionError}
+      onClose={closeNewSessionModal}
+      onCreate={createSession}
+    />
+
+    <ProjectsModal
+      open={projectsOpen}
+      {projects}
+      filterEnabled={projectsFilterEnabled}
+      error={projectsError}
+      busy={projectsBusy}
+      onClose={closeProjectsModal}
+      onToggleProject={(path, enabled) => updateProject(path, enabled ? 'enable' : 'disable')}
+      onToggleAll={(enabled) => updateProject('', enabled ? 'enable-all' : 'disable-all')}
+      onToggleFilter={(enabled) => updateProject('', enabled ? 'enable-filter' : 'disable-filter')}
+      onRegister={(path) => updateProject(path, 'register')}
+      onRemove={(path) => updateProject(path, 'remove')}
+    />
+  </main>
+</div>

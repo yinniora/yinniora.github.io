@@ -111,6 +111,9 @@ func (d *queueDrainer) drainAll() {
 }
 
 func (d *queueDrainer) drainSession(sessionID string) {
+	if hidden, err := d.server.sessionTrashed(sessionID); err != nil || hidden {
+		return
+	}
 	if sessionID == "" {
 		return
 	}

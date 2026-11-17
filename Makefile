@@ -11,6 +11,13 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 build: setup frontend-build
 	go build -ldflags="-s -w -X main.version=$(VERSION)" -o $(BINARY) ./cmd/pi-web
 
+build-relay:
+	go build -ldflags="-s -w" -o pi-relay ./cmd/pi-relay
+
+remote-build:
+	cd web && npm exec -- vite build --config vite.config.remote.js
+	python3 scripts/package_remote.py
+
 setup: frontend-setup go-setup
 
 frontend-setup:

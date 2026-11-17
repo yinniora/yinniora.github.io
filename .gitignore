@@ -7,6 +7,9 @@ pi-sessions-viewer
 web/node_modules/
 web/dist/
 web/dist-export/
+web/dist-remote/
+/build/
+/pi-relay
 internal/ui/embedded/export/export.js
 .pi/extensions/node_modules/
 .pi/APPEND_SYSTEM.md
@@ -22,3 +25,5 @@ website/src/
 website/dist/
 website/.vitepress/cache/
 website/.vitepress/locales.generated.json
+
+/node_modules

@@ -47,6 +47,9 @@ type Deps struct {
 	RenderAppShell      func(w io.Writer, bootstrap string) error
 	Models              func(ctx context.Context) (json.RawMessage, error)
 	Now                 func() time.Time
+	EnforceDeviceAuth   bool
+	PairApprover        func(context.Context, string) error
+	RemoteBootstrap     func() map[string]any
 	// Updater reports current/latest version + changelog. Optional; when nil
 	// the version endpoints are not registered.
 	Updater *updater.Checker
@@ -64,6 +67,7 @@ type Deps struct {
 // Server holds runtime state — connected SSE clients and last-seen modtimes
 // per session file. Construct via New; register HTTP routes via Register.
 type Server struct {
+	sessionManagementMu   sync.Mutex
 	agentDir              string
 	sessionsDir           string
 	clients               []*sseClient
@@ -73,6 +77,7 @@ type Server struct {
 	chatSender            ChatSender
 	cache                 *sessions.Cache
 	auth                  *auth.Middleware
+	devices               *deviceAccess
 	shareRunner           shareCmdRunner
 	now                   func() time.Time
 	renderExportSession   func(s sessions.Session, theme string) string
@@ -183,6 +188,15 @@ func New(deps Deps) (*Server, error) {
 			userOwned: make(map[string]bool),
 		},
 	}
+	if deps.EnforceDeviceAuth {
+		var deviceErr error
+		s.devices, deviceErr = newDeviceAccess(db, deps.PairApprover)
+		if deviceErr != nil {
+			db.Close()
+			return nil, fmt.Errorf("initialize device whitelist: %w", deviceErr)
+		}
+		s.devices.bootstrap = deps.RemoteBootstrap
+	}
 	s.schedules.Now = now
 	s.chatQueue.Now = now
 	if pm, err := NewPushManager(agentDir); err != nil {
@@ -244,6 +258,7 @@ func initDB(agentDir string) (*sql.DB, error) {
 		name string
 		stmt string
 	}{
+		{"session trash table", sessionTrashSchema},
 		{"scratchpads table", `CREATE TABLE IF NOT EXISTS scratchpads (
 			project_path TEXT PRIMARY KEY,
 			content TEXT,
@@ -328,59 +343,67 @@ func (s *Server) startTask(task func(context.Context)) bool {
 // Register installs every HTTP handler on mux, wrapped with the auth
 // middleware from Deps.
 func (s *Server) Register(mux *http.ServeMux) {
-	mux.HandleFunc("/", s.auth.Wrap(s.handleIndex))
-	mux.HandleFunc("/session", s.auth.Wrap(s.handleSession))
-	mux.HandleFunc("/settings", s.auth.Wrap(s.handleSettingsPage))
-	mux.HandleFunc("/api/session", s.auth.Wrap(s.handleApiSession))
-	mux.HandleFunc("/api/sessions", s.auth.Wrap(s.handleApiSessions))
-	mux.HandleFunc("/api/chat", s.auth.Wrap(s.handleChat))
-	mux.HandleFunc("/api/chat/cancel", s.auth.Wrap(s.handleCancelChat))
-	mux.HandleFunc("/api/set-model", s.auth.Wrap(s.handleSetModel))
-	mux.HandleFunc("/api/set-thinking-level", s.auth.Wrap(s.handleSetThinkingLevel))
-	mux.HandleFunc("/api/models", s.auth.Wrap(s.handleAvailableModels))
-	mux.HandleFunc("/api/worker-status", s.auth.Wrap(s.handleWorkerStatus))
-	mux.HandleFunc("/api/commands", s.auth.Wrap(s.handleCommands))
-	mux.HandleFunc("/share", s.auth.Wrap(s.handleShare))
-	mux.HandleFunc("/events", s.auth.Wrap(s.handleEvents))
-	mux.HandleFunc("/api/new-session", s.auth.Wrap(s.handleNewSession))
-	mux.HandleFunc("/api/fork-session", s.auth.Wrap(s.handleApiForkSession))
-	mux.HandleFunc("/api/clone-session", s.auth.Wrap(s.handleApiCloneSession))
-	mux.HandleFunc("/api/rename-session", s.auth.Wrap(s.handleRenameSession))
-	mux.HandleFunc("/api/label-session", s.auth.Wrap(s.handleLabelSessionEntry))
-	mux.HandleFunc("/api/recent-locations", s.auth.Wrap(s.handleRecentLocations))
+	mux.HandleFunc("/api/devices", s.auth.Wrap(s.handleDevices))
+	mux.HandleFunc("/api/trash", s.auth.Wrap(s.handleTrash))
+	mux.HandleFunc("/api/export-markdown", s.auth.Wrap(s.visibleSession(s.handleMarkdownExport)))
+	mux.HandleFunc("/api/connections", s.auth.Wrap(s.handleConnections))
+	mux.HandleFunc("/api/connect", s.auth.Wrap(s.handleConnect))
+	mux.HandleFunc("/api/logout", s.auth.Wrap(s.handleLogout))
+	mux.HandleFunc("/", s.auth.Wrap(s.visibleSession(s.handleIndex)))
+	mux.HandleFunc("/session", s.auth.Wrap(s.visibleSession(s.handleSession)))
+	mux.HandleFunc("/settings", s.auth.Wrap(s.visibleSession(s.handleSettingsPage)))
+	mux.HandleFunc("/api/session", s.auth.Wrap(s.visibleSession(s.handleApiSession)))
+	mux.HandleFunc("/api/sessions", s.auth.Wrap(s.visibleSession(s.handleApiSessions)))
+	mux.HandleFunc("/api/chat", s.auth.Wrap(s.visibleSession(s.handleChat)))
+	mux.HandleFunc("/api/chat/cancel", s.auth.Wrap(s.visibleSession(s.handleCancelChat)))
+	mux.HandleFunc("/api/set-model", s.auth.Wrap(s.visibleSession(s.handleSetModel)))
+	mux.HandleFunc("/api/set-thinking-level", s.auth.Wrap(s.visibleSession(s.handleSetThinkingLevel)))
+	mux.HandleFunc("/api/models", s.auth.Wrap(s.visibleSession(s.handleAvailableModels)))
+	mux.HandleFunc("/api/worker-status", s.auth.Wrap(s.visibleSession(s.handleWorkerStatus)))
+	mux.HandleFunc("/api/commands", s.auth.Wrap(s.visibleSession(s.handleCommands)))
+	mux.HandleFunc("/share", s.auth.Wrap(s.visibleSession(s.handleShare)))
+	mux.HandleFunc("/events", s.auth.Wrap(s.visibleSession(s.handleEvents)))
+	mux.HandleFunc("/api/new-session", s.auth.Wrap(s.visibleSession(s.handleNewSession)))
+	mux.HandleFunc("/api/fork-session", s.auth.Wrap(s.visibleSession(s.handleApiForkSession)))
+	mux.HandleFunc("/api/clone-session", s.auth.Wrap(s.visibleSession(s.handleApiCloneSession)))
+	mux.HandleFunc("/api/rename-session", s.auth.Wrap(s.visibleSession(s.handleRenameSession)))
+	mux.HandleFunc("/api/label-session", s.auth.Wrap(s.visibleSession(s.handleLabelSessionEntry)))
+	mux.HandleFunc("/api/recent-locations", s.auth.Wrap(s.visibleSession(s.handleRecentLocations)))
 	mux.HandleFunc("/api/projects", s.getPostHandler(s.handleApiProjects, s.handleUpdateProject))
-	mux.HandleFunc("/api/files", s.auth.Wrap(s.handleApiFiles))
-	mux.HandleFunc("/api/git/info", s.auth.Wrap(s.handleGitInfo))
-	mux.HandleFunc("/api/git/rename-branch", s.auth.Wrap(s.handleGitRenameBranch))
-	mux.HandleFunc("/api/git/diff", s.auth.Wrap(s.handleGitDiff))
-	mux.HandleFunc("/api/diff/reviews", s.auth.Wrap(s.handleReviewComments))
+	mux.HandleFunc("/api/files", s.auth.Wrap(s.visibleSession(s.handleApiFiles)))
+	mux.HandleFunc("/api/assets", s.auth.Wrap(s.visibleSession(s.handleAssets)))
+	mux.HandleFunc("/api/asset", s.auth.Wrap(s.visibleSession(s.handleAsset)))
+	mux.HandleFunc("/api/git/info", s.auth.Wrap(s.visibleSession(s.handleGitInfo)))
+	mux.HandleFunc("/api/git/rename-branch", s.auth.Wrap(s.visibleSession(s.handleGitRenameBranch)))
+	mux.HandleFunc("/api/git/diff", s.auth.Wrap(s.visibleSession(s.handleGitDiff)))
+	mux.HandleFunc("/api/diff/reviews", s.auth.Wrap(s.visibleSession(s.handleReviewComments)))
 	// Public (no auth): the login gate needs the custom palette to theme
 	// correctly before the user authenticates. Contents are non-secret color
 	// variables only.
 	mux.HandleFunc("/custom-themes.css", s.handleCustomThemes)
 	mux.HandleFunc("/api/scratchpad", s.getPostHandler(s.handleGetScratchpad, s.handleSaveScratchpad))
-	mux.HandleFunc("/api/chat/queue", s.auth.Wrap(s.handleChatQueue))
-	mux.HandleFunc("/api/annotations", s.auth.Wrap(s.handleAnnotations))
+	mux.HandleFunc("/api/chat/queue", s.auth.Wrap(s.visibleSession(s.handleChatQueue)))
+	mux.HandleFunc("/api/annotations", s.auth.Wrap(s.visibleSession(s.handleAnnotations)))
 	mux.HandleFunc("/api/settings", s.getPostHandler(s.handleGetSettings, s.handleSaveSettings))
-	mux.HandleFunc("/api/btw", s.auth.Wrap(s.handleGetBtw))
-	mux.HandleFunc("/api/btw/new", s.auth.Wrap(s.handleNewBtw))
-	mux.HandleFunc("/api/schedules", s.auth.Wrap(s.handleApiSchedules))
-	mux.HandleFunc("/api/schedule", s.auth.Wrap(s.handleApiSchedule))
-	mux.HandleFunc("/api/schedule/run", s.auth.Wrap(s.handleApiScheduleRun))
-	mux.HandleFunc("/api/schedule/runs", s.auth.Wrap(s.handleApiScheduleRuns))
-	mux.HandleFunc("/metrics", s.auth.Wrap(s.handleMetricsPage))
-	mux.HandleFunc("/api/metrics", s.auth.Wrap(s.handleMetrics))
+	mux.HandleFunc("/api/btw", s.auth.Wrap(s.visibleSession(s.handleGetBtw)))
+	mux.HandleFunc("/api/btw/new", s.auth.Wrap(s.visibleSession(s.handleNewBtw)))
+	mux.HandleFunc("/api/schedules", s.auth.Wrap(s.visibleSession(s.handleApiSchedules)))
+	mux.HandleFunc("/api/schedule", s.auth.Wrap(s.visibleSession(s.handleApiSchedule)))
+	mux.HandleFunc("/api/schedule/run", s.auth.Wrap(s.visibleSession(s.handleApiScheduleRun)))
+	mux.HandleFunc("/api/schedule/runs", s.auth.Wrap(s.visibleSession(s.handleApiScheduleRuns)))
+	mux.HandleFunc("/metrics", s.auth.Wrap(s.visibleSession(s.handleMetricsPage)))
+	mux.HandleFunc("/api/metrics", s.auth.Wrap(s.visibleSession(s.handleMetrics)))
 	s.registerPprof(mux)
 	if s.push != nil {
 		s.push.Register(mux, s.auth.Wrap)
 	}
-	mux.HandleFunc("/api/sounds", s.auth.Wrap(s.handleApiSounds))
+	mux.HandleFunc("/api/sounds", s.auth.Wrap(s.visibleSession(s.handleApiSounds)))
 	mux.HandleFunc("/sounds/", s.handleSounds)
 	if s.updater != nil {
-		mux.HandleFunc("/api/version", s.auth.Wrap(s.handleVersion))
-		mux.HandleFunc("/api/check-update", s.auth.Wrap(s.handleCheckUpdate))
-		mux.HandleFunc("/api/update", s.auth.Wrap(s.handleUpdate))
-		mux.HandleFunc("/api/restart", s.auth.Wrap(s.handleRestart))
+		mux.HandleFunc("/api/version", s.auth.Wrap(s.visibleSession(s.handleVersion)))
+		mux.HandleFunc("/api/check-update", s.auth.Wrap(s.visibleSession(s.handleCheckUpdate)))
+		mux.HandleFunc("/api/update", s.auth.Wrap(s.visibleSession(s.handleUpdate)))
+		mux.HandleFunc("/api/restart", s.auth.Wrap(s.visibleSession(s.handleRestart)))
 	}
 }
 
@@ -401,7 +424,33 @@ func (s *Server) getPostHandler(get, post http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) loadSummaries() ([]sessions.SessionSummary, error) {
-	return s.cache.LoadAll(s.sessionsDir)
+	all, err := s.cache.LoadAll(s.sessionsDir)
+	if err != nil || s.db == nil {
+		return all, err
+	}
+	rows, err := s.db.Query(`SELECT session_id FROM session_trash`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	hidden := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		hidden[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	visible := make([]sessions.SessionSummary, 0, len(all))
+	for _, v := range all {
+		if !hidden[v.ID] {
+			visible = append(visible, v)
+		}
+	}
+	return visible, nil
 }
 
 // ── SSE clients ────────────────────────────────────────────────────────────

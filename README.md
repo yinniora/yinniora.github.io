@@ -1,3 +1,23 @@
+# Pi Workspace — personal fork
+
+A self-maintained fork of [ygncode/pi-web](https://github.com/ygncode/pi-web),
+with a quieter desktop/mobile interface, a native macOS conversation window,
+inline images/SVG/video/audio/files, permanent session deletion, synchronized
+language settings and Mac-approved remote devices.
+
+Remote access uses an independent HTTPS client and standard WebRTC/DTLS. The
+Mac owns its identity and device whitelist; a VPS only forwards signaling and
+encrypted packets. Every new pairing QR requires Mac system authentication.
+See [the security architecture](docs/architecture/remote-security.md) for trust
+boundaries, runtime configuration, revocation and build instructions.
+
+Personal releases are pinned and disable upstream automatic installation.
+Upstream changes are reviewed and tested before a new personal version is
+published. The original MIT license and upstream documentation follow below.
+The screenshots below describe upstream; the personal interface differs.
+
+---
+
 <h1 align="center">pi-web (Remote Control Your Pi)</h1>
 
 <div align="center">

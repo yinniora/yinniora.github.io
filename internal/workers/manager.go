@@ -73,6 +73,7 @@ type Manager struct {
 	workers  map[string]ChatWorker
 	creating map[string]*createCall
 	factory  Factory
+	retired  map[string]bool
 
 	// pendingSends counts Send calls that have been accepted but whose prompt
 	// has not been acked yet. Spawning a worker (process start + switch_session
@@ -108,6 +109,7 @@ func NewManagerWithTTL(factory Factory, ttl time.Duration) *Manager {
 		workers:      make(map[string]ChatWorker),
 		creating:     make(map[string]*createCall),
 		factory:      factory,
+		retired:      make(map[string]bool),
 		pendingSends: make(map[string]int),
 		idleTTL:      ttl,
 		reaperStop:   make(chan struct{}),
@@ -310,6 +312,10 @@ func (m *Manager) Close() error {
 func (m *Manager) workerFor(sessionID, sessionPath string) (ChatWorker, error) {
 	for {
 		m.mu.Lock()
+		if m.retired[sessionID] {
+			m.mu.Unlock()
+			return nil, errors.New("session permanently deleted")
+		}
 		if worker := m.workers[sessionID]; worker != nil {
 			if worker.Status().State != WorkerStateError {
 				m.mu.Unlock()
@@ -350,6 +356,31 @@ func (m *Manager) workerFor(sessionID, sessionPath string) (ChatWorker, error) {
 		m.mu.Unlock()
 		return worker, err
 	}
+}
+
+// RetireIdle prevents any later RPC from recreating a permanently deleted
+// session, and closes the cached subprocess before its JSONL is removed.
+func (m *Manager) RetireIdle(sessionID string) (func(), error) {
+	m.mu.Lock()
+	w := m.workers[sessionID]
+	if m.pendingSends[sessionID] > 0 || m.creating[sessionID] != nil || (w != nil && w.Status().State == WorkerStateRunning) {
+		m.mu.Unlock()
+		return nil, errors.New("stop the running task before permanently deleting this session")
+	}
+	if m.retired == nil {
+		m.retired = make(map[string]bool)
+	}
+	m.retired[sessionID] = true
+	delete(m.workers, sessionID)
+	m.mu.Unlock()
+	rollback := func() { m.mu.Lock(); delete(m.retired, sessionID); m.mu.Unlock() }
+	if w != nil {
+		if err := w.Close(); err != nil {
+			rollback()
+			return nil, err
+		}
+	}
+	return rollback, nil
 }
 
 type idleReportable interface {

@@ -1,5 +1,25 @@
 # Backend Architecture
 
+## Browser session management and connection handover
+
+`-extra-host` optionally serves the same HTTP handler on a private address in
+addition to the primary loopback listener. Binding is retried independently,
+so an unavailable Tailscale interface does not stop the loopback server or the
+reverse proxy or outbound reverse tunnel. The second non-loopback listener requires auth.
+
+`session_management.go` adds `/api/trash` (GET/POST), `/api/export-markdown`,
+`/api/connections`, `/api/connect` and `/api/logout`. Trash is a SQLite visibility
+marker; JSONL files remain unchanged and restoration removes the marker.
+Permanent deletion is available directly or from Trash. It retires an idle
+worker before removing its JSONL and session-owned queue/annotation records;
+working directories are never removed. Running workers and external active
+session status prevent permanent deletion. Trash mutations are serialized.
+
+Configured connection destinations come only from `PI_WEB_CONNECTIONS`.
+Origin handover uses a cryptographically random, single-use 60-second ticket bound to the target host and port;
+the middleware exchanges it for an HttpOnly cookie and redirects to a clean URL.
+Responses containing private app data use `Cache-Control: no-store`.
+
 ## Package Layout
 
 ```
@@ -403,3 +423,7 @@ Three signals are OR'd together to determine if a session is "running":
 3. **Recent file activity**: JSONL file modtime within 800 ms
 
 Status changes are broadcast as SSE `status-delta` events to `__all__` subscribers. A 1-second sweeper periodically revalidates all known running sessions to clean up stale states.
+
+## Personal remote access
+
+`internal/relay` carries bounded HTTP over standard WebRTC DTLS. `devices.go` owns native-approved single-use tickets, public-key whitelisting and immediate revocation. `assets.go` confines media access with `os.OpenRoot` and supports byte ranges. Remote requests never receive the global Pi token. See [remote security](remote-security.md).

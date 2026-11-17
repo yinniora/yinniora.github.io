@@ -48,6 +48,7 @@ var devVersionRe = regexp.MustCompile(`-\d+-g[0-9a-f]{7,}|-dirty$`)
 // Checker holds the current version and the cached result of the last remote
 // check. It is safe for concurrent use.
 type Checker struct {
+	manual    bool
 	current   string
 	npmURL    string
 	githubAPI string
@@ -58,6 +59,14 @@ type Checker struct {
 	changelog    string
 	changelogURL string
 	checkedAt    time.Time
+}
+
+// NewManual keeps a self-maintained fork pinned until its operator reviews and
+// installs an update. It never contacts upstream or advertises an auto-update.
+func NewManual(version string) *Checker {
+	c := New(version)
+	c.manual = true
+	return c
 }
 
 // New builds a Checker for the given build-time version. version "dev" (or
@@ -110,7 +119,7 @@ func (c *Checker) snapshotLocked() Info {
 // resulting snapshot. For dev builds it short-circuits and only stamps
 // checkedAt so the UI can show "checked just now".
 func (c *Checker) Check(ctx context.Context) (Info, error) {
-	if c.isDev() {
+	if c.isDev() || c.manual {
 		c.mu.Lock()
 		c.checkedAt = time.Now()
 		info := c.snapshotLocked()
@@ -143,7 +152,7 @@ func (c *Checker) Check(ctx context.Context) (Info, error) {
 // Start runs an initial check shortly after launch, then refreshes every
 // PollInterval until ctx is cancelled. Intended to be run in its own goroutine.
 func (c *Checker) Start(ctx context.Context) {
-	if c.isDev() {
+	if c.isDev() || c.manual {
 		return
 	}
 	// Small delay so startup isn't blocked on the network.

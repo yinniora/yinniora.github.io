@@ -25,6 +25,7 @@ func newQueueTestDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { db.Close() })
 	db.SetMaxOpenConns(1)
 	for _, stmt := range []string{
+		sessionTrashSchema,
 		chatqueue.ItemsTableDDL,
 		chatqueue.ItemsSessionIndexDDL,
 		chatqueue.StateTableDDL,
@@ -195,4 +196,3 @@ func TestChatQueueRejectsMissingPositionOnDelete(t *testing.T) {
 		t.Fatalf("want 400, got %d", w.Code)
 	}
 }
-

@@ -8,6 +8,7 @@
     Plus,
     SquarePen,
     MoreHorizontal,
+    Link2,
   } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { navigate, handleNavClick, backState } from '../../shared/navigation.js';
@@ -148,6 +149,14 @@
       >{@html icon(Plus, { size: 14 })}<span class="session-header-new-label"
         >{t('session.new')}</span
       ></button
+    >
+    <button
+      type="button"
+      class="session-device-button"
+      title={t('devices.title')}
+      aria-label={t('devices.title')}
+      onclick={() => window.dispatchEvent(new CustomEvent('pi:devices'))}
+      >{@html icon(Link2, { size: 16 })}</button
     >
     <button
       id="shortcuts-help-btn"

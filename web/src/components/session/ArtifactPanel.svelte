@@ -90,10 +90,14 @@
   function previewSrcdoc(a) {
     const csp =
       "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; script-src 'unsafe-inline'";
+    const svgStyle =
+      a.previewType === 'svg'
+        ? '<style>html,body{margin:0;height:100%;overflow:hidden}body>svg{display:block;width:100%;height:100vh}</style>'
+        : '';
     return (
       `<!doctype html><html><head><meta charset="utf-8">` +
       `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
-      `</head><body>${a.content}</body></html>`
+      `${svgStyle}</head><body>${a.content}</body></html>`
     );
   }
 
