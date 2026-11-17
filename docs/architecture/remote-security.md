@@ -41,7 +41,9 @@ lifetime and one-use rule as the QR. Pairing tickets are removed from the URL
 fragment immediately and are never persisted with the public connection data.
 An already-approved key can recover after losing the enrollment response; a
 spent ticket cannot enroll a different key. Concurrent windows share one
-IndexedDB identity through a serialized creation transaction.
+IndexedDB identity through a serialized creation transaction. Static navigation bypasses
+the browser HTTP cache so a Home Screen relaunch receives the current program;
+only the public shell/assets have an offline cache.
 
 ## Transport
 
@@ -69,7 +71,10 @@ VPS HTTPS key cannot impersonate the pinned inner DTLS identity.
 
 One entry named Pi offers Automatic, Tailscale and VPS preferences. Automatic
 races direct and public signaling and allows direct ICE routes; Tailscale uses
-only the configured private signaling endpoint and no TURN servers; VPS uses
+the private signaling endpoint when configured, otherwise the existing public
+signaling endpoint, and requests no client TURN servers. This preference works
+without changing tailnet settings; available direct candidates remain preferred.
+VPS uses
 public signaling and relay-only ICE. Switching routes keeps the same pinned
 identity and device approval. An authenticated metadata refresh can update the
 direct endpoint, but cannot change the pinned Mac identity.

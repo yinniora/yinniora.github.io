@@ -39,11 +39,6 @@ export class RemoteClient {
   }
 
   async openConnection() {
-    if (this.preference === 'tailscale' && !this.config.directUrl) {
-      const error = new Error(t('remote.tailscaleUnavailable'));
-      error.code = 'tailscaleUnavailable';
-      throw error;
-    }
     let identity;
     try {
       identity = await getDeviceIdentity(this.config.fingerprint);
@@ -148,7 +143,7 @@ export class RemoteClient {
     try {
       const endpoints =
         this.preference === 'tailscale'
-          ? [this.config.directUrl]
+          ? [this.config.directUrl || this.config.signalUrl]
           : this.config.directUrl && this.preference === 'auto'
             ? [this.config.directUrl, this.config.signalUrl]
             : [this.config.signalUrl];

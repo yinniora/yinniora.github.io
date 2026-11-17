@@ -3,7 +3,9 @@
 const CACHE = 'pi-remote-personal-1';
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.add('/')));
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => cache.add(new Request('/', { cache: 'reload' }))),
+  );
 });
 self.addEventListener('activate', (event) => {
   event.waitUntil(
@@ -92,7 +94,7 @@ self.addEventListener('fetch', (event) => {
       })(),
     );
   } else if (event.request.mode === 'navigate') {
-    event.respondWith(fetch('/').catch(() => caches.match('/')));
+    event.respondWith(fetch('/', { cache: 'no-store' }).catch(() => caches.match('/')));
   } else if (event.request.method === 'GET') {
     event.respondWith(
       caches.match(event.request).then(
