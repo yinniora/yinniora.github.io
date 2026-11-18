@@ -141,6 +141,46 @@ test("a stalled session stays navigable and can be retried in place", async ({
   }
 });
 
+test("plugin settings register a skill and manage a native MCP server", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "Desktop Chrome",
+    "local Mac configuration workflow",
+  );
+  const path = join(realWorkingDir(), "SKILL.md");
+  writeFileSync(
+    path,
+    "---\nname: e2e-skill\ndescription: Local test fixture\n---\n",
+  );
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.goto("/settings?section=plugins");
+  await page.getByRole("button", { name: "Skills", exact: true }).click();
+  await page.getByLabel("Mac path to a skill folder or SKILL.md").fill(path);
+  await page.getByRole("button", { name: "Add skill", exact: true }).click();
+  await expect(page.getByText(path, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(page.getByText(path, { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "MCP servers", exact: true }).click();
+  await page.getByLabel("Server name", { exact: true }).fill("e2e-tool");
+  await page
+    .getByLabel("Server URL", { exact: true })
+    .fill("https://example.invalid/mcp");
+  await page
+    .getByRole("button", { name: "Add MCP server", exact: true })
+    .click();
+  const row = page
+    .locator(".plugin-settings li")
+    .filter({ hasText: "e2e-tool" });
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "Disable", exact: true }).click();
+  await expect(
+    row.getByRole("button", { name: "Enable", exact: true }),
+  ).toBeVisible();
+  await row.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(row).toHaveCount(0);
+});
+
 test("model settings refresh labeled keys and explicitly apply and remove multiple models", async ({
   page,
 }, testInfo) => {

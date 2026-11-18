@@ -69,13 +69,14 @@ type ChatWorker interface {
 type Factory func(sessionID, sessionPath string) (ChatWorker, error)
 
 type Manager struct {
-	modelEpoch  uint64
-	workerEpoch map[string]uint64
-	mu          sync.Mutex
-	workers     map[string]ChatWorker
-	creating    map[string]*createCall
-	factory     Factory
-	retired     map[string]bool
+	modelEpoch    uint64
+	resourceEpoch uint64
+	workerEpoch   map[string]uint64
+	mu            sync.Mutex
+	workers       map[string]ChatWorker
+	creating      map[string]*createCall
+	factory       Factory
+	retired       map[string]bool
 
 	// pendingSends counts Send calls that have been accepted but whose prompt
 	// has not been acked yet. Spawning a worker (process start + switch_session
@@ -169,6 +170,7 @@ func (m *Manager) reapOnce(now time.Time) {
 
 func (m *Manager) Send(ctx context.Context, sessionID, sessionPath string, chat chat.Request) error {
 	m.mu.Lock()
+	m.refreshIdleResourcesLocked(sessionID)
 	m.pendingSends[sessionID]++
 	m.mu.Unlock()
 	defer func() {
@@ -261,6 +263,24 @@ func (m *Manager) SetModel(ctx context.Context, sessionID, sessionPath, provider
 // Active replies keep their process; the next idle model selection reloads config.
 func (m *Manager) ModelsChanged() { m.mu.Lock(); m.modelEpoch++; m.mu.Unlock() }
 
+// Existing responses finish with the resources they started with.
+func (m *Manager) ResourcesChanged() {
+	m.mu.Lock()
+	m.modelEpoch++
+	m.resourceEpoch = m.modelEpoch
+	m.mu.Unlock()
+}
+
+func (m *Manager) refreshIdleResourcesLocked(sessionID string) {
+	worker := m.workers[sessionID]
+	if worker != nil && m.workerEpoch[sessionID] < m.resourceEpoch &&
+		m.pendingSends[sessionID] == 0 && worker.Status().State == WorkerStateIdle {
+		_ = worker.Close()
+		delete(m.workers, sessionID)
+		delete(m.workerEpoch, sessionID)
+	}
+}
+
 func (m *Manager) SetThinkingLevel(ctx context.Context, sessionID, sessionPath, level string) error {
 	worker, err := m.workerFor(sessionID, sessionPath)
 	if err != nil {
@@ -285,6 +305,7 @@ func (m *Manager) GetState(ctx context.Context, sessionID string) (WorkerStatus,
 // retrying.
 func (m *Manager) GetCommands(ctx context.Context, sessionID string) (cmds []SlashCommand, ready bool, err error) {
 	m.mu.Lock()
+	m.refreshIdleResourcesLocked(sessionID)
 	worker := m.workers[sessionID]
 	m.mu.Unlock()
 	if worker == nil {
@@ -339,6 +360,7 @@ func (m *Manager) workerFor(sessionID, sessionPath string) (ChatWorker, error) {
 			m.mu.Unlock()
 			return nil, errors.New("session permanently deleted")
 		}
+		m.refreshIdleResourcesLocked(sessionID)
 		if worker := m.workers[sessionID]; worker != nil {
 			if worker.Status().State != WorkerStateError {
 				m.mu.Unlock()

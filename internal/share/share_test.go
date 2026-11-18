@@ -1,6 +1,7 @@
 package share
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,36 @@ import (
 
 	"pi-web/internal/sessions"
 )
+
+func TestShareSnapshotKeepsSelectedMessagesWithoutRuntimeContext(t *testing.T) {
+	header := map[string]any{"type": "session", "id": "selected", "cwd": "/private/work", "parentSession": "/private/other.jsonl"}
+	entries := []map[string]any{
+		header,
+		{"type": "message", "id": "context", "message": map[string]any{"role": "system", "sections": "private setup"}},
+		{"type": "message", "id": "prompt", "parentId": "context", "message": map[string]any{"role": "user", "content": "selected prompt"}},
+	}
+	deps := baseDeps(nil)
+	deps.Resolve = func(id string) (sessions.Session, error) {
+		if id != "selected" {
+			return sessions.Session{}, errors.New("unexpected session")
+		}
+		return sessions.Session{Header: header, Entries: entries}, nil
+	}
+	deps.RenderExport = func(session sessions.Session, _ string) string {
+		raw, _ := json.Marshal(session)
+		return string(raw)
+	}
+	w := httptest.NewRecorder()
+	Handle(w, httptest.NewRequest(http.MethodGet, "/share?id=selected&preview=1", nil), deps)
+	result := w.Body.String()
+	if w.Code != 200 || strings.Contains(result, "/private") || strings.Contains(result, "private setup") ||
+		!strings.Contains(result, "selected prompt") || !strings.Contains(result, `"parentId":"context"`) {
+		t.Fatal("unexpected share payload", w.Code, result)
+	}
+	if header["cwd"] == nil || entries[1]["message"].(map[string]any)["sections"] == nil {
+		t.Fatal("preparing a share changed the original session")
+	}
+}
 
 // fakeRunner is a configurable Runner stub: it records the html path it was
 // handed and returns canned auth/gist results so Handle can be exercised

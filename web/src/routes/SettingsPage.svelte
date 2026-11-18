@@ -1,6 +1,7 @@
 <script>
   import RemoteSettings from '../components/settings/RemoteSettings.svelte';
   import ModelSettings from '../components/settings/ModelSettings.svelte';
+  import PluginSettings from '../components/settings/PluginSettings.svelte';
   import ConnectionStatus from '../components/shared/ConnectionStatus.svelte';
   import { onMount } from 'svelte';
   import AboutSettings from '../components/settings/AboutSettings.svelte';
@@ -26,6 +27,7 @@
     { id: 'appearance', labelKey: 'settings.appearance' },
     { id: 'language', labelKey: 'settings.language' },
     { id: 'models', labelKey: 'models.title' },
+    { id: 'plugins', labelKey: 'plugins.title' },
     { id: 'sessionsList', labelKey: 'settings.sessionsList' },
     { id: 'sessionTitles', labelKey: 'settings.sessionTitles' },
     { id: 'sessionDisplay', labelKey: 'settings.sessionDisplay' },
@@ -201,6 +203,8 @@
       <LanguageSettings {settings} onSave={saveSetting} />
     {:else if activeSection === 'models'}
       <ModelSettings />
+    {:else if activeSection === 'plugins'}
+      <PluginSettings />
     {:else if activeSection === 'sessionsList'}
       <SessionsListSettings {settings} onSave={saveSetting} />
     {:else if activeSection === 'sessionTitles'}

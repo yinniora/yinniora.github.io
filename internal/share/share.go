@@ -53,10 +53,10 @@ func FindGh() string {
 }
 
 type Dependencies struct {
-	Runner  Runner
-	Resolve func(id string) (sessions.Session, error)
+	Runner       Runner
+	Resolve      func(id string) (sessions.Session, error)
 	RenderExport func(sessions.Session, string) string
-	FindGh  func() string
+	FindGh       func() string
 }
 
 func Handle(w http.ResponseWriter, r *http.Request, deps Dependencies) {
@@ -161,12 +161,41 @@ func renderExportHTML(w http.ResponseWriter, r *http.Request, deps Dependencies,
 	if cookie, err := r.Cookie("pi-web-theme"); err == nil {
 		theme = cookie.Value
 	}
-	html := deps.RenderExport(resolved, theme)
+	html := deps.RenderExport(shareSnapshot(resolved), theme)
 	if html == "" {
 		writeJSONError(w, http.StatusNotFound, "session not found")
 		return "", false
 	}
 	return html, true
+}
+
+func shareSnapshot(session sessions.Session) sessions.Session {
+	header := make(map[string]any)
+	for _, key := range []string{"type", "version", "id", "timestamp"} {
+		if value, ok := session.Header[key]; ok {
+			header[key] = value
+		}
+	}
+	session.Header = header
+	entries := make([]map[string]any, len(session.Entries))
+	for i, entry := range session.Entries {
+		message, _ := entry["message"].(map[string]any)
+		switch {
+		case entry["type"] == "session":
+			entries[i] = header
+		case message["role"] == "system":
+			// Keep the branch connected without publishing the runtime prompt
+			// or installed tool metadata.
+			entries[i] = map[string]any{
+				"type": "message", "id": entry["id"], "parentId": entry["parentId"],
+				"timestamp": entry["timestamp"], "message": map[string]any{"role": "system", "content": ""},
+			}
+		default:
+			entries[i] = entry
+		}
+	}
+	session.Entries = entries
+	return session
 }
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {

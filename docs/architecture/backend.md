@@ -1,5 +1,21 @@
 # Backend Architecture
 
+## Plugins and session sharing
+
+Settings → Plugins registers npm, HTTPS Git and local Pi packages through
+the Pi CLI. It adds references to existing `SKILL.md` files and configures
+Pi's native streamable HTTP and stdio MCP servers. Configuration goes into
+the standard user-level Pi settings. A revision prevents stale forms from
+overwriting newer values. The setup API is restricted to an authenticated
+local browser; phone clients can use the plugins in their conversations.
+MCP credentials and command arguments are omitted from API responses.
+Pi loads resource changes on the next idle worker use.
+
+A static share resolves one selected session and removes header filesystem
+paths and system runtime context before serializing its export. The original
+session JSONL stays intact. Conversations do not receive a cross-session
+read capability from sharing.
+
 ## Labeled model keys and applied models
 
 `/api/model-settings` is authenticated for the local window and approved encrypted

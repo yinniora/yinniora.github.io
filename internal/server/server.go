@@ -71,6 +71,7 @@ type Deps struct {
 // per session file. Construct via New; register HTTP routes via Register.
 type Server struct {
 	modelConfigMu         sync.Mutex
+	pluginConfigMu        sync.Mutex
 	modelCatalogs         map[string]modelCatalog
 	remoteControl         *relay.Controller
 	sessionManagementMu   sync.Mutex
@@ -372,6 +373,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/chat/cancel", s.auth.Wrap(s.visibleSession(s.handleCancelChat)))
 	mux.HandleFunc("/api/set-model", s.auth.Wrap(s.visibleSession(s.handleSetModel)))
 	mux.HandleFunc("/api/model-settings", s.auth.Wrap(s.handleModelSettings))
+	mux.HandleFunc("/api/plugins", s.auth.Wrap(s.handlePlugins))
 	mux.HandleFunc("/api/set-thinking-level", s.auth.Wrap(s.visibleSession(s.handleSetThinkingLevel)))
 	mux.HandleFunc("/api/models", s.auth.Wrap(s.visibleSession(s.handleAvailableModels)))
 	mux.HandleFunc("/api/worker-status", s.auth.Wrap(s.visibleSession(s.handleWorkerStatus)))
