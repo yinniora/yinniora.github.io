@@ -1,21 +1,35 @@
 // The independently hosted client sends HTTP over the authenticated page's
 // DTLS channel. Media Range requests stream through the same encrypted path.
 const CACHE = 'pi-remote-personal-1';
+const SHELL = ['/', '/icon.svg', '/manifest.webmanifest' /* packaged shell assets */];
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.add(new Request('/', { cache: 'reload' }))),
+    (async () => {
+      const shell = await fetch('/', { cache: 'reload' });
+      const entry = SHELL.find((path) => /^\/assets\/remote-index-[\w-]+\.js$/.test(path));
+      if (!shell.ok || (entry && !(await shell.clone().text()).includes(`src="${entry}"`)))
+        throw new Error('Client update is not ready');
+      const cache = await caches.open(CACHE);
+      await cache.addAll(
+        SHELL.slice(1).map(
+          (path) =>
+            new Request(path, { cache: path.startsWith('/assets/') ? 'default' : 'reload' }),
+        ),
+      );
+      await cache.put('/', shell);
+      await self.skipWaiting();
+    })(),
   );
 });
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     Promise.all([
       self.clients.claim(),
-      caches
-        .keys()
-        .then((keys) =>
-          Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))),
-        ),
+      caches.keys().then((keys) => {
+        const old = keys.filter((key) => key.startsWith('pi-remote-') && key !== CACHE);
+        // Pages already open may still request assets from the previous build.
+        return Promise.all(old.slice(0, -1).map((key) => caches.delete(key)));
+      }),
     ]),
   );
 });
@@ -93,21 +107,31 @@ self.addEventListener('fetch', (event) => {
         return response;
       })(),
     );
-  } else if (event.request.mode === 'navigate') {
-    event.respondWith(fetch('/', { cache: 'no-store' }).catch(() => caches.match('/')));
-  } else if (event.request.method === 'GET') {
+  } else if (event.request.mode === 'navigate' && event.request.method === 'GET') {
     event.respondWith(
-      caches.match(event.request).then(
-        (cached) =>
-          cached ||
-          fetch(event.request).then((response) => {
-            if (response.ok) {
-              const copy = response.clone();
-              caches.open(CACHE).then((cache) => cache.put(event.request, copy));
-            }
-            return response;
-          }),
-      ),
+      caches
+        .open(CACHE)
+        .then((cache) => cache.match('/'))
+        .catch(() => null)
+        .then((shell) => shell || fetch('/', { cache: 'no-cache' })),
+    );
+  } else if (
+    event.request.method === 'GET' &&
+    (url.pathname.startsWith('/assets/') || SHELL.includes(url.pathname))
+  ) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(CACHE);
+        const cached = await cache.match(event.request);
+        if (cached) return cached;
+        if (url.pathname.startsWith('/assets/')) {
+          const previous = await caches.match(event.request);
+          if (previous) return previous;
+        }
+        const response = await fetch(event.request);
+        if (response.ok) event.waitUntil(cache.put(event.request, response.clone()));
+        return response;
+      })(),
     );
   }
 });

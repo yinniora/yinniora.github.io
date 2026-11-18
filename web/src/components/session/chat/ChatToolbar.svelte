@@ -70,7 +70,10 @@
       style:display={chatAvailable && toolbar.canAdjustThinking ? '' : 'none'}
       title={t('composer.switchEffort')}
       aria-label={t('composer.switchEffort')}
-      disabled={!chatAvailable}>{toolbar.thinkingLevel || t('composer.switchEffort')}</button
+      disabled={!chatAvailable}
+      >{t(
+        toolbar.thinkingLevel ? 'thinking.' + toolbar.thinkingLevel : 'composer.switchEffort',
+      )}</button
     >
     <button
       type="button"

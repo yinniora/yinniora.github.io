@@ -35,13 +35,21 @@
       });
       const result = await response.json();
       if (scope.signal.aborted || version !== mutation) return;
-      if (!response.ok) throw new Error(result.error || t('computer.unavailable'));
+      if (!response.ok) {
+        const message =
+          update?.action === 'answer' && response.status === 409
+            ? 'computer.expired'
+            : 'computer.unavailable';
+        throw new Error(t(message));
+      }
       const request = result.requests?.[0];
       if (request && request.id !== waiting?.id && details) details.open = true;
       status = result;
       error = '';
     } catch (err) {
-      if (!scope.signal.aborted && (update || details?.open)) error = err.message;
+      if (!scope.signal.aborted && (update || details?.open)) {
+        error = err instanceof SyntaxError ? t('computer.unavailable') : err.message;
+      }
     } finally {
       if (update) busy = false;
       else polling = false;

@@ -7,9 +7,34 @@ import shutil
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'web/dist-remote'
 version = json.loads((ROOT / 'package.json').read_text())['version']
-shutil.copy2(OUT / 'remote-index.html', OUT / 'index.html')
-shutil.copy2(OUT / 'remote-index.html', OUT / '404.html')
-worker = (ROOT / 'web/remote-sw.js').read_text().replace('pi-remote-personal-1', 'pi-remote-' + version)
+manifest_file = OUT / '.vite/manifest.json'
+manifest = json.loads(manifest_file.read_text())
+assets = set()
+visited = set()
+
+
+def include(key):
+    if key in visited:
+        return
+    visited.add(key)
+    entry = manifest[key]
+    assets.update('/' + file for file in [entry['file'], *entry.get('css', [])])
+    for dependency in entry.get('imports', []):
+        include(dependency)
+
+
+include('remote-index.html')
+include('src/main.js')
+entry = manifest['src/main.js']['file']
+preload = f'<link rel="modulepreload" crossorigin href="/{entry}">'
+shell = (OUT / 'remote-index.html').read_text().replace('</head>', f'    {preload}\n  </head>')
+for name in ('index.html', '404.html'):
+    (OUT / name).write_text(shell)
+manifest_file.unlink()
+manifest_file.parent.rmdir()
+worker = (ROOT / 'web/remote-sw.js').read_text()
+worker = worker.replace('pi-remote-personal-1', 'pi-remote-' + version)
+worker = worker.replace('/* packaged shell assets */', ', ' + ', '.join(json.dumps(file) for file in sorted(assets)))
 (OUT / 'remote-sw.js').write_text(worker)
 for name in ['icon.svg', 'icon-maskable.svg']:
     shutil.copy2(ROOT / 'internal/ui/embedded/assets' / name, OUT / name)

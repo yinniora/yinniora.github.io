@@ -137,6 +137,22 @@ it('reuses a working authenticated channel when the app returns to the foregroun
   expect(client.reconnect).toHaveBeenCalledOnce();
 });
 
+it('shares a single channel check across concurrent resume events', async () => {
+  const { RemoteClient } = await import('./client.js');
+  const client = new RemoteClient(config);
+  client.authorized = true;
+  client.channel = { readyState: 'open' };
+  client.peer = { connectionState: 'connected' };
+  client.fetch = vi.fn(async () => new Response('{}'));
+  const first = client.resume();
+  expect(client.resume()).toBe(first);
+  expect(client.resume()).toBe(first);
+  await first;
+  expect(client.fetch).toHaveBeenCalledOnce();
+  await client.resume();
+  expect(client.fetch).toHaveBeenCalledTimes(2);
+});
+
 it('reports P2P or relay from the selected candidate pair instead of the chosen preference', async () => {
   const { RemoteClient } = await import('./client.js');
   const client = new RemoteClient(config, { preference: 'vps' });

@@ -79,7 +79,7 @@ export function setupAttachmentManager({
       const remove = documentImpl.createElement('button');
       remove.type = 'button';
       remove.className = 'pi-chat-remove';
-      remove.setAttribute('aria-label', 'Remove ' + file.name);
+      remove.setAttribute('aria-label', t('composer.removeFile', { name: file.name }));
       remove.innerHTML = icon(X, { size: 13 });
       remove.addEventListener('click', () => {
         const [removed] = selectedFiles.splice(index, 1);

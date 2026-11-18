@@ -3,6 +3,8 @@ import {
   detectCurrentThinkingLevel,
   supportedThinkingLevels,
 } from '../../../session/chat/chat-selectors.js';
+import { t } from '../../../shared/i18n.js';
+import { escapeHtml } from '../../../session/render/session-format.js';
 
 export function renderThinkingLevelList({
   levels = THINKING_LEVELS,
@@ -13,9 +15,10 @@ export function renderThinkingLevelList({
   let html = '';
   levels.forEach((level) => {
     const active = level === selectedLevel ? ' selected' : '';
-    const disabled =
-      supported.indexOf(level) < 0 ? ' disabled title="Not supported by current model"' : '';
-    const label = supported.indexOf(level) < 0 ? level + ' (unsupported)' : level;
+    const disabled = supported.includes(level)
+      ? ''
+      : ` disabled aria-description="${escapeHtml(t('thinking.unsupported'), { documentImpl: null })}"`;
+    const label = escapeHtml(t('thinking.' + level));
     html += `<button type="button" class="thinking-level-item thinking-${level}${active}" data-level="${level}"${disabled}>${label}</button>`;
   });
   return html;

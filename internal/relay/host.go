@@ -161,12 +161,33 @@ func (h *Host) Answer(ctx context.Context, id, offer string) (string, error) {
 		return "", err
 	}
 	gathered := webrtc.GatheringCompletePromise(pc)
+	relayReady := make(chan struct{}, 1)
+	pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
+		if candidate != nil && candidate.Typ == webrtc.ICECandidateTypeRelay {
+			select {
+			case relayReady <- struct{}{}:
+			default:
+			}
+		}
+	})
 	if err := pc.SetLocalDescription(answer); err != nil {
 		_ = pc.Close()
 		return "", err
 	}
 	select {
 	case <-gathered:
+	case <-relayReady:
+		// Give the other transports a short chance to appear without holding
+		// the answer for an unreachable network interface.
+		grace := time.NewTimer(400 * time.Millisecond)
+		defer grace.Stop()
+		select {
+		case <-gathered:
+		case <-grace.C:
+		case <-ctx.Done():
+			_ = pc.Close()
+			return "", ctx.Err()
+		}
 	case <-ctx.Done():
 		_ = pc.Close()
 		return "", ctx.Err()

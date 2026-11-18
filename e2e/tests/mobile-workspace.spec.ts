@@ -1258,3 +1258,30 @@ test("composer switches effort on model change and sends a file using the attach
   expect((await requested).status()).toBe(202);
   await expect(page.locator("#messages")).toContainText("notes.txt");
 });
+
+test("the attachment menu and per-session permissions use the selected Chinese locale", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const { entries } = buildSession({ cwd: realWorkingDir() });
+  const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "composer-zh"), entries);
+  await page.addInitScript(() => {
+    localStorage.setItem("pi-web:v1:locale", "zh");
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const response = await original(input, init);
+      if (new URL(String(input), location.href).pathname !== "/api/settings" ||
+          (init?.method && init.method !== "GET") || !response.ok) return response;
+      const { settings } = await response.json();
+      return Response.json({ settings: { ...settings, "pi-web:v1:locale": "zh" } });
+    };
+  });
+  await collapseScratchpad(page);
+  await page.goto("/session?id=" + encodeURIComponent(id));
+  await page.locator(".composer-add summary").click();
+  await expect(page.getByRole("button", { name: "上传文件" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "拍照", exact: true })).toBeVisible();
+  await page.locator(".computer-permission summary").click();
+  await expect(page.getByRole("button", { name: "每次询问" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "本会话允许" })).toBeVisible();
+});

@@ -34,7 +34,8 @@ Copyable diagnostics contain build/mode/time, stage, HTTP status and candidate
 counts/state only; no URL, key, ticket, fingerprint or user content. Relay-only
 connections fail promptly when credentials are unavailable instead of attempting
 an impossible ICE session. Offer/answer and channel/auth timers have independent
-budgets; usable TURN candidates can be sent before all interfaces finish gathering.
+budgets; the browser and Mac can send their SDP once they have a usable TURN
+candidate and a brief grace period for other transports.
 Authentication denial is allowed to drain before DTLS closes. Mac signaling has
 bounded heartbeat/reconnect and periodic authoritative-whitelist synchronization.
 
@@ -100,10 +101,17 @@ public signaling and relay-only ICE. Switching routes keeps the same pinned
 identity and device approval. An authenticated metadata refresh can update the
 direct endpoint, but cannot change the pinned Mac identity.
 
-Signaling and ICE discovery run concurrently. The installed web app probes
-its authenticated channel when returning to the foreground and reconnects
-if that channel is stale. Startup synchronizes workspace settings once,
-while approved-device metadata updates in the background.
+Signaling and ICE discovery run concurrently. The installed web app coalesces
+foreground and network wakeups into one probe of its existing authenticated
+channel. If iOS discarded the process or the channel is stale, the previously
+approved device signs a fresh challenge. Startup synchronizes workspace settings
+once, while approved-device metadata updates in the background.
+
+The independent client preloads the application bundle and precaches the versioned
+program shell. An active worker serves that shell immediately and checks for updates
+separately. When a new shell is ready, the next open uses it. The cache contains
+public program files only. Conversation data, media, enrollment and TURN credentials
+continue to travel through their live authenticated paths.
 
 Do not forward a Mac HTTP listener through SSH or serve this client program
 from the VPS. Use a separately controlled HTTPS static host. Remove obsolete

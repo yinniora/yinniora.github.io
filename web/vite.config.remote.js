@@ -8,6 +8,7 @@ export default defineConfig({
   build: {
     outDir: 'dist-remote',
     emptyOutDir: true,
+    manifest: true,
     rollupOptions: { input: 'remote-index.html' },
   },
 });

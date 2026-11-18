@@ -55,6 +55,9 @@ export class RemoteClient extends EventTarget {
     this.preference = normalizeTransport(preference);
     this.pending = new Map();
     this.connecting = null;
+    this.resuming = null;
+    this.identity = null;
+    this.deviceIdentified = false;
     this.peer = null;
     this.channel = null;
     this.blocked = false;
@@ -66,6 +69,12 @@ export class RemoteClient extends EventTarget {
   }
 
   phase(stage) {
+    const now = performance.now();
+    if (this.diagnostics.stage && this.phaseStarted != null) {
+      this.diagnostics.phaseMs ||= {};
+      this.diagnostics.phaseMs[this.diagnostics.stage] = Math.round(now - this.phaseStarted);
+    }
+    this.phaseStarted = now;
     this.diagnostics.stage = stage;
     this.dispatchEvent(new CustomEvent('phase', { detail: stage }));
   }
@@ -145,13 +154,17 @@ export class RemoteClient extends EventTarget {
     this.connecting = this.openConnection()
       .then(() => {
         this.phase('sync');
+        if (this.deviceIdentified) return;
         this.fetch('/api/devices', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'identify', features: deviceFeatures() }),
           signal: AbortSignal.timeout(8000),
         })
-          .then((response) => response.arrayBuffer())
+          .then(async (response) => {
+            await response.arrayBuffer();
+            this.deviceIdentified = response.ok;
+          })
           .catch(() => {});
       })
       .catch((error) => {
@@ -170,8 +183,10 @@ export class RemoteClient extends EventTarget {
     this.phase('identity');
     let identity;
     try {
-      identity = await getDeviceIdentity(this.config.fingerprint);
+      this.identity ||= getDeviceIdentity(this.config.fingerprint);
+      identity = await this.identity;
     } catch {
+      this.identity = null;
       const error = new Error(t('remote.storageUnavailable'));
       error.code = 'storageUnavailable';
       throw error;
@@ -365,6 +380,9 @@ export class RemoteClient extends EventTarget {
       const answerPromise = new Promise((resolve, reject) => {
         // Start the answer budget only after sending the offer, not during ICE gathering.
         rejectAnswer = reject;
+        socket.addEventListener?.('close', () => reject(connectionError('relayFailed')), {
+          once: true,
+        });
         socket.onmessage = (event) => {
           let message;
           try {
@@ -546,7 +564,14 @@ export class RemoteClient extends EventTarget {
     return response;
   }
 
-  async resume() {
+  resume() {
+    this.resuming ||= this.verifyChannel().finally(() => {
+      this.resuming = null;
+    });
+    return this.resuming;
+  }
+
+  async verifyChannel() {
     const peer = this.peer;
     if (
       !this.authorized ||

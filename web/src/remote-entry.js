@@ -22,8 +22,32 @@ trackVisualViewport();
 const platformFetch = window.fetch.bind(window);
 let transportClient = null;
 let transportInstalled = false;
-const registration = navigator.serviceWorker?.register('/remote-sw.js', { scope: '/' });
+const registration = navigator.serviceWorker?.register('/remote-sw.js', {
+  scope: '/',
+  updateViaCache: 'none',
+});
 registration?.catch(() => {});
+
+function waitForMediaBridge() {
+  if (navigator.serviceWorker?.controller) return Promise.resolve();
+  if (!registration) return Promise.reject(new Error(t('remote.startFailed')));
+  return new Promise((resolve, reject) => {
+    const worker = navigator.serviceWorker;
+    function finish(error) {
+      clearTimeout(timer);
+      worker.removeEventListener('controllerchange', ready);
+      if (error) reject(error);
+      else resolve();
+    }
+    function ready() {
+      if (worker.controller) finish();
+    }
+    const timer = setTimeout(() => finish(new Error(t('remote.startFailed'))), 10000);
+    worker.addEventListener('controllerchange', ready);
+    registration.then(ready, finish);
+    ready();
+  });
+}
 
 async function start() {
   try {
@@ -164,14 +188,23 @@ async function launchWorkspace(client) {
       }
     });
     let hiddenAt = 0;
+    let lastUpdateCheck = Date.now();
+    const resume = () => transportClient.resume().catch(() => {});
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) hiddenAt = Date.now();
-      else if (hiddenAt && Date.now() - hiddenAt > 3000) {
-        transportClient.resume().catch(() => {});
+      else if (hiddenAt) {
+        if (Date.now() - hiddenAt > 3000) resume();
         hiddenAt = 0;
+        if (Date.now() - lastUpdateCheck > 60000) {
+          lastUpdateCheck = Date.now();
+          registration?.then((worker) => worker.update()).catch(() => {});
+        }
       }
     });
-    window.addEventListener('online', () => transportClient.resume().catch(() => {}));
+    window.addEventListener('online', resume);
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted) resume();
+    });
     window.addEventListener('offline', () => {
       transportClient.peer?.close();
       transportClient.socket?.close();
@@ -187,25 +220,7 @@ async function launchWorkspace(client) {
     .then((response) => response.json())
     .then(({ connection }) => client.updateConfiguration(connection))
     .catch(() => {});
-  await registration;
-  await Promise.race([
-    navigator.serviceWorker.ready,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(t('remote.startFailed'))), 10000)),
-  ]);
-  if (!navigator.serviceWorker.controller)
-    await new Promise((resolve, reject) => {
-      const ready = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      const timer = setTimeout(() => {
-        navigator.serviceWorker.removeEventListener('controllerchange', ready);
-        reject(new Error(t('remote.startFailed')));
-      }, 10000);
-      navigator.serviceWorker.addEventListener('controllerchange', ready, { once: true });
-      if (navigator.serviceWorker.controller) ready();
-    });
-  const settings = await syncSettings;
+  const [settings] = await Promise.all([syncSettings, waitForMediaBridge()]);
   if (settings?.['pi-web:v1:standalone-tap-diagnostics'] === 'true') {
     import('./remote/tap-diagnostics.js')
       .then(({ showTapDiagnostics }) => showTapDiagnostics())

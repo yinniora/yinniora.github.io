@@ -237,8 +237,10 @@ Settings → Models is shared by desktop and mobile. `ModelSettings` groups keys
 by user labels, refreshes one provider at a time, allows searching and selecting
 multiple models, then explicitly applies them. The backend detects API format from
 the catalog and keeps model IDs intact. Advertised effort capability and available
-levels drive the conversation effort picker. Fixed-effort aliases and models with
-unknown capability stay selectable with the effort picker hidden. The applied list
+levels drive the conversation effort picker. A locally verified model can also
+record `reasoning` and a `thinkingLevelMap` in Pi's model configuration when its
+catalog omits those fields. Fixed-effort aliases and models with unknown capability
+stay selectable with the effort picker hidden. The applied list
 groups models by key label and offers per-model removal plus context, output and
 image input options when applying models.
 The selected key can be removed after confirmation. This also removes its
