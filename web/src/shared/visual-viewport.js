@@ -28,6 +28,8 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
   let frame = 0;
   let restingHeight = windowImpl.innerHeight;
   let width = windowImpl.innerWidth;
+  let revealedEditor = null;
+  let revealedAtHeight = 0;
   const update = () => {
     frame = 0;
     if (viewport && Math.abs(viewport.scale - 1) > 0.01) return;
@@ -48,17 +50,21 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
     style.setProperty('--pi-visual-height', `${height}px`);
     documentImpl.documentElement.classList.toggle('pi-keyboard-open', Boolean(keyboardOpen));
 
-    if (!installedIOS || !viewport) return;
+    const settingsPage = keyboardOpen && editor.closest('.settings-page-mobile-pane');
     const stalePan =
+      installedIOS &&
+      viewport &&
       !keyboardOpen &&
       Math.abs(reportedHeight - layoutHeight) < 32 &&
       viewport.offsetTop >= layoutHeight - 32;
     const root = documentImpl.scrollingElement;
-    const composerPan =
+    const keyboardPan =
+      installedIOS &&
+      viewport &&
       keyboardOpen &&
-      editor.closest('#pi-chat-composer, .pi-btw-window') &&
-      ((root?.scrollTop || 0) > 1 || viewport.offsetTop > 48);
-    if (!stalePan && !composerPan) {
+      (settingsPage || editor.closest('#pi-chat-composer, .pi-btw-window')) &&
+      ((root?.scrollTop || 0) > 1 || viewport.offsetTop > (settingsPage ? 1 : 48));
+    if (!stalePan && !keyboardPan) {
       resetAtHeight = null;
     } else if (resetAtHeight === null || Math.abs(height - resetAtHeight) >= 8) {
       // Setting the shell height first lets the input fit before undoing
@@ -66,6 +72,22 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
       resetAtHeight = height;
       if (root?.scrollTop) root.scrollTop = 0;
       windowImpl.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }
+
+    if (!settingsPage) {
+      revealedEditor = null;
+    } else if (revealedEditor !== editor || Math.abs(height - revealedAtHeight) >= 8) {
+      revealedEditor = editor;
+      revealedAtHeight = height;
+      const field = editor.getBoundingClientRect();
+      const page = settingsPage.getBoundingClientRect();
+      const top = page.top + 12;
+      const bottom = Math.min(height, page.bottom) - 12;
+      if (field.bottom > bottom && field.height <= bottom - top) {
+        settingsPage.scrollTop += field.bottom - bottom;
+      } else if (field.top < top || field.top >= bottom) {
+        settingsPage.scrollTop += field.top - top;
+      }
     }
   };
   const schedule = () => {

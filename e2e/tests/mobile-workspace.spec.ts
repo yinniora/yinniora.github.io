@@ -303,6 +303,16 @@ test("model settings refresh labeled keys and explicitly apply and remove multip
       path: testInfo.outputPath("model-settings.png"),
       scale: "css",
     });
+    const deleteKey = page.getByRole("button", { name: "Remove API key", exact: true });
+    page.once("dialog", (dialog) => dialog.dismiss());
+    await deleteKey.click();
+    await expect(group.locator(".model-applied-row")).toHaveCount(1);
+    page.once("dialog", (dialog) => dialog.accept());
+    await deleteKey.click();
+    await expect(group).toHaveCount(0);
+    await expect(page.locator(".model-source").filter({ hasText: label })).toHaveCount(0);
+    payload = await (await page.request.get("/api/models")).json();
+    expect(payload.models.some((m: any) => m.providerLabel === label)).toBe(false);
   } finally {
     await new Promise<void>((resolve) => endpoint.close(() => resolve()));
   }
@@ -684,6 +694,63 @@ test("mobile Settings supports one-level swipe back", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings$/);
   await swipe('[data-settings-nav="language"]');
   await expect(page.locator(".mobile-home")).toBeVisible();
+});
+
+test("mobile Settings keeps a focused key field visible through keyboard pan and animates navigation", async ({ page }) => {
+  await collapseScratchpad(page);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.addInitScript((height) => {
+    Object.defineProperty(navigator, "standalone", { value: true });
+    const viewport = Object.assign(new EventTarget(), { height, layoutHeight: height, offsetTop: 0, scale: 1 });
+    Object.defineProperty(window, "visualViewport", { value: viewport, configurable: true });
+    Object.defineProperty(window, "innerHeight", { get: () => viewport.layoutHeight });
+    const scroll = window.scrollTo.bind(window);
+    window.scrollTo = (options: ScrollToOptions | number, y?: number) => {
+      if (typeof options === "object" && options.top === 0) {
+        viewport.offsetTop = 0;
+        viewport.dispatchEvent(new Event("scroll"));
+      }
+      if (typeof options === "object") scroll(options);
+      else scroll(options, y ?? 0);
+    };
+    (window as any).__settingsViewport = viewport;
+    document.addEventListener("animationstart", (event) => {
+      if (event.animationName.startsWith("pi-route-"))
+        document.documentElement.dataset.routeAnimation = event.animationName;
+    });
+  }, page.viewportSize()!.height);
+  await page.goto("/settings");
+  test.skip(!(await isMobileLayout(page)), "mobile layout");
+  await page.locator('[data-settings-nav="models"]').tap();
+  await expect(page.locator("html")).toHaveAttribute("data-route-animation", "pi-route-forward");
+  await page.getByRole("button", { name: "Add key", exact: true }).tap();
+  const key = page.getByLabel("API key", { exact: true });
+  await key.fill("fixture-only");
+  await page.evaluate(() => {
+    const viewport = (window as any).__settingsViewport;
+    Object.assign(viewport, { height: 315, layoutHeight: 340, offsetTop: 376 });
+    viewport.dispatchEvent(new Event("resize"));
+  });
+  const settings = page.locator(".settings-page");
+  await expect(page.locator("#spa-root")).toHaveCSS("height", "315px");
+  await expect(settings).toHaveCSS("overflow-y", "auto");
+  await expect(key).toBeFocused();
+  await expect(key).toHaveValue("fixture-only");
+  await expect.poll(() => page.evaluate(() => visualViewport?.offsetTop)).toBe(0);
+  await expect.poll(async () => {
+    const box = (await key.boundingBox())!;
+    return box.y >= 54 && box.y + box.height <= 315;
+  }).toBe(true);
+  await expect(page.locator("#pi-chat-composer, .pi-chat-shell")).toHaveCount(0);
+  await key.blur();
+  await page.evaluate((height) => {
+    const viewport = (window as any).__settingsViewport;
+    Object.assign(viewport, { height, layoutHeight: height, offsetTop: 0 });
+    viewport.dispatchEvent(new Event("resize"));
+  }, page.viewportSize()!.height);
+  await page.locator(".session-header-back").tap();
+  await expect(page.locator("html")).toHaveAttribute("data-route-animation", "pi-route-back");
+  await expect(page.locator('[data-settings-nav="models"]')).toBeVisible();
 });
 
 test("a failed turn has a single expandable error and can copy or retry its prompt", async ({

@@ -2,11 +2,19 @@ function resolveWindow(windowImpl) {
   return windowImpl ?? (typeof window !== 'undefined' ? window : undefined);
 }
 
-function notify(win) {
-  if (win.dispatchEvent) win.dispatchEvent(new win.Event('pi:locationchange'));
+function notify(win, direction) {
+  if (!win.dispatchEvent) return;
+  const event =
+    direction && win.CustomEvent
+      ? new win.CustomEvent('pi:locationchange', { detail: { direction } })
+      : new win.Event('pi:locationchange');
+  win.dispatchEvent(event);
 }
 
-export function navigate(url, { windowImpl, state } = {}) {
+export function navigate(
+  url,
+  { windowImpl, state, direction = url === '/' ? 'back' : 'forward' } = {},
+) {
   const win = resolveWindow(windowImpl);
   if (!url || !win) return;
   // Installed apps use the visible Home and Back controls. Keep one document
@@ -16,14 +24,14 @@ export function navigate(url, { windowImpl, state } = {}) {
   } else {
     win.history.pushState(state || {}, '', url);
   }
-  notify(win);
+  notify(win, direction);
 }
 
-export function replaceLocation(url, { windowImpl } = {}) {
+export function replaceLocation(url, { windowImpl, direction } = {}) {
   const win = resolveWindow(windowImpl);
   if (!win) return;
   win.history.replaceState(win.history.state, '', url);
-  notify(win);
+  notify(win, direction);
 }
 
 export function handleNavClick(event, url, options) {

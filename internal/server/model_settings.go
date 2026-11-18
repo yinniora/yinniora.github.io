@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -321,20 +322,25 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 }
 
 func writeModelConfig(agent string, config map[string]any) error {
-	if err := os.MkdirAll(agent, 0700); err != nil {
-		return err
-	}
 	raw, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(agent, ".yugo-models-*")
+	return writePrivateModelFile(filepath.Join(agent, "models.json"), append(raw, '\n'))
+}
+
+func writePrivateModelFile(path string, raw []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".yugo-models-*")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(f.Name())
 	if err = f.Chmod(0600); err == nil {
-		_, err = f.Write(append(raw, '\n'))
+		_, err = f.Write(raw)
 	}
 	if err == nil {
 		err = f.Sync()
@@ -346,8 +352,52 @@ func writeModelConfig(agent string, config map[string]any) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	return os.Rename(f.Name(), filepath.Join(agent, "models.json"))
+	return os.Rename(f.Name(), path)
 }
+
+func deleteModelKey(agent, id string, config map[string]any) error {
+	authPath := filepath.Join(agent, "auth.json")
+	info, err := os.Lstat(authPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return writeModelConfig(agent, config)
+	}
+	if err != nil || !info.Mode().IsRegular() || info.Size() > 4<<20 {
+		return errors.New("cannot read private model credentials")
+	}
+	previous, err := os.ReadFile(authPath)
+	var auth map[string]json.RawMessage
+	if err != nil || json.Unmarshal(previous, &auth) != nil {
+		return errors.New("cannot read private model credentials")
+	}
+	var credential struct{ Type string }
+	if raw := auth[id]; len(raw) == 0 || json.Unmarshal(raw, &credential) != nil || credential.Type != "api_key" {
+		return writeModelConfig(agent, config)
+	}
+	delete(auth, id)
+	next, err := json.MarshalIndent(auth, "", "  ")
+	if err != nil {
+		return errors.New("cannot encode private model credentials")
+	}
+	next = append(next, '\n')
+	if current, err := os.ReadFile(authPath); err != nil || !bytes.Equal(current, previous) {
+		return errModelCredentialsChanged
+	}
+	if err := writePrivateModelFile(authPath, next); err != nil {
+		return errors.New("cannot save private model credentials")
+	}
+	if err := writeModelConfig(agent, config); err != nil {
+		// Revert our auth write only if another writer hasn't updated the file.
+		if current, readErr := os.ReadFile(authPath); readErr == nil && bytes.Equal(current, next) {
+			if restoreErr := writePrivateModelFile(authPath, previous); restoreErr != nil {
+				return errors.New("model configuration could not be saved and credentials could not be restored")
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+var errModelCredentialsChanged = errors.New("model credentials changed; reload and try again")
 
 // Canonical custom models take precedence over a stale Pi enumeration cache.
 // Only public metadata is sent to browsers; provider headers and keys stay local.
@@ -362,6 +412,9 @@ func (s *Server) appliedModels(fallback []map[string]any) ([]map[string]any, err
 	availableProviders := map[string]bool{}
 	for _, m := range fallback {
 		id, _ := m["provider"].(string)
+		if _, removed := s.removedModelProviders[id]; removed && providers[id] == nil {
+			continue
+		}
 		availableProviders[id] = true
 		if p, ok := providers[id].(map[string]any); ok && p["models"] != nil {
 			continue
@@ -521,6 +574,14 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		p["models"] = list
+	case "remove-key":
+		base, _ := p["baseUrl"].(string)
+		api, _ := p["api"].(string)
+		if base == "" || api == "" {
+			writeJSONError(w, 404, "key profile not found")
+			return
+		}
+		delete(providers, request.ID)
 	default:
 		writeJSONError(w, 400, "unknown model settings action")
 		return
@@ -530,11 +591,30 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, 409, "model configuration changed; reload and try again")
 		return
 	}
-	if writeModelConfig(s.agentDir, config) != nil {
+	if request.Action == "remove-key" {
+		err = deleteModelKey(s.agentDir, request.ID, config)
+	} else {
+		err = writeModelConfig(s.agentDir, config)
+	}
+	if errors.Is(err, errModelCredentialsChanged) {
+		writeJSONError(w, 409, err.Error())
+		return
+	}
+	if err != nil {
 		writeJSONError(w, 500, "could not save private model configuration")
 		return
 	}
-	if manager, ok := s.chatSender.(interface{ ModelsChanged() }); ok {
+	if request.Action == "remove-key" {
+		delete(s.modelCatalogs, request.ID)
+		if s.removedModelProviders == nil {
+			s.removedModelProviders = make(map[string]struct{})
+		}
+		// The process-wide Pi model enumeration can still return this profile.
+		s.removedModelProviders[request.ID] = struct{}{}
+	}
+	if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok && request.Action == "remove-key" {
+		manager.ResourcesChanged()
+	} else if manager, ok := s.chatSender.(interface{ ModelsChanged() }); ok {
 		manager.ModelsChanged()
 	}
 	_, providers, revision, err = readModelConfig(s.agentDir)

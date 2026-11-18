@@ -34,6 +34,8 @@
   const retrySession = () => (sessionAttempt += 1);
 
   onMount(() => {
+    const root = document.getElementById('spa-root');
+    let motionTimer;
     initializeSessionCompletions();
     const stopViewport = trackVisualViewport();
     const remoteEvents = createAppEvents({
@@ -41,15 +43,24 @@
       onEvent: (config) => window.__PI_REMOTE_CLIENT__?.updateConfiguration(config),
     });
     if (window.__PI_REMOTE_CLIENT__) remoteEvents.connect();
-    const syncPath = () => {
+    const syncPath = (event) => {
+      const nextPath = window.location.pathname;
       const nextSessionId = new URLSearchParams(window.location.search).get('id') || '';
-      if (path !== window.location.pathname || sessionId !== nextSessionId) {
-        const root = document.getElementById('spa-root');
+      const routeChanged = path !== nextPath || sessionId !== nextSessionId;
+      const direction =
+        event?.detail?.direction ||
+        (event?.type === 'popstate' && routeChanged ? (nextPath === '/' ? 'back' : 'forward') : '');
+      if (root && (direction === 'back' || direction === 'forward')) {
+        clearTimeout(motionTimer);
+        root.dataset.routeMotion = direction;
+        motionTimer = setTimeout(() => delete root.dataset.routeMotion, 420);
+      }
+      if (routeChanged) {
         if (root) root.scrollTop = 0;
         const focused = document.activeElement;
         if (focused?.matches('input, textarea, [contenteditable]')) focused.blur();
       }
-      path = window.location.pathname;
+      path = nextPath;
       search = window.location.search;
     };
     window.addEventListener('popstate', syncPath);
@@ -59,6 +70,8 @@
     };
     window.addEventListener('pageshow', restorePath);
     return () => {
+      clearTimeout(motionTimer);
+      if (root) delete root.dataset.routeMotion;
       stopViewport();
       remoteEvents.cleanup();
       window.removeEventListener('popstate', syncPath);

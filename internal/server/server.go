@@ -73,6 +73,7 @@ type Server struct {
 	modelConfigMu         sync.Mutex
 	pluginConfigMu        sync.Mutex
 	modelCatalogs         map[string]modelCatalog
+	removedModelProviders map[string]struct{}
 	remoteControl         *relay.Controller
 	sessionManagementMu   sync.Mutex
 	trashProjectFiles     func(context.Context, string) (string, error)

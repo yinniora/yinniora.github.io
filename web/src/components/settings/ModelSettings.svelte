@@ -112,6 +112,15 @@
     if (await action({ action: 'remove-model', id: profile.id, modelId: model.id }))
       status = t('models.removed');
   }
+  async function removeKey(profile) {
+    const title = t('models.removeNamed', { label: profile.label, name: t('models.key') });
+    const count = t('models.appliedList', { count: profile.applied.length });
+    if (busy || !window.confirm(`${title}?\n${count}`)) return;
+    if (await action({ action: 'remove-key', id: profile.id })) {
+      query = '';
+      status = t('common.saved');
+    }
+  }
   onMount(load);
 </script>
 
@@ -207,9 +216,17 @@
       <div class="model-catalog">
         <div class="model-catalog-heading">
           <h3>{t('models.availableFor', { label: active.label })}</h3>
-          <button type="button" disabled={busy || !active.hasKey} onclick={refresh}
-            >{t(busy ? 'models.working' : 'models.refresh')}</button
-          >
+          <div class="model-source-actions">
+            <button type="button" disabled={busy || !active.hasKey} onclick={refresh}
+              >{t(busy ? 'models.working' : 'models.refresh')}</button
+            >
+            <button
+              type="button"
+              class="remove-key"
+              disabled={busy}
+              onclick={() => removeKey(active)}>{t('models.remove')} {t('models.key')}</button
+            >
+          </div>
         </div>
         <p class="model-endpoint">{active.baseUrl}</p>
         <input
@@ -432,6 +449,14 @@
   .model-catalog-heading h3 {
     margin: 0;
   }
+  .model-source-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  button.remove-key {
+    color: var(--error, #cf5f5f);
+  }
   .model-endpoint {
     overflow-wrap: anywhere;
     font-size: 11px;
@@ -540,7 +565,8 @@
     color: var(--text-soft);
   }
   @media (max-width: 760px) {
-    .model-heading {
+    .model-heading,
+    .model-catalog-heading {
       align-items: flex-start;
       flex-direction: column;
     }

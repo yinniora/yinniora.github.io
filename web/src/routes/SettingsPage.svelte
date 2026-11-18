@@ -63,6 +63,7 @@
     try {
       replaceLocation(id ? `${win.location.pathname}?section=${id}` : win.location.pathname, {
         windowImpl: win,
+        direction: id ? 'forward' : 'back',
       });
     } catch {}
   }
@@ -71,17 +72,21 @@
     activeSection = id;
     if (isMobile) mobileShowingPane = true;
     syncSectionUrl(window, id);
+    if (isMobile && settingsPage) settingsPage.scrollTop = 0;
   }
 
   function backToList() {
+    const focused = document.activeElement;
+    if (settingsPage?.contains(focused)) focused.blur();
     mobileShowingPane = false;
     syncSectionUrl(window, '');
-    const root = settingsPage?.closest('#spa-root');
-    if (root) root.scrollTop = 0;
+    if (settingsPage) settingsPage.scrollTop = 0;
   }
 
   function leaveSettings() {
-    navigate(typeof window.history.state?.back === 'string' ? window.history.state.back : '/');
+    navigate(typeof window.history.state?.back === 'string' ? window.history.state.back : '/', {
+      direction: 'back',
+    });
   }
 
   function onHomeBack(e) {

@@ -1989,3 +1989,69 @@ body .pi-btw-input {
 #spa-root:empty {
   display: none;
 }
+
+@media (max-width: 760px) {
+  #spa-root:has(> .settings-page) {
+    display: flex;
+    flex-direction: column;
+    overflow: clip;
+  }
+  #spa-root > .settings-page {
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-top: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not(.pi-keyboard-open)
+    #spa-root[data-route-motion='forward']
+    :is(
+      .mobile-home-content,
+      .personal-home-main,
+      .settings-pane,
+      .settings-page-mobile-list .settings-sidebar,
+      .schedules-page,
+      #messages-list,
+      .session-loading
+    ) {
+    animation: pi-route-forward 170ms ease-out;
+  }
+  :root:not(.pi-keyboard-open)
+    #spa-root[data-route-motion='back']
+    :is(
+      .mobile-home-content,
+      .personal-home-main,
+      .settings-pane,
+      .settings-page-mobile-list .settings-sidebar,
+      .schedules-page,
+      #messages-list,
+      .session-loading
+    ) {
+    animation: pi-route-back 170ms ease-out;
+  }
+}
+
+@keyframes pi-route-forward {
+  from {
+    opacity: 0.82;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes pi-route-back {
+  from {
+    opacity: 0.82;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

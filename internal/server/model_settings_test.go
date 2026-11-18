@@ -106,6 +106,73 @@ func TestModelDiscoveryDoesNotForwardKeysThroughRedirects(t *testing.T) {
 	}
 }
 
+func TestRemoveModelKeyPrunesCredentialModelsAndStaleCatalog(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		label := "inline"
+		if legacy {
+			label = "legacy"
+		}
+		t.Run(label, func(t *testing.T) {
+			s := newTestServer(t)
+			profile := map[string]any{"api": "anthropic-messages", "baseUrl": "https://example.invalid/v1", "models": []any{map[string]any{"id": "removed"}}}
+			auth := map[string]any{"keep": map[string]any{"type": "api_key", "key": "keep-fixture"}}
+			if legacy {
+				auth["target"] = map[string]any{"type": "api_key", "key": "remove-fixture"}
+			} else {
+				profile["apiKey"] = "remove-fixture"
+			}
+			if err := writeModelConfig(s.agentDir, map[string]any{"providers": map[string]any{"target": profile, "keep": map[string]any{"baseUrl": "https://example.invalid/v1", "api": "anthropic-messages"}}}); err != nil {
+				t.Fatal(err)
+			}
+			authPath := filepath.Join(s.agentDir, "auth.json")
+			rawAuth, _ := json.Marshal(auth)
+			if err := os.WriteFile(authPath, rawAuth, 0600); err != nil {
+				t.Fatal(err)
+			}
+			s.modelCatalogs = map[string]modelCatalog{"target": {Signature: "old"}}
+			code, _, _ := modelSettingsCall(t, s, map[string]any{"action": "remove-key", "id": "target", "revision": "stale"})
+			if code != 409 {
+				t.Fatal("removed a key from a stale settings page")
+			}
+			_, data, _ := modelSettingsCall(t, s, nil)
+			code, data, response := modelSettingsCall(t, s, map[string]any{"action": "remove-key", "id": "target", "revision": data["revision"]})
+			if code != 200 || len(data["profiles"].([]any)) != 1 || strings.Contains(response, "fixture") {
+				t.Fatal("removal did not return only the remaining profile", code)
+			}
+			_, providers, _, _ := readModelConfig(s.agentDir)
+			if providers["target"] != nil || providers["keep"] == nil || s.modelCatalogs["target"].Signature != "" {
+				t.Fatal("wrong profile or catalog removed")
+			}
+			authAfter, _ := os.ReadFile(authPath)
+			if strings.Contains(string(authAfter), "remove-fixture") || !strings.Contains(string(authAfter), "keep-fixture") || (!legacy && string(authAfter) != string(rawAuth)) {
+				t.Fatal("private credentials were not scoped to the removed profile")
+			}
+			models, err := s.appliedModels([]map[string]any{{"provider": "target", "id": "removed"}, {"provider": "unrelated", "id": "kept"}})
+			if err != nil || len(models) != 1 || models[0]["id"] != "kept" {
+				t.Fatal("stale deleted provider reappeared in model picker", err)
+			}
+		})
+	}
+}
+
+func TestRemoveModelKeyRestoresLegacyCredentialIfConfigSaveFails(t *testing.T) {
+	agent := t.TempDir()
+	path := filepath.Join(agent, "auth.json")
+	original := `{"target":{"type":"api_key","key":"fixture"}}`
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(agent, "models.json"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteModelKey(agent, "target", map[string]any{"providers": map[string]any{}}); err == nil {
+		t.Fatal("deletion unexpectedly replaced a directory")
+	}
+	if result, err := os.ReadFile(path); err != nil || string(result) != original {
+		t.Fatal("credential was lost after a failed provider deletion", err)
+	}
+}
+
 func TestExistingProvidersAndModelMetadataArePreserved(t *testing.T) {
 	s := newTestServer(t)
 	models := `{"other":{"keep":true},"providers":{"existing":{"name":"Existing key","api":"anthropic-messages","baseUrl":"https://example.invalid/v1","models":[{"id":"kept","input":["text","image"],"reasoning":true,"contextWindow":200000,"compat":{"keep":true}}]}}}`

@@ -182,6 +182,9 @@ controls and horizontally scrollable code with their native handling. Desktop
 keeps the existing sidebar and home composer.
 In mobile settings, a right swipe leaves the current subsection or returns
 from the settings list along the same route as the header back control.
+Forward and back navigation animate incoming content in opposite directions
+while the header stays fixed. The animation follows the system motion preference
+and pauses while the keyboard is open.
 Session cards show a completion dot after a finished assistant reply. The dot
 survives reloads and clears when the conversation is viewed in the foreground.
 Read state is kept in the current browser.
@@ -190,6 +193,8 @@ Read state is kept in the current browser.
 model picker, sheets and BTW window use one height. While the keyboard is
 visible, the app fits the smaller valid window or visual viewport height. The
 outer document and the composer use the same height throughout the transition.
+Mobile settings scroll in their own pane and reveal the focused field inside
+the visible keyboard boundary, with standalone iOS page pan corrected once.
 Editable controls use at least 16px text. Model selection and BTW opening do
 not automatically focus a text field on mobile. Viewport metadata, CSS touch
 behavior and WebKit zoom events lock page zoom while single-finger touch
@@ -233,5 +238,9 @@ by user labels, refreshes one provider at a time, allows searching and selecting
 multiple models, then explicitly applies them. The applied list groups models by
 the saved API key label. Applied models have independent
 remove controls and optional new-model context/output, image and thinking settings.
+The selected key can be removed after confirmation. This also removes its
+applied models and saved API credential from the Mac's Pi configuration.
+Conversation history is retained. Idle workers reload after deletion, and
+active replies finish with their original configuration.
 Key entry uses a password field, is cleared after save, and never uses browser
 storage. The conversation picker refreshes on opening and displays provider labels.
