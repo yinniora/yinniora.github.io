@@ -32,6 +32,19 @@ Endpoint or key edits verify the model catalog before writing. The API check
 uses endpoint suffixes and advertised model metadata when available. Existing
 profiles can explicitly recheck their saved endpoint and key from Settings.
 
+The Anthropic SDK appends `/v1/messages` to the model's runtime base. YuGo
+keeps the gateway's mount prefix while removing its version suffix from
+Anthropic bases. Model discovery still calls `/v1/models`. Applied models in
+mixed gateways receive individual runtime bases, so OpenAI and Gemini keep
+their required version paths. Full Chat Completions, Responses, Messages or
+Gemini operation URLs are reduced to their corresponding runtime base.
+Startup repairs existing saved routes before Pi workers load them. For any
+gateway with Claude models, successful Bearer discovery combined with a
+401/403 from native catalog auth enables Pi's Bearer header where no custom
+policy is configured. The RPC worker suppresses the SDK's duplicate API-key
+header when sending the same credential as Bearer on Anthropic requests.
+Startup also recognizes Packy's documented Bearer setting for saved profiles.
+
 Discovery supports OpenAI Chat/Responses and New API, Anthropic Messages and
 Google Gemini formats, with bounded same-endpoint pagination, timeouts and
 response sizes. HTTPS is required except on loopback; redirects never receive

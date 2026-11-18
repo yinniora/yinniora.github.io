@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 const (
@@ -29,13 +31,30 @@ func modelProtocolRoute(base string) (string, string) {
 			return u.String(), route.api
 		}
 	}
+	if idx := strings.LastIndex(u.Path, "/models/"); idx >= 0 {
+		model, action, found := strings.Cut(u.Path[idx+len("/models/"):], ":")
+		if found && model != "" && !strings.Contains(model, "/") && slices.Contains([]string{"generateContent", "streamGenerateContent", "countTokens"}, action) {
+			u.Path = u.Path[:idx]
+			u.RawPath = ""
+			return u.String(), apiGemini
+		}
+	}
 	return base, ""
 }
 
-func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred string) (*url.URL, string, []map[string]any, error) {
+type modelProtocolDetection struct {
+	BaseURL    *url.URL
+	API        string
+	Models     []map[string]any
+	BearerAuth bool
+}
+
+func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred string) (modelProtocolDetection, error) {
 	base, explicit := modelProtocolRoute(base)
 	apis := []string{apiChat, apiAnthropic, apiGemini}
-	if explicit != "" {
+	if explicit == apiAnthropic {
+		apis = []string{apiAnthropic, apiChat}
+	} else if explicit != "" {
 		apis = []string{explicit}
 	} else if preferred == apiAnthropic {
 		// Proxies can advertise alternate model routes in their Bearer catalog.
@@ -46,16 +65,24 @@ func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred s
 		apis = []string{apiGemini, apiChat, apiAnthropic}
 	}
 	var lastErr error
+	var nativeErr error
+	nativeChecked := false
 	for _, api := range apis {
 		u, err := modelBaseURL(base, api)
 		if err != nil {
-			return nil, "", nil, err
+			return modelProtocolDetection{}, err
 		}
+		catalogAPI := api
 		profile := map[string]any{"baseUrl": u.String(), "api": api}
-		if explicit == "" && api == apiChat && (preferred == apiAnthropic || preferred == apiResponses) {
+		if api == apiChat && explicit == apiAnthropic {
+			profile["catalogFallbackAPI"] = apiAnthropic
+		} else if explicit == "" && api == apiChat && (preferred == apiAnthropic || preferred == apiResponses) {
 			profile["catalogFallbackAPI"] = preferred
 		}
 		models, err := s.discoverModels(ctx, profile, key)
+		if catalogAPI == apiAnthropic {
+			nativeChecked, nativeErr = true, err
+		}
 		if err == nil {
 			if fallback, ok := profile["catalogFallbackAPI"].(string); ok {
 				api = fallback
@@ -71,14 +98,30 @@ func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred s
 					}
 				}
 			}
-			return u, api, models, nil
+			if api == apiAnthropic {
+				u, err = modelBaseURL(u.String(), apiAnthropic)
+				if err != nil {
+					return modelProtocolDetection{}, err
+				}
+			}
+			bearerAuth := false
+			if (catalogAPI == apiChat || catalogAPI == apiResponses) && (api == apiAnthropic || slices.ContainsFunc(models, func(model map[string]any) bool { return model["api"] == apiAnthropic })) {
+				if !nativeChecked {
+					probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+					_, nativeErr = s.discoverModels(probeCtx, map[string]any{"baseUrl": u.String(), "api": apiAnthropic}, key)
+					cancel()
+				}
+				var status modelCatalogHTTPError
+				bearerAuth = errors.As(nativeErr, &status) && (status == 401 || status == 403)
+			}
+			return modelProtocolDetection{BaseURL: u, API: api, Models: models, BearerAuth: bearerAuth}, nil
 		}
 		lastErr = err
 		if ctx.Err() != nil {
 			break
 		}
 	}
-	return nil, "", nil, fmt.Errorf("could not detect model API: %w", lastErr)
+	return modelProtocolDetection{}, fmt.Errorf("could not detect model API: %w", lastErr)
 }
 
 var fixedThinkingAlias = regexp.MustCompile(`(?i)(?:-(?:thinking|nothinking|high|medium|low|xhigh|max)(?:-(?:high|medium|low|xhigh|max|[0-9]+))?|@(?:thinking|effort):[^@]+)$`)
@@ -111,6 +154,7 @@ func declaredEffortLevels(levels map[string]bool) map[string]any {
 }
 
 func describeCatalogModel(model, raw map[string]any, id, api, base string) {
+	catalogAPI := api
 	types := catalogStrings(raw["supported_endpoint_types"])
 	params := catalogStrings(raw["supported_parameters"])
 	// New API can expose Claude, Gemini and GPT through the same key.
@@ -127,7 +171,12 @@ func describeCatalogModel(model, raw map[string]any, id, api, base string) {
 		}
 	}
 	model["api"] = api
-	if api == apiGemini {
+	if api == apiAnthropic {
+		if u, err := modelBaseURL(base, apiAnthropic); err == nil && u.String() != base {
+			model["baseUrl"] = u.String()
+		}
+	}
+	if api == apiGemini && catalogAPI != apiGemini {
 		if u, err := url.Parse(base); err == nil && strings.HasSuffix(u.Path, "/v1") {
 			u.Path = strings.TrimSuffix(u.Path, "/v1") + "/v1beta"
 			model["baseUrl"] = u.String()

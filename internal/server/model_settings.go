@@ -197,6 +197,9 @@ func (s *Server) modelProfiles(providers map[string]any) []modelProfile {
 }
 
 func modelBaseURL(raw, api string) (*url.URL, error) {
+	if base, routeAPI := modelProtocolRoute(raw); routeAPI == api {
+		raw = base
+	}
 	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(raw), "/"))
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return nil, errors.New("invalid endpoint")
@@ -205,7 +208,18 @@ func modelBaseURL(raw, api string) (*url.URL, error) {
 		return nil, errors.New("HTTPS is required except for a local model server")
 	}
 	switch api {
-	case "openai-completions", "openai-responses", "anthropic-messages":
+	case apiAnthropic:
+		oldPath := u.Path
+		if strings.HasSuffix(u.Path, "/v1/messages") || strings.HasSuffix(u.Path, "/v1/models") {
+			u.Path = strings.TrimSuffix(strings.TrimSuffix(u.Path, "/messages"), "/models")
+		}
+		for strings.HasSuffix(u.Path, "/v1") {
+			u.Path = strings.TrimSuffix(u.Path, "/v1")
+		}
+		if u.Path != oldPath {
+			u.RawPath = ""
+		}
+	case apiChat, apiResponses:
 		if u.Path == "" {
 			u.Path = "/v1"
 		}
@@ -240,14 +254,7 @@ func editModelEndpoint(profile map[string]any, base, api string, replacingKey bo
 		return false, errors.New("provider has custom authentication or routes")
 	}
 
-	models := configuredModels(profile)
-	if overrides, ok := profile["modelOverrides"].(map[string]any); ok {
-		for _, value := range overrides {
-			if model, ok := value.(map[string]any); ok {
-				models = append(models, model)
-			}
-		}
-	}
+	models := modelsWithOverrides(profile)
 	for _, model := range models {
 		if newOrigin && model["headers"] != nil {
 			return false, errors.New("provider has custom authentication or routes")
@@ -257,8 +264,27 @@ func editModelEndpoint(profile map[string]any, base, api string, replacingKey bo
 			continue
 		}
 		if modelBase == previous {
-			model["baseUrl"] = next.String()
+			modelURL := *next
+			if api == apiAnthropic {
+				switch model["api"] {
+				case apiChat, apiResponses:
+					modelURL.Path += "/v1"
+					modelURL.RawPath = ""
+				case apiGemini:
+					modelURL.Path += "/v1beta"
+					modelURL.RawPath = ""
+				}
+			}
+			model["baseUrl"] = modelURL.String()
 			continue
+		}
+		if model["api"] == apiAnthropic {
+			oldRoute, oldErr := modelBaseURL(previous, apiAnthropic)
+			newRoute, newErr := modelBaseURL(next.String(), apiAnthropic)
+			if oldErr == nil && newErr == nil && modelBase == oldRoute.String() {
+				model["baseUrl"] = newRoute.String()
+				continue
+			}
 		}
 		if model["api"] == apiGemini && old != nil && strings.HasSuffix(old.Path, "/v1") {
 			oldGemini := *old
@@ -278,6 +304,18 @@ func editModelEndpoint(profile map[string]any, base, api string, replacingKey bo
 	}
 	profile["baseUrl"] = next.String()
 	return true, nil
+}
+
+func modelsWithOverrides(profile map[string]any) []map[string]any {
+	models := configuredModels(profile)
+	if overrides, ok := profile["modelOverrides"].(map[string]any); ok {
+		for _, value := range overrides {
+			if model, ok := value.(map[string]any); ok {
+				models = append(models, model)
+			}
+		}
+	}
+	return models
 }
 
 func applyDetectedModelRoutes(profile map[string]any, models []map[string]any, previousAPI, defaultAPI string) {
@@ -319,6 +357,12 @@ func applyDetectedModelRoutes(profile map[string]any, models []map[string]any, p
 	}
 }
 
+type modelCatalogHTTPError int
+
+func (e modelCatalogHTTPError) Error() string {
+	return fmt.Sprintf("model service returned HTTP %d", e)
+}
+
 func (s *Server) discoverModels(ctx context.Context, p map[string]any, key string) ([]map[string]any, error) {
 	api, _ := p["api"].(string)
 	modelAPI, _ := p["catalogFallbackAPI"].(string)
@@ -330,7 +374,16 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 	if err != nil {
 		return nil, err
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/models"
+	if api == apiAnthropic || (api == apiChat && modelAPI == apiAnthropic) {
+		u, err = modelBaseURL(base, apiAnthropic)
+		if err != nil {
+			return nil, err
+		}
+		u.Path += "/v1/models"
+	} else {
+		u.Path = strings.TrimRight(u.Path, "/") + "/models"
+	}
+	u.RawPath = ""
 	client := &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	models := []map[string]any{}
 	seen := map[string]bool{}
@@ -368,7 +421,7 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 		body, readErr := io.ReadAll(io.LimitReader(response.Body, (4<<20)+1))
 		response.Body.Close()
 		if response.StatusCode != 200 {
-			return nil, fmt.Errorf("model service returned HTTP %d", response.StatusCode)
+			return nil, modelCatalogHTTPError(response.StatusCode)
 		}
 		if readErr != nil || len(body) > 4<<20 {
 			return nil, errors.New("model service response is too large")
@@ -447,6 +500,8 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 }
 
 func writeModelConfig(agent string, config map[string]any) error {
+	providers, _ := config["providers"].(map[string]any)
+	normalizeModelEndpoints(providers)
 	raw, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return err
@@ -695,10 +750,13 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		var models []map[string]any
 		var u *url.URL
 		var e error
+		var bearerAuth bool
 		if request.API == "" || request.API == "auto" {
 			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 			s.modelConfigMu.Unlock()
-			u, request.API, models, e = s.detectModelProtocol(ctx, request.BaseURL, request.Key, "")
+			var detection modelProtocolDetection
+			detection, e = s.detectModelProtocol(ctx, request.BaseURL, request.Key, "")
+			u, request.API, models, bearerAuth = detection.BaseURL, detection.API, detection.Models, detection.BearerAuth
 			cancel()
 			s.modelConfigMu.Lock()
 		} else {
@@ -709,6 +767,9 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		profile := map[string]any{"name": request.Label, "baseUrl": u.String(), "api": request.API, "apiKey": literalModelKey(request.Key), "models": []any{}}
+		if bearerAuth {
+			profile["authHeader"] = true
+		}
 		providers[id] = profile
 		if models != nil {
 			if s.modelCatalogs == nil {
@@ -755,13 +816,14 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 			s.modelConfigMu.Unlock()
-			checkedURL, checkedAPI, models, checkErr := s.detectModelProtocol(ctx, request.BaseURL, key, preferred)
+			detection, checkErr := s.detectModelProtocol(ctx, request.BaseURL, key, preferred)
 			cancel()
 			s.modelConfigMu.Lock()
 			if checkErr != nil {
 				writeJSONError(w, 400, checkErr.Error())
 				return
 			}
+			checkedURL, checkedAPI, models := detection.BaseURL, detection.API, detection.Models
 			_, currentProviders, currentRevision, readErr := readModelConfig(s.agentDir)
 			current, _ := currentProviders[request.ID].(map[string]any)
 			if readErr != nil || currentRevision != revision || current == nil || profileSignature(current, s.modelProfileKey(request.ID, current)) != signature {
@@ -774,6 +836,10 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			p["api"] = checkedAPI
+			if detection.BearerAuth && canInferBearerAuth(p) {
+				p["authHeader"] = true
+				configAffectsResources = true
+			}
 			if endpointChanged || resolvedEndpointChanged || api != checkedAPI {
 				applyDetectedModelRoutes(p, models, api, checkedAPI)
 				configAffectsResources = true

@@ -51,6 +51,9 @@ func Main(version string) {
 	developmentMode := os.Getenv(developmentEnvVar) == "1"
 
 	agentDir := agentdir.Path()
+	if err := server.RepairSavedModelEndpoints(agentDir); err != nil {
+		fmt.Fprintln(os.Stderr, "could not update saved model API paths:", err)
+	}
 	if err := seedSoundsDir(agentDir); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to seed sounds directory: %v\n", err)
 	}

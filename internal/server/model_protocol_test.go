@@ -10,6 +10,10 @@ import (
 
 func TestDetectMixedModelCatalog(t *testing.T) {
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" && r.Header.Get("x-api-key") == "testing" && r.Header.Get("Authorization") == "" {
+			http.Error(w, "This gateway uses Bearer", http.StatusUnauthorized)
+			return
+		}
 		if r.Method != http.MethodGet || r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer testing" {
 			http.Error(w, "unexpected request", 400)
 			return
@@ -24,11 +28,12 @@ func TestDetectMixedModelCatalog(t *testing.T) {
 	}))
 	defer provider.Close()
 
-	_, api, models, err := (&Server{}).detectModelProtocol(context.Background(), provider.URL, "testing", "")
-	if err != nil || api != apiChat || len(models) != 5 {
-		t.Fatalf("detect catalog: api=%s models=%+v err=%v", api, models, err)
+	detection, err := (&Server{}).detectModelProtocol(context.Background(), provider.URL, "testing", "")
+	models := detection.Models
+	if err != nil || detection.API != apiChat || !detection.BearerAuth || len(models) != 5 {
+		t.Fatalf("detect catalog: api=%s models=%+v err=%v", detection.API, models, err)
 	}
-	if models[0]["api"] != apiAnthropic || models[0]["reasoning"] == true {
+	if models[0]["api"] != apiAnthropic || models[0]["baseUrl"] != provider.URL || models[0]["reasoning"] == true {
 		t.Fatalf("gateway's native route alone doesn't confirm dynamic effort: %+v", models[0])
 	}
 	if models[1]["reasoning"] == true || models[1]["supportsTools"] != true {
@@ -44,9 +49,10 @@ func TestDetectMixedModelCatalog(t *testing.T) {
 	if models[4]["api"] != apiResponses || models[4]["reasoning"] != true {
 		t.Fatalf("wrong Responses configuration: %+v", models[4])
 	}
-	_, api, models, err = (&Server{}).detectModelProtocol(context.Background(), provider.URL, "testing", apiAnthropic)
-	if err != nil || api != apiAnthropic || len(models) != 5 || models[2]["api"] != apiGemini || models[4]["api"] != apiResponses {
-		t.Fatalf("existing Claude profile lost mixed catalog routes: api=%s models=%+v err=%v", api, models, err)
+	detection, err = (&Server{}).detectModelProtocol(context.Background(), provider.URL, "testing", apiAnthropic)
+	models = detection.Models
+	if err != nil || detection.API != apiAnthropic || !detection.BearerAuth || len(models) != 5 || models[2]["api"] != apiGemini || models[4]["api"] != apiResponses {
+		t.Fatalf("existing Claude profile lost mixed catalog routes: api=%s models=%+v err=%v", detection.API, models, err)
 	}
 }
 

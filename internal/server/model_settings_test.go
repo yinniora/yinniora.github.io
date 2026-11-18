@@ -168,7 +168,8 @@ func TestEditModelKeyChecksCompatibilityBeforeReplacingCredential(t *testing.T) 
 			}
 			_, providers, _, _ = readModelConfig(s.agentDir)
 			authAfter, _ := os.ReadFile(authPath)
-			if s.modelProfileKey("target", providers["target"].(map[string]any)) != newKey || strings.Contains(string(authAfter), oldKey) || !strings.Contains(string(authAfter), "unrelated-fixture") {
+			stored := providers["target"].(map[string]any)
+			if s.modelProfileKey("target", stored) != newKey || stored["authHeader"] != true || strings.Contains(string(authAfter), oldKey) || !strings.Contains(string(authAfter), "unrelated-fixture") {
 				t.Fatal("the replacement did not take precedence or modified other credentials")
 			}
 		})

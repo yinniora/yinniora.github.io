@@ -21,3 +21,24 @@ describe('RPC worker shell timeout', () => {
     expect(event.input.timeout).toBe(expected);
   });
 });
+
+describe('RPC worker Anthropic authentication', () => {
+  it.each([
+    ['anthropic-messages', undefined, null],
+    ['anthropic-messages', 'fixture-key', null],
+    ['anthropic-messages', 'another-fixture', 'another-fixture'],
+    ['openai-completions', 'fixture-key', 'fixture-key'],
+  ])('keeps the applicable key header for %s and %s', (api, key, expected) => {
+    let beforeHeaders;
+    registerWorkerExtension({
+      registerCommand: () => {},
+      on: (event, handler) => {
+        if (event === 'before_provider_headers') beforeHeaders = handler;
+      },
+    });
+    const headers = { Authorization: 'Bearer fixture-key', 'x-api-key': key };
+    beforeHeaders({ headers }, { model: { api } });
+    expect(headers['x-api-key']).toBe(expected);
+    expect(headers.Authorization).toBe('Bearer fixture-key');
+  });
+});

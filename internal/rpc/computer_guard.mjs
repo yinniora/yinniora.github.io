@@ -10,6 +10,16 @@ export default function guardComputerTools(pi) {
     description: 'YuGo Pi computer approval is active',
     handler: async () => {},
   });
+  pi.on('before_provider_headers', (event, ctx) => {
+    if (ctx.model?.api !== 'anthropic-messages') return;
+    const headers = event.headers;
+    const authorization = Object.keys(headers).find((name) => name.toLowerCase() === 'authorization');
+    const apiKey = Object.keys(headers).find((name) => name.toLowerCase() === 'x-api-key') || 'x-api-key';
+    const bearer = authorization && headers[authorization];
+    if (typeof bearer === 'string' && bearer.startsWith('Bearer ') && (!headers[apiKey] || bearer === `Bearer ${headers[apiKey]}`)) {
+      headers[apiKey] = null;
+    }
+  });
   pi.on('tool_call', (event) => {
     if ((event.toolName === 'bash' || event.toolName === 'powershell') && event.input.timeout === undefined) {
       event.input.timeout = defaultShellTimeoutSeconds;
