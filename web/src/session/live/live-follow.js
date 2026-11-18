@@ -54,15 +54,7 @@ export function createFollowScrollController({
   }
 
   function getScrollPosition() {
-    let scrolled =
-      windowImpl.scrollY ||
-      windowImpl.pageYOffset ||
-      documentImpl.documentElement.scrollTop ||
-      documentImpl.body.scrollTop;
-    if (contentEl && contentEl.scrollHeight > contentEl.clientHeight) {
-      scrolled = Math.max(scrolled, contentEl.scrollTop);
-    }
-    return scrolled;
+    return contentEl?.scrollTop ?? windowImpl.scrollY ?? 0;
   }
   lastScrollTop = getScrollPosition();
 
@@ -121,8 +113,7 @@ export function createFollowScrollController({
     scrollAfterLayout(!!smooth);
   }
 
-  on(windowImpl, 'scroll', onScroll, { passive: true });
-  if (contentEl) on(contentEl, 'scroll', onScroll, { passive: true });
+  on(contentEl || windowImpl, 'scroll', onScroll, { passive: true });
   on(windowImpl, 'wheel', disableFollowOnUserInteraction, { passive: true });
   on(windowImpl, 'touchmove', disableFollowOnUserInteraction, { passive: true });
   on(windowImpl, 'keydown', disableFollowOnUserInteraction, { passive: true });

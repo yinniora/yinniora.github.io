@@ -4,6 +4,7 @@ import {
   createFollowButton,
   isAtBottom,
   removeFollowButton,
+  scrollElementAboveComposer,
   scrollToBottom,
   setFollowButtonText,
 } from './live-scroll.js';
@@ -23,24 +24,42 @@ describe('live scroll helpers', () => {
     expect(dom.window.document.body.contains(btn)).toBe(false);
   });
 
-  it('scrolls window to bottom', () => {
-    const dom = new JSDOM('<body><main id="content"></main></body>');
+  it('scrolls the transcript alone even when the document reports a second screen', () => {
+    const dom = new JSDOM('<body><main id="content"><p>Reply</p></main></body>');
+    const doc = dom.window.document;
+    const content = doc.getElementById('content');
+    const reply = content.firstElementChild;
+    const windowImpl = { scrollTo: vi.fn(), innerHeight: 812 };
+    content.scrollTo = vi.fn();
+    Object.defineProperty(doc.documentElement, 'scrollHeight', { value: 1624 });
+    Object.defineProperty(content, 'scrollHeight', { value: 3000 });
+    Object.defineProperty(content, 'clientHeight', { value: 600 });
+
+    scrollToBottom(false, { documentImpl: doc, windowImpl });
+    expect(content.scrollTo).toHaveBeenCalledWith({ top: 3000, behavior: 'auto' });
+
+    content.scrollTop = 2200;
+    content.getBoundingClientRect = () => ({ bottom: 740 });
+    reply.getBoundingClientRect = () => ({ bottom: 780 });
+    scrollElementAboveComposer(reply, true, { documentImpl: doc, windowImpl });
+    expect(content.scrollTo).toHaveBeenLastCalledWith({ top: 2264, behavior: 'smooth' });
+
+    content.scrollTop = 2400;
+    expect(isAtBottom({ documentImpl: doc, windowImpl })).toBe(true);
+    expect(windowImpl.scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('uses the document fallback when there is no transcript', () => {
+    const { document: doc } = new JSDOM('<body></body>').window;
     const scrollTo = vi.fn();
-    Object.defineProperty(dom.window.document.documentElement, 'scrollHeight', {
-      value: 1000,
-      configurable: true,
-    });
-    Object.defineProperty(dom.window.document.body, 'scrollHeight', {
-      value: 1200,
-      configurable: true,
-    });
-    scrollToBottom(true, { documentImpl: dom.window.document, windowImpl: { scrollTo } });
+    Object.defineProperty(doc.documentElement, 'scrollHeight', { value: 1200 });
+    scrollToBottom(true, { documentImpl: doc, windowImpl: { scrollTo } });
     expect(scrollTo).toHaveBeenCalledWith({ top: 1200, behavior: 'smooth' });
   });
 
   it('detects isAtBottom for window scroll and content scroll', () => {
     // Scenario 1: Window scrollable (Desktop)
-    const domWindow = new JSDOM('<body><main id="content"></main></body>');
+    const domWindow = new JSDOM('<body></body>');
     const docWindow = domWindow.window.document;
     Object.defineProperty(docWindow.documentElement, 'scrollHeight', {
       value: 2000,

@@ -53,6 +53,46 @@ it('resizes the whole visible area for a keyboard and ignores page pinch zoom', 
   expect(document.documentElement.style.getPropertyValue('--pi-visual-height')).toBe('');
 });
 
+it('resets a whole-screen standalone iOS pan once without fighting the keyboard', () => {
+  const viewport = Object.assign(new EventTarget(), { height: 812, offsetTop: 812, scale: 1 });
+  const win = Object.assign(new EventTarget(), {
+    navigator: { standalone: true },
+    history: { scrollRestoration: 'auto' },
+    visualViewport: viewport,
+    innerWidth: 402,
+    innerHeight: 812,
+    requestAnimationFrame: (fn) => {
+      fn();
+      return 0;
+    },
+    cancelAnimationFrame: vi.fn(),
+    scrollTo: vi.fn(),
+  });
+  const dispose = trackVisualViewport({ documentImpl: document, windowImpl: win });
+  expect(win.history.scrollRestoration).toBe('manual');
+  expect(win.scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'instant' });
+  viewport.dispatchEvent(new Event('scroll'));
+  expect(win.scrollTo).toHaveBeenCalledTimes(1);
+
+  viewport.offsetTop = 0;
+  viewport.dispatchEvent(new Event('scroll'));
+  const editor = document.createElement('textarea');
+  document.body.append(editor);
+  editor.focus();
+  viewport.height = 480;
+  viewport.offsetTop = 812;
+  viewport.dispatchEvent(new Event('resize'));
+  expect(win.scrollTo).toHaveBeenCalledTimes(1);
+  editor.blur();
+  viewport.height = 812;
+  viewport.dispatchEvent(new Event('resize'));
+  expect(win.scrollTo).toHaveBeenCalledTimes(2);
+
+  editor.remove();
+  dispose();
+  expect(win.history.scrollRestoration).toBe('auto');
+});
+
 it('blocks native zoom gestures without intercepting taps or scrolling', async () => {
   const { lockPageZoom } = await import('./visual-viewport.js');
   const win = { matchMedia: vi.fn(() => ({ matches: true })) };

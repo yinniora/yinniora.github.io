@@ -30,6 +30,9 @@
         text-align: center;
         box-sizing: border-box;
       }
+      #remote-status:has(+ #spa-root:not(:empty)) {
+        display: none;
+      }
       #remote-status h1 {
         font-size: 28px;
         font-weight: 600;

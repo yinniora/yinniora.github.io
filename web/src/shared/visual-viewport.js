@@ -17,6 +17,14 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
   if (viewportTrackers.has(documentImpl)) return () => {};
   const viewport = windowImpl.visualViewport;
   const style = documentImpl.documentElement.style;
+  const installedIOS =
+    windowImpl.navigator?.standalone ||
+    (/iPhone|iPad|iPod/.test(windowImpl.navigator?.userAgent || '') &&
+      windowImpl.matchMedia?.('(display-mode: standalone)').matches);
+  const history = installedIOS ? windowImpl.history : null;
+  const originalRestoration = history?.scrollRestoration;
+  if (originalRestoration) history.scrollRestoration = 'manual';
+  let resetScroll = false;
   let frame = 0;
   let restingHeight = windowImpl.innerHeight;
   let width = windowImpl.innerWidth;
@@ -36,6 +44,22 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
       reportedHeight >= Math.min(120, layoutHeight) &&
       layoutHeight - reportedHeight > 100;
     const height = overlay ? reportedHeight : layoutHeight;
+
+    // WebKit can retain a full-height pan after the document collapses to
+    // one screen. At normal scale with the keyboard closed, correct it once.
+    const stalePan =
+      installedIOS &&
+      !editing &&
+      Math.abs(reportedHeight - layoutHeight) < 32 &&
+      viewport.offsetTop >= layoutHeight - 32;
+    if (stalePan && !resetScroll) {
+      resetScroll = true;
+      const root = documentImpl.scrollingElement;
+      if (root?.scrollTop) root.scrollTop = 0;
+      windowImpl.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    } else if (!stalePan) {
+      resetScroll = false;
+    }
     style.setProperty('--pi-visual-height', `${height}px`);
     documentImpl.documentElement.classList.toggle(
       'pi-keyboard-open',
@@ -46,6 +70,7 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
     if (!frame) frame = windowImpl.requestAnimationFrame(update);
   };
   viewport?.addEventListener('resize', schedule);
+  if (installedIOS) viewport?.addEventListener('scroll', schedule);
   windowImpl.addEventListener('resize', schedule);
   windowImpl.addEventListener('popstate', schedule);
   windowImpl.addEventListener('pageshow', schedule);
@@ -56,6 +81,8 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
   const dispose = () => {
     viewportTrackers.delete(documentImpl);
     viewport?.removeEventListener('resize', schedule);
+    if (installedIOS) viewport?.removeEventListener('scroll', schedule);
+    if (originalRestoration) history.scrollRestoration = originalRestoration;
     windowImpl.removeEventListener('resize', schedule);
     windowImpl.removeEventListener('popstate', schedule);
     windowImpl.removeEventListener('pageshow', schedule);

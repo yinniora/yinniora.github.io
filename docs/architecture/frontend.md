@@ -184,14 +184,11 @@ the workspace mounts.
 Installed apps navigate with visible Home and Back controls and replace the
 current address for reloads and deep links. Browser tabs retain normal
 browser history. Sheets unmount on close and never traverse history.
-Navigation clears the old view's input focus. The installed iOS app can
-recover a stationary single-finger tap when WebKit omits its native click.
-The fallback requires the same visible enabled control at touchdown and
-release and gives native clicks precedence. When WebKit returns an empty hit in
-the standalone viewport, the fallback can recover unambiguous Home, Settings,
-conversation and BTW controls. The standalone remote document uses the system's
-contained viewport and keeps scrolling inside the transcript. Vertical scroll
-and multitouch retain their native handling.
+Navigation clears the old view's input focus. Conversation follow-scroll
+updates the transcript's scroll position. The remote connection view leaves
+document flow as soon as the workspace renders. Installed iOS clients use
+manual history scroll restoration and reset a stale full-screen visual pan
+when the keyboard is closed.
 
 `ImageModal` handles transcript/Markdown images and gallery images/SVGs in a
 native modal with an explicit close button, blank/letterbox dismissal, zoom and reset controls.

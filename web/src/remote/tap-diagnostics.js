@@ -1,3 +1,5 @@
+import { version } from '../../../package.json';
+
 // Manually enabled from the Mac. Counters and hit targets stay on this device.
 export function showTapDiagnostics() {
   const panel = document.createElement('output');
@@ -95,7 +97,9 @@ export function showTapDiagnostics() {
       events;
     const { width, height, offsetTop } = window.visualViewport || {};
     const dim = `${innerWidth}×${innerHeight} / ${Math.round(width || 0)}×${Math.round(height || 0)}+${Math.round(offsetTop || 0)}`;
-    panel.value = `Touch ${touchstart}/${touchend}/${touchcancel} · Pointer ${pointerdown}/${pointerup} · Click ${click}+${synthetic} · Focus ${focusin}\nScroll ${scroll} · JS ${elapsed}s · Error ${errors} · ${last}\nHit ${hit || '—'} · ${dim}`;
+    const root = document.scrollingElement;
+    const rootScroll = `${Math.round(root?.scrollTop || 0)}/${root?.scrollHeight || 0}`;
+    panel.value = `Touch ${touchstart}/${touchend}/${touchcancel} · Pointer ${pointerdown}/${pointerup} · Click ${click}+${synthetic} · Focus ${focusin}\nScroll ${scroll} · JS ${elapsed}s · Error ${errors} · ${last}\nHit ${hit || '—'} · ${dim} · root ${rootScroll} · .${version.split('.').at(-1)}`;
   }
   refresh();
   const interval = setInterval(refresh, 500);

@@ -59,7 +59,7 @@ func TestSessionViteSourceForcesFollowOnChatSendAndScrollsNewEntries(t *testing.
 		"forceFollowToBottom",
 		"scrollAfterLayout",
 		"scrollElementAboveComposer",
-		"chatComposerHeight",
+		"content.scrollTo",
 		"showFollowButton",
 	} {
 		if !strings.Contains(combined, want) {

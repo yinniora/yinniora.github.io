@@ -567,93 +567,75 @@ test("installed app taps work after reload, swipes, and closing a sheet", async 
   expect(await page.evaluate(() => history.length)).toBe(initialLength);
 });
 
-test("installed app recovers a stationary touch when the browser omits click", async ({
+test("opening and following a conversation keeps standalone iOS scroll inside the transcript", async ({
   page,
-  context,
   sessionsDir,
 }, testInfo) => {
-  test.skip(testInfo.project.name !== "Mobile Chrome", "trusted touch via CDP");
-  const { entries } = buildSession({ cwd: realWorkingDir() });
+  const { entries, lastId } = buildSession({ cwd: realWorkingDir() });
+  const reply = Array.from(
+    { length: 100 },
+    (_, n) => `Paragraph ${n}: read the conversation.`,
+  ).join("\n\n");
+  entries.push(assistantTextEntry(lastId, reply).entry as any);
   const id = writeSession(
     sessionsDir,
-    uniqueSessionName(testInfo, "lost-tap"),
+    uniqueSessionName(testInfo, "viewport-pan"),
     entries,
   );
+  await collapseScratchpad(page);
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "standalone", { value: true });
+    let stalePan = true;
+    const viewport = Object.assign(new EventTarget(), { scale: 1 });
+    Object.defineProperties(viewport, {
+      height: { get: () => innerHeight },
+      offsetTop: { get: () => (stalePan ? innerHeight : 0) },
+    });
+    Object.defineProperty(window, "visualViewport", { value: viewport });
+    const rootScrolls: number[] = [];
+    (window as any).__rootScrolls = rootScrolls;
+    window.scrollTo = (arg?: ScrollToOptions | number, top?: number) => {
+      const y = typeof arg === "number" ? (top ?? 0) : (arg?.top ?? 0);
+      rootScrolls.push(y);
+      // Model WebKit keeping a whole-screen visual pan after a document scroll.
+      stalePan = y > 0;
+      viewport.dispatchEvent(new Event("scroll"));
+    };
   });
   await page.goto(`/session?id=${encodeURIComponent(id)}`);
+  test.skip(!(await isMobileLayout(page)), "mobile standalone layout");
+
+  const content = page.locator("#content");
+  await expect(content).toContainText("Paragraph 99");
+  await expect
+    .poll(() => content.evaluate((el) => el.scrollTop))
+    .toBeGreaterThan(0);
+  await content.evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.locator(".follow-button.visible").tap();
+  await expect
+    .poll(() =>
+      content.evaluate(
+        (el) => el.scrollHeight - el.scrollTop - el.clientHeight,
+      ),
+    )
+    .toBeLessThan(3);
+
   const composer = page.locator("#pi-chat-message");
-  await expect(composer).toBeEditable();
-  const cdp = await context.newCDPSession(page);
-  const tap = async (selector: string, drag = false) => {
-    const box = (await page.locator(selector).boundingBox())!;
-    const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-    await cdp.send("Input.dispatchTouchEvent", {
-      type: "touchStart",
-      touchPoints: [point],
-    });
-    if (drag) {
-      await cdp.send("Input.dispatchTouchEvent", {
-        type: "touchMove",
-        touchPoints: [{ ...point, y: point.y + 36 }],
-      });
-    }
-    await cdp.send("Input.dispatchTouchEvent", {
-      type: "touchEnd",
-      touchPoints: [],
-    });
-  };
-  const trigger = page.locator(".session-header-bar #pi-btw-button");
-  const popup = page.getByRole("dialog", { name: "btw" });
-  await trigger.tap();
-  await expect(popup).toBeVisible();
-  await page.waitForTimeout(400);
-  await expect(popup).toBeVisible();
-  await popup.getByRole("button", { name: "Close", exact: true }).tap();
-  await expect(popup).toBeHidden();
-  await expect(page.locator("#pi-git-bar")).toBeHidden();
-
-  // Preserve trusted touch events but omit the separate browser click.
-  await page.evaluate(() =>
-    window.addEventListener("touchend", (event) => event.preventDefault(), {
-      passive: false,
-    }),
-  );
-  await tap("#pi-chat-message");
+  await composer.tap();
   await expect(composer).toBeFocused();
-  await tap(".session-header-back", true);
-  await expect(page.locator(".mobile-home")).toBeHidden();
-  await tap(".session-header-back");
+  await page.locator(".session-header-back").tap();
   await expect(page.locator(".mobile-home")).toBeVisible();
-  await tap("#web-menu-btn");
-  const settings = '[role="menuitem"][href="/settings"]';
-  await expect(page.locator(settings)).toBeVisible();
-  await tap(settings);
-  await expect(page.locator(".settings-page")).toBeVisible();
-
-  // Simulate the device's other failure mode: the viewport reports no hit
-  // even though the controls are visible and receives touch at the root.
-  await page.goto(`/session?id=${encodeURIComponent(id)}`);
-  await expect(composer).toBeEditable();
-  await page.addStyleTag({
-    content: "#spa-root, #spa-root * { pointer-events: none !important; }",
-  });
-  await page.evaluate(() => {
-    document.elementFromPoint = () => null;
-  });
-  await tap("#pi-chat-message");
-  await expect(composer).toBeFocused();
-  await tap("#pi-btw-button");
-  await expect(popup).toBeVisible();
-  await tap(".session-header-back");
-  await expect(popup).toBeVisible();
-  await tap(".pi-btw-close");
-  await expect(popup).toBeHidden();
-  await tap(".session-header-back", true);
+  await page.locator(`.session-card[data-session-id="${id}"]`).tap();
   await expect(composer).toBeVisible();
-  await tap(".session-header-back");
-  await expect(page.locator(".mobile-home")).toBeVisible();
+  expect(
+    await page.evaluate(() => ({
+      rootScrolls: (window as any).__rootScrolls,
+      offset: window.visualViewport?.offsetTop,
+      restoration: history.scrollRestoration,
+    })),
+  ).toEqual({ rootScrolls: [0], offset: 0, restoration: "manual" });
 });
 
 test("mobile images zoom independently and BTW explains itself before opening the keyboard", async ({
