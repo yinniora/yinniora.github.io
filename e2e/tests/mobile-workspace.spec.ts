@@ -516,6 +516,72 @@ test("installed app taps work after reload, swipes, and closing a sheet", async 
   expect(await page.evaluate(() => history.length)).toBe(initialLength);
 });
 
+test("installed app recovers a stationary touch when the browser omits click", async ({
+  page,
+  context,
+  sessionsDir,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "Mobile Chrome", "trusted touch via CDP");
+  const { entries } = buildSession({ cwd: realWorkingDir() });
+  const id = writeSession(
+    sessionsDir,
+    uniqueSessionName(testInfo, "lost-tap"),
+    entries,
+  );
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "standalone", { value: true });
+  });
+  await page.goto(`/session?id=${encodeURIComponent(id)}`);
+  const composer = page.locator("#pi-chat-message");
+  await expect(composer).toBeEditable();
+  const cdp = await context.newCDPSession(page);
+  const tap = async (selector: string, drag = false) => {
+    const box = (await page.locator(selector).boundingBox())!;
+    const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [point],
+    });
+    if (drag) {
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ ...point, y: point.y + 36 }],
+      });
+    }
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+  };
+  const trigger = page.locator(".session-header-bar #pi-btw-button");
+  const popup = page.getByRole("dialog", { name: "btw" });
+  await trigger.tap();
+  await expect(popup).toBeVisible();
+  await page.waitForTimeout(400);
+  await expect(popup).toBeVisible();
+  await popup.getByRole("button", { name: "Close", exact: true }).tap();
+  await expect(popup).toBeHidden();
+  await expect(page.locator("#pi-git-bar")).toBeHidden();
+
+  // Preserve trusted touch events but omit the separate browser click.
+  await page.evaluate(() =>
+    window.addEventListener("touchend", (event) => event.preventDefault(), {
+      passive: false,
+    }),
+  );
+  await tap("#pi-chat-message");
+  await expect(composer).toBeFocused();
+  await tap(".session-header-back", true);
+  await expect(page.locator(".mobile-home")).toBeHidden();
+  await tap(".session-header-back");
+  await expect(page.locator(".mobile-home")).toBeVisible();
+  await tap("#web-menu-btn");
+  const settings = '[role="menuitem"][href="/settings"]';
+  await expect(page.locator(settings)).toBeVisible();
+  await tap(settings);
+  await expect(page.locator(".settings-page")).toBeVisible();
+});
+
 test("mobile images zoom independently and BTW explains itself before opening the keyboard", async ({
   page,
   sessionsDir,
@@ -548,7 +614,8 @@ test("mobile images zoom independently and BTW explains itself before opening th
     .locator("#image-modal")
     .getByRole("button", { name: "Close", exact: true })
     .click();
-  await page.locator("#pi-btw-button").click();
+  await page.locator(".session-header-bar #pi-btw-button").tap();
+  await expect(page.locator("#pi-git-bar")).toBeHidden();
   await expect(page.locator(".pi-btw-window")).toBeVisible();
   await expect(page.locator(".pi-btw-intro")).toContainText(
     "without the main chat history",

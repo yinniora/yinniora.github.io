@@ -11,6 +11,7 @@
   import VersionController from './components/shared/VersionController.svelte';
   import { trackVisualViewport } from './shared/visual-viewport.js';
   import { handleNavClick } from './shared/navigation.js';
+  import { recoverStandaloneTaps } from './shared/ios-standalone-taps.js';
   import { t } from './shared/i18n.js';
 
   let {
@@ -34,6 +35,7 @@
 
   onMount(() => {
     const stopViewport = trackVisualViewport();
+    const stopTapRecovery = recoverStandaloneTaps();
     const remoteEvents = createAppEvents({
       event: 'remote-config',
       onEvent: (config) => window.__PI_REMOTE_CLIENT__?.updateConfiguration(config),
@@ -58,6 +60,7 @@
     window.addEventListener('pageshow', restorePath);
     return () => {
       stopViewport();
+      stopTapRecovery();
       remoteEvents.cleanup();
       window.removeEventListener('popstate', syncPath);
       window.removeEventListener('pi:locationchange', syncPath);

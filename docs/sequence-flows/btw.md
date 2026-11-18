@@ -87,8 +87,9 @@ session. The `__global__` sentinel parent is never reaped.
 
 ## Mobile presentation
 
-The window opens without focusing the keyboard on phones and uses the App's
-visual viewport height and offset. The introduction explains that BTW has fresh
+A compact button in the session header opens BTW. The phone layout leaves
+the bottom of the conversation to the message composer. The window opens without
+focusing the keyboard on phones and follows the app's keyboard viewport height. The introduction explains that BTW has fresh
 context but the same project folder; it remains visible when resuming a thread.
 **Add reply to main chat** attaches the latest textual assistant reply to the
 main composer's draft, without sending it. The user can review or remove the

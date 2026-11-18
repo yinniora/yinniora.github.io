@@ -1,6 +1,16 @@
 const viewportTrackers = new WeakMap();
 const zoomLocks = new WeakMap();
 
+export function isTextEditor(element) {
+  return (
+    element?.matches(
+      'textarea, [contenteditable]:not([contenteditable="false"]), input:not([type]), input:is([type="text"], [type="search"], [type="url"], [type="email"], [type="password"], [type="tel"], [type="number"])',
+    ) &&
+    !element.readOnly &&
+    !element.disabled
+  );
+}
+
 // A resize of the layout viewport already accounts for the keyboard. Only
 // fall back to the visual viewport on browsers where the keyboard overlays it.
 export function trackVisualViewport({ windowImpl = window, documentImpl = document } = {}) {
@@ -15,13 +25,7 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
     if (viewport && Math.abs(viewport.scale - 1) > 0.01) return;
     const layoutHeight = windowImpl.innerHeight;
     if (!Number.isFinite(layoutHeight) || layoutHeight < 1) return;
-    const active = documentImpl.activeElement;
-    const editing =
-      active?.matches(
-        'textarea, [contenteditable]:not([contenteditable="false"]), input:not([type]), input:is([type="text"], [type="search"], [type="url"], [type="email"], [type="password"], [type="tel"], [type="number"])',
-      ) &&
-      !active.readOnly &&
-      !active.disabled;
+    const editing = isTextEditor(documentImpl.activeElement);
     if (!editing || width !== windowImpl.innerWidth) restingHeight = layoutHeight;
     width = windowImpl.innerWidth;
     const reportedHeight = viewport?.height;

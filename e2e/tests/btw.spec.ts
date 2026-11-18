@@ -6,14 +6,14 @@ import {
   writeSession,
 } from "../lib/sessions";
 
-// The "btw" floating scratch-chat opens from the git bar. It runs its own
+// The "btw" floating scratch-chat opens from the session header. It runs its own
 // `pi --mode rpc` worker (the stub on PATH answers it) keyed by a per-parent
 // btw session, so a sent message flows worker -> session JSONL -> SSE -> render,
 // exactly like the main composer. The window is desktop-oriented; on mobile it
 // is kept mutually exclusive with the composer, so these specs gate on layout.
 
 test.describe("btw floating scratch-chat (stubbed pi)", () => {
-  test("opens from the git bar, shows the empty state, and closes", async ({
+  test("opens from the session header, shows the empty state, and closes", async ({
     page,
     sessionsDir,
   }, testInfo) => {

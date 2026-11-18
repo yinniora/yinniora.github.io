@@ -170,6 +170,13 @@
       title={`${t('session.shortcuts')} (⌘/)`}>⌘/</button
     >
     <button
+      type="button"
+      id="pi-btw-button"
+      class="session-header-actions"
+      aria-controls="pi-btw-dialog"
+      title={t('btw.sideChat')}>BTW</button
+    >
+    <button
       id="toggle-right-sidebar-btn"
       class="session-header-actions"
       title={`${t('session.toggleScratchpad')} (⌘⇧N)`}

@@ -3851,7 +3851,6 @@
       #content {
         min-height: 0;
         padding: calc(52px + env(safe-area-inset-top) + 8px) 16px var(--line-height);
-        -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
       }
 
@@ -3910,6 +3909,11 @@
         box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4) !important;
         transform: translateX(100%) !important;
         transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1) !important;
+      }
+
+      body.right-sidebar-collapsed .right-sidebar {
+        visibility: hidden;
+        pointer-events: none;
       }
 
       body:not(.right-sidebar-collapsed) .right-sidebar {

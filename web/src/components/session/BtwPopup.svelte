@@ -1,6 +1,6 @@
 <script>
-  // The "btw" floating, draggable, resizable scratch-chat opened from the git
-  // bar (#pi-btw-button, in <ChatComposer>). Its own per-parent btw session is
+  // The floating scratch-chat opened from #pi-btw-button in the session header.
+  // Its own per-parent btw session is
   // persisted server-side and synced over SSE. The transcript renders reactively;
   // drag/resize/SSE/status-polling/submit stay imperative. Live-only — never in
   // the export bundle. See docs/sequence-flows/btw.md.
@@ -394,7 +394,14 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
 
-<div class="pi-btw-window" role="dialog" aria-label="btw" bind:this={winEl} hidden={!open}>
+<div
+  id="pi-btw-dialog"
+  class="pi-btw-window"
+  role="dialog"
+  aria-label="btw"
+  bind:this={winEl}
+  hidden={!open}
+>
   <div class="pi-btw-header" bind:this={headerEl}>
     <span class="pi-btw-title"
       >{@html icon(MessageSquare, { size: 17 })} BTW <small>{t('btw.sideChat')}</small></span

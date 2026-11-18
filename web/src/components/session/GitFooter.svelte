@@ -25,8 +25,7 @@
   import * as defaultGitApi from '../../session/chat/git-api.js';
 
   // The branch indicator + smart git action control beneath the chat composer.
-  // The bar stays visible (even outside a git repo) because it also hosts the
-  // always-available btw button. gitApi is injectable for tests.
+  // gitApi is injectable for tests.
   let { sessionId = '', gitApi = defaultGitApi } = $props();
 
   onMount(() => {
@@ -105,11 +104,9 @@
 
     function applyInfo(info) {
       if (!info || !info.isRepo || !info.branch) {
-        // Not a git repo: hide the git controls but keep the bar itself visible,
-        // since it also hosts the always-available btw button.
         show(branchWrap, false);
         show(prWrap, false);
-        bar.hidden = false;
+        bar.hidden = true;
         return;
       }
       show(branchWrap, true);
@@ -254,7 +251,7 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
 
-<div class="pi-git-bar" id="pi-git-bar">
+<div class="pi-git-bar" id="pi-git-bar" hidden>
   <div class="pi-git-branch" id="pi-git-branch" hidden>
     <span class="pi-git-branch-name" id="pi-git-branch-name" title={t('git.currentBranch')}
     ></span><button
@@ -274,9 +271,6 @@
     />
   </div>
   <div class="pi-git-right">
-    <button type="button" class="pi-git-pr-button pi-btw-button" id="pi-btw-button" title="btw"
-      >btw</button
-    >
     <div class="pi-git-pr" id="pi-git-pr" hidden>
       <button type="button" class="pi-git-pr-button pi-git-primary" id="pi-git-primary"
         ><span id="pi-git-primary-label">{t('git.createPr')}</span></button

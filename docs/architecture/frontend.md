@@ -181,7 +181,11 @@ the workspace mounts.
 Installed apps navigate with visible Home and Back controls and replace the
 current address for reloads and deep links. Browser tabs retain normal
 browser history. Sheets unmount on close and never traverse history.
-Navigation clears the old view's input focus.
+Navigation clears the old view's input focus. The installed iOS app can
+recover a stationary single-finger tap when WebKit omits its native click.
+The fallback requires the same visible enabled control at touchdown and
+release and gives native clicks precedence. Vertical scrolling and
+multitouch gestures retain native handling.
 
 `ImageModal` handles transcript/Markdown images and gallery images/SVGs in a
 native modal with an explicit close button, blank/letterbox dismissal, zoom and reset controls.
@@ -193,7 +197,7 @@ Tapping the image or dragging a zoomed view does not dismiss it. SVG thumbnails 
 inline playback, fullscreen through the viewer and an unsupported-format download
 fallback. The authenticated asset bridge continues supporting Range requests.
 
-BTW opens with a short explanation of its independent context and shared project
+The session header opens BTW with a short explanation of its independent context and shared project
 files. A reply can be explicitly attached to the main composer draft; this never
 automatically sends a message. Closing BTW leaves its saved conversation and
 any running reply intact.
