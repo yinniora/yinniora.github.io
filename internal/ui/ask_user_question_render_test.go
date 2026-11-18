@@ -12,6 +12,7 @@ import (
 func readAskQuestionSrc(t *testing.T) string {
 	t.Helper()
 	return readSrc(t, "web/src/components/session/ToolCall.svelte") +
+		readSrc(t, "web/src/session/render/conversation-activity.js") +
 		readSrc(t, "web/src/components/session/AskQuestion.svelte")
 }
 
@@ -20,6 +21,7 @@ func TestAskUserQuestionToolHasDedicatedRenderer(t *testing.T) {
 	jsChecks := []string{
 		"'ask_user_question'",
 		"'pi_web_ask_user_question'",
+		"isQuestionTool(call.name)",
 		"<AskQuestion",
 	}
 	for _, check := range jsChecks {

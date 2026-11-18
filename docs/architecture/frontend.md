@@ -160,7 +160,16 @@ The live SPA shell uses `theme.css`, `index.css`, `settings.css`, `schedules.css
 
 The live client adds `OutputGallery` with confined asset URLs and scriptless SVG previews, plus `personal.css` for desktop/mobile layout. The gallery requests files referenced by the session, so a new conversation does not inherit recently modified project files. `remote-entry.js` boots the independent DTLS client before mounting the same SPA. Its service worker sends native media/download requests through that authenticated channel; it does not cache private content. See [remote security](remote-security.md). Static exports remain independent.
 
-`ProjectsModal` offers project deletion for discovered and registered folders. Its confirmation defaults to preserving files; selecting a Mac Trash move opens a second confirmation covering the entire folder and its descendants, without a typed challenge. The client supplies the existing API confirmation field only after that second click. Live thinking and tool calls use native `ActivityDisclosure` details/summary controls. The existing toggle controller persists per-entry overrides and exposes expand/collapse-all through `ActivityControls`. Static exports retain their existing markup.
+`ProjectsModal` offers project deletion for discovered and registered folders. Its confirmation defaults to preserving files; selecting a Mac Trash move opens a second confirmation covering the entire folder and its descendants, without a typed challenge. The client supplies the existing API confirmation field only after that second click.
+
+The live conversation groups consecutive tools and recorded thinking into
+compact disclosures with a tool count and a visible running or failed state.
+Visible assistant text and generated files stay outside the group. Opening a
+group reveals compact rows that can each expose their underlying details.
+Entry links reveal their enclosing disclosures, and unanswered tool questions
+stay reachable. The toggle controller persists per-entry overrides and provides
+expand/collapse-all through `ActivityControls`. Static exports keep their
+existing rendering.
 
 The progress row uses the Mac worker's active tool name and elapsed time. An
 event-stream reconnect restores the timer from the worker snapshot. A shell
@@ -169,6 +178,8 @@ the expanded details alongside the other tools in the turn.
 In the transcript, a waiting label appears before the first model chunk.
 Reply and model-supplied thinking snapshots render at most once per animation
 frame, with the final transcript reconciled on the worker's completion event.
+Pending computer approval is shown directly above the composer toolbar, with
+separate controls for approving the action once and declining it.
 
 `DevicePanel` lists active approvals with precise enrollment/connection times,
 coarse system/browser/app labels, short key IDs and live presence. Removal uses

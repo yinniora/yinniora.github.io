@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"pi-web/internal/workers"
@@ -35,7 +36,10 @@ func InstallComputerGuard(dir string) (string, error) {
 }
 
 func (w *piRPCWorker) handleComputerApproval(line string) {
-	var request struct{ ID, Title, Method, Message string }
+	var request struct {
+		ID, Title, Method, Message string
+		Timeout                    int64 `json:"timeout"`
+	}
 	if json.Unmarshal([]byte(line), &request) != nil || request.ID == "" || request.Method != "confirm" || request.Title != "YuGo Pi computer approval" {
 		return
 	}
@@ -49,11 +53,15 @@ func (w *piRPCWorker) handleComputerApproval(line string) {
 	case "off":
 		_ = w.writeComputerResponse(request.ID, false)
 	default:
+		timeout := 2 * time.Minute
+		if request.Timeout > 0 && request.Timeout < timeout.Milliseconds() {
+			timeout = time.Duration(request.Timeout) * time.Millisecond
+		}
 		w.mu.Lock()
 		if w.computerRequests == nil {
 			w.computerRequests = make(map[string]workers.ComputerRequest)
 		}
-		w.computerRequests[request.ID] = workers.ComputerRequest{ID: request.ID, Tool: message.Tool, Detail: message.Detail, Expires: time.Now().Add(42 * time.Second)}
+		w.computerRequests[request.ID] = workers.ComputerRequest{ID: request.ID, Tool: message.Tool, Detail: message.Detail, Expires: time.Now().Add(timeout)}
 		w.mu.Unlock()
 	}
 }
@@ -69,6 +77,7 @@ func (w *piRPCWorker) ComputerRequests() []workers.ComputerRequest {
 			delete(w.computerRequests, id)
 		}
 	}
+	slices.SortFunc(out, func(a, b workers.ComputerRequest) int { return a.Expires.Compare(b.Expires) })
 	return out
 }
 

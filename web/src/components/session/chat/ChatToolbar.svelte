@@ -47,94 +47,104 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
 
-<div class="pi-chat-toolbar">
-  <div class="pi-chat-toolbar-left">
-    {#if chatAvailable}
-      <details class="composer-add" bind:this={attachMenu}>
-        <summary class="pi-chat-icon-button" aria-label={t('composer.addAttachment')}
-          >{@html icon(Plus, { size: 19 })}</summary
-        >
-        <div class="composer-add-menu">
-          <button type="button" onclick={() => chooseAttachment('pi-chat-files')}
-            >{@html icon(Paperclip, { size: 16 })}{t('composer.uploadFiles')}</button
+{#snippet toolbarContent(permissionControl)}
+  <div class="pi-chat-toolbar">
+    <div class="pi-chat-toolbar-left">
+      {#if chatAvailable}
+        <details class="composer-add" bind:this={attachMenu}>
+          <summary class="pi-chat-icon-button" aria-label={t('composer.addAttachment')}
+            >{@html icon(Plus, { size: 19 })}</summary
           >
-          <button type="button" onclick={() => chooseAttachment('pi-chat-images')}
-            >{@html icon(Paperclip, { size: 16 })}{t('composer.attachPhotos')}</button
-          >
-          <button type="button" onclick={() => chooseAttachment('pi-chat-camera')}
-            >{@html icon(Camera, { size: 16 })}{t('composer.takePhoto')}</button
-          >
-          <button
-            type="button"
-            id="pi-chat-commands-btn"
-            aria-controls="pi-chat-slash-popup"
-            onclick={() => (attachMenu.open = false)}
-            >{@html icon(Terminal, { size: 16 })}{t('plugins.skills')}</button
-          >
-        </div>
-      </details>
-    {/if}
-    <span id="pi-chat-status" class="pi-chat-status {toolbar.statusClass}">{statusText}</span>
-    <button
-      type="button"
-      id="pi-chat-model-label"
-      class="pi-chat-model-label"
-      title={modelTitle}
-      style:display={chatAvailable ? '' : 'none'}
-      disabled={!chatAvailable}>{modelTitle}</button
-    >
-    <ContextUsage />
-  </div>
-  <div class="actions">
-    {#if chatAvailable && sessionId}
-      <ComputerPermission {sessionId} model={toolbar.selectedModel} running={toolbar.isRunning} />
-    {/if}
-    <div class="thinking-control" hidden={!chatAvailable || !toolbar.canAdjustThinking}>
+          <div class="composer-add-menu">
+            <button type="button" onclick={() => chooseAttachment('pi-chat-files')}
+              >{@html icon(Paperclip, { size: 16 })}{t('composer.uploadFiles')}</button
+            >
+            <button type="button" onclick={() => chooseAttachment('pi-chat-images')}
+              >{@html icon(Paperclip, { size: 16 })}{t('composer.attachPhotos')}</button
+            >
+            <button type="button" onclick={() => chooseAttachment('pi-chat-camera')}
+              >{@html icon(Camera, { size: 16 })}{t('composer.takePhoto')}</button
+            >
+            <button
+              type="button"
+              id="pi-chat-commands-btn"
+              aria-controls="pi-chat-slash-popup"
+              onclick={() => (attachMenu.open = false)}
+              >{@html icon(Terminal, { size: 16 })}{t('plugins.skills')}</button
+            >
+          </div>
+        </details>
+      {/if}
+      <span id="pi-chat-status" class="pi-chat-status {toolbar.statusClass}">{statusText}</span>
       <button
         type="button"
-        id="pi-chat-thinking-label"
-        class="pi-chat-thinking-label"
-        title={effortTitle}
-        aria-label={effortTitle}
-        aria-controls="pi-chat-thinking-popup"
-        aria-expanded="false"
-        disabled={!chatAvailable}
-        >{@html icon(Gauge, { size: 20, strokeWidth: 2.4 })}
-        <span>{effortLabel || t('composer.switchEffort')}</span>
-        {@html icon(ChevronDown, { size: 13 })}</button
+        id="pi-chat-model-label"
+        class="pi-chat-model-label"
+        title={modelTitle}
+        style:display={chatAvailable ? '' : 'none'}
+        disabled={!chatAvailable}>{modelTitle}</button
       >
-      <div id="pi-chat-thinking-popup" class="pi-chat-thinking-popup" style="display: none" inert>
-        <div
-          id="pi-chat-thinking-list"
-          class="pi-chat-thinking-list"
-          role="group"
-          aria-label={t('composer.switchEffort')}
-        ></div>
-      </div>
+      <ContextUsage />
     </div>
-    <button
-      type="button"
-      id="pi-chat-cancel"
-      class="pi-chat-cancel"
-      style:display={toolbar.isRunning ? '' : 'none'}
-      title={t('composer.cancelRunning')}
-      aria-label={t('composer.cancelRunning')}
-      disabled={toolbar.statusText === 'cancelling' || toolbar.compacting || !chatAvailable}
-      >{t('composer.cancel')}</button
-    >
-    <button
-      type="button"
-      id="pi-chat-queue"
-      class="pi-chat-queue"
-      style:display={toolbar.isRunning ? '' : 'none'}
-      title={t('composer.queueHint')}
-      disabled>{t('composer.queue')}</button
-    >
-    <button type="submit" id="pi-chat-send" class="pi-chat-send" disabled
-      >{toolbar.isRunning ? t('composer.steer') : t('composer.send')}</button
-    >
+    <div class="actions">
+      {@render permissionControl?.()}
+      <div class="thinking-control" hidden={!chatAvailable || !toolbar.canAdjustThinking}>
+        <button
+          type="button"
+          id="pi-chat-thinking-label"
+          class="pi-chat-thinking-label"
+          title={effortTitle}
+          aria-label={effortTitle}
+          aria-controls="pi-chat-thinking-popup"
+          aria-expanded="false"
+          disabled={!chatAvailable}
+          >{@html icon(Gauge, { size: 20, strokeWidth: 2.4 })}
+          <span>{effortLabel || t('composer.switchEffort')}</span>
+          {@html icon(ChevronDown, { size: 13 })}</button
+        >
+        <div id="pi-chat-thinking-popup" class="pi-chat-thinking-popup" style="display: none" inert>
+          <div
+            id="pi-chat-thinking-list"
+            class="pi-chat-thinking-list"
+            role="group"
+            aria-label={t('composer.switchEffort')}
+          ></div>
+        </div>
+      </div>
+      <button
+        type="button"
+        id="pi-chat-cancel"
+        class="pi-chat-cancel"
+        style:display={toolbar.isRunning ? '' : 'none'}
+        title={t('composer.cancelRunning')}
+        aria-label={t('composer.cancelRunning')}
+        disabled={toolbar.statusText === 'cancelling' || toolbar.compacting || !chatAvailable}
+        >{t('composer.cancel')}</button
+      >
+      <button
+        type="button"
+        id="pi-chat-queue"
+        class="pi-chat-queue"
+        style:display={toolbar.isRunning ? '' : 'none'}
+        title={t('composer.queueHint')}
+        disabled>{t('composer.queue')}</button
+      >
+      <button type="submit" id="pi-chat-send" class="pi-chat-send" disabled
+        >{toolbar.isRunning ? t('composer.steer') : t('composer.send')}</button
+      >
+    </div>
   </div>
-</div>
+{/snippet}
+
+{#if chatAvailable && sessionId}
+  <ComputerPermission {sessionId} model={toolbar.selectedModel} running={toolbar.isRunning}>
+    {#snippet children(permissionControl)}
+      {@render toolbarContent(permissionControl)}
+    {/snippet}
+  </ComputerPermission>
+{:else}
+  {@render toolbarContent(null)}
+{/if}
 
 <svelte:window
   onclick={(event) => {

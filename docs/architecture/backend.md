@@ -370,7 +370,11 @@ state to avoid concurrent prompts. `prompt` acknowledgments with `handled`
 release a command-only run without waiting for a model turn.
 Generic extension dialogs have a per-worker expiry, validate replies against
 the specific pending prompt, and travel over existing authenticated session
-routes. Reserved computer approval prompts keep their separate policy.
+routes. Reserved computer approval prompts use the session policy and a
+two-minute decision window. A declined or expired approval blocks the computer
+action and suppresses further computer approval prompts in that run. The agent
+receives the blocked tool result and can continue with unrelated work or
+explain the remaining need for approval.
 The RPC worker's bundled extension supplies Pi's native 300-second timeout to
 `bash` and `powershell` calls that omit one. Explicit timeout arguments pass
 through unchanged. Pi cancels the shell process on timeout and returns the

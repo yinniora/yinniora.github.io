@@ -10,7 +10,7 @@
   import { safeMarkedParse } from '../../session/render/markdown.js';
   import { formatTimestamp } from '../../session/render/entry-format.js';
   import ToolCall from './ToolCall.svelte';
-  import ActivityDisclosure from './ActivityDisclosure.svelte';
+  import AssistantThinking from './AssistantThinking.svelte';
   import ReplyFooter from './ReplyFooter.svelte';
   import CopyMessageButton from './CopyMessageButton.svelte';
   import ReplyError from './ReplyError.svelte';
@@ -27,6 +27,8 @@
     live = false,
     chatAvailable = false,
     retryContent = null,
+    skipThinking = 0,
+    skipTools = false,
     outputs,
     renderOutputs = null,
   } = $props();
@@ -132,26 +134,17 @@
     {#each assistantContent as block, blockIndex (blockIndex)}
       {#if block.type === 'text' && block.text.trim()}<div class="assistant-text markdown-content">
           {@html md(block.text)}
-        </div>{:else if block.type === 'thinking' && block.thinking.trim()}
-        {#if live}
-          <ActivityDisclosure
-            kind="thinking"
-            id={`thinking:${entry.id}:${blockIndex}`}
-            label={t('activity.thinking')}
-          >
-            <div class="activity-thinking-text">{block.thinking}</div>
-          </ActivityDisclosure>
-        {:else}<div class="thinking-block">
-            <div class="thinking-text">{block.thinking}</div>
-            <div class="thinking-collapsed">Thinking ...</div>
-          </div>{/if}
+        </div>{:else if blockIndex >= skipThinking && block.type === 'thinking' && block.thinking?.trim()}
+        <AssistantThinking id={`thinking:${entry.id}:${blockIndex}`} text={block.thinking} {live} />
       {/if}
     {/each}
-    {#each assistantContent as block, toolBlockIndex (toolBlockIndex)}{#if block.type === 'toolCall'}<ToolCall
-          call={block}
-          {model}
-          {live}
-        />{/if}{/each}
+    {#if !skipTools}
+      {#each assistantContent as block, toolBlockIndex (toolBlockIndex)}{#if block.type === 'toolCall'}<ToolCall
+            call={block}
+            {model}
+            {live}
+          />{/if}{/each}
+    {/if}
     {#if msg.stopReason === 'aborted'}
       {#if live}
         <ReplyError interrupted onRetry={chatAvailable && retryContent ? retry : null} />

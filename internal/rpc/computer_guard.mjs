@@ -4,8 +4,13 @@ const computerTools = new Set([
   'computer_use', 'computer',
 ]);
 const defaultShellTimeoutSeconds = 300;
+const approvalTimeoutMs = 120000;
 
 export default function guardComputerTools(pi) {
+  let skipComputerTools = false;
+  pi.on('agent_start', () => {
+    skipComputerTools = false;
+  });
   pi.registerCommand('yugo-computer-guard-ready', {
     description: 'YuGo Pi computer approval is active',
     handler: async () => {},
@@ -27,11 +32,22 @@ export default function guardComputerTools(pi) {
   });
   pi.on('tool_call', async (event, ctx) => {
     if (!computerTools.has(event.toolName)) return;
+    const guidance = 'Continue any remaining work that does not require this computer action. Do not retry or perform the blocked action through another tool. If computer access is essential, explain what remains blocked and ask the user.';
+    if (skipComputerTools) {
+      return { block: true, reason: `Computer tools are unavailable for the rest of this turn after an unapproved action. ${guidance}` };
+    }
     const request = JSON.stringify({
       tool: event.toolName,
       detail: JSON.stringify(event.input ?? {}).slice(0, 1200),
     });
-    const approved = await ctx.ui.confirm('YuGo Pi computer approval', request, { timeout: 45000, signal: ctx.signal });
-    if (!approved) return { block: true, terminate: true, reason: 'The user did not approve this computer action.' };
+    const start = Date.now();
+    const approved = await ctx.ui.confirm('YuGo Pi computer approval', request, { timeout: approvalTimeoutMs, signal: ctx.signal });
+    if (!approved) {
+      skipComputerTools = true;
+      const reason = Date.now() - start >= approvalTimeoutMs
+        ? 'Approval timed out for this computer action.'
+        : 'This computer action was not approved.';
+      return { block: true, reason: `${reason} ${guidance}` };
+    }
   });
 }

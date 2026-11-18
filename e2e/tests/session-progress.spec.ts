@@ -99,6 +99,7 @@ test("returning to a running session restores its thinking and progress before t
   await expect(progress).toHaveCount(0);
   const timedOut = page.locator('[data-collapse-key="tool:fixture-live-tool"]');
   await expect(timedOut.locator(".activity-status.timed-out")).toHaveText("Timed out");
+  await timedOut.locator('xpath=ancestor::details[@data-display-kind="group"]/summary').click();
   await timedOut.locator("summary").click();
   await expect(timedOut.locator(".tool-output")).toContainText("Captured output.");
 });
@@ -136,7 +137,7 @@ test("stopping an empty reply keeps its status, model, time and retry action on 
   await expect(page.locator(".assistant-message").last()).toContainText("Stub reply: Track preview state");
 });
 
-test("successive tool messages are compact and actions sit beside the tool summary", async ({ page, sessionsDir }, info) => {
+test("successive tool messages stay in one folded group above the reply", async ({ page, sessionsDir }, info) => {
   const { entries, lastId } = buildSession({ cwd: realWorkingDir() });
   const timestamp = new Date().toISOString();
   const id = writeSession(sessionsDir, uniqueSessionName(info, "compact-tools"), [
@@ -151,12 +152,26 @@ test("successive tool messages are compact and actions sit beside the tool summa
         message: { role: "toolResult", toolCallId: callID, toolName: "read", content: [{ type: "text", text: `Result ${step}` }] },
       }];
     }),
+    {
+      type: "message", id: "finished", parentId: "second-result", timestamp,
+      message: { role: "assistant", stopReason: "stop", content: [
+        { type: "thinking", thinking: "Reasoning included in the final message." },
+        { type: "text", text: "Visible reply after tools." },
+      ] },
+    },
   ]);
   await collapseScratchpad(page);
   await page.goto("/session?id=" + encodeURIComponent(id));
-  await page.getByRole("button", { name: "Collapse all" }).click();
+  const group = page.locator('details[data-collapse-key="activity:first"]');
+  await expect(group.locator(":scope > summary")).toHaveText(/Thinking.*Tool calls.*2.*Completed/);
   const first = page.locator("#entry-first .activity-disclosure > summary");
   const second = page.locator("#entry-second .activity-disclosure > summary");
+  const answer = page.locator("#entry-finished").getByText("Visible reply after tools.", { exact: true });
+  await expect(first).toBeHidden();
+  await expect(answer).toBeVisible();
+  await group.locator(":scope > summary").click();
+  await expect(first).toBeVisible();
+  await expect(page.getByText("Reasoning included in the final message.")).toBeHidden();
   const hits = await page.locator("#entry-first").evaluate((entry) => {
     const summary = entry.querySelector(".activity-disclosure > summary")!.getBoundingClientRect();
     const menu = entry.querySelector(".entry-actions-menu > summary")!.getBoundingClientRect();
@@ -173,4 +188,43 @@ test("successive tool messages are compact and actions sit beside the tool summa
   await expect(page.locator("#entry-second-result")).toBeVisible();
   await page.locator("#entry-second .entry-actions-menu > summary").click();
   await expect(page.locator("#entry-second .entry-action-buttons .label-btn")).toBeVisible();
+  await page.getByRole("button", { name: "Collapse all" }).click();
+  await expect(first).toBeHidden();
+  await expect(answer).toBeVisible();
+  await page.getByRole("button", { name: "Expand all" }).click();
+  await expect(page.getByText("Reasoning included in the final message.")).toBeVisible();
+});
+
+test("computer approval stays visible without opening the permission menu", async ({ page, sessionsDir }, info) => {
+  const id = writeSession(sessionsDir, uniqueSessionName(info, "approval"), buildSession({ cwd: realWorkingDir() }).entries);
+  await page.addInitScript(() => {
+    const fetchFromServer = window.fetch.bind(window);
+    let pending = true;
+    window.fetch = async (input, init) => {
+      if (new URL(String(input), location.href).pathname !== "/api/computer-use") return fetchFromServer(input, init);
+      if (init?.method === "POST") {
+        const { action, requestID, allow } = JSON.parse(String(init.body));
+        document.documentElement.dataset.approvalRejected = String(action === "answer" && requestID === "fixture-request" && allow === false);
+        pending = false;
+      }
+      return Response.json({
+        mode: "ask",
+        installed: true,
+        loaded: true,
+        requests: pending ? [{ id: "fixture-request", tool: "find_roots", detail: "Fixture scope" }] : [],
+      });
+    };
+  });
+  await collapseScratchpad(page);
+  await page.goto("/session?id=" + encodeURIComponent(id));
+  await page.locator("#pi-chat-message").fill("[[hold-preview]]");
+  await page.locator("#pi-chat-send").click();
+  const approval = page.getByRole("region", { name: "Computer action awaiting approval" });
+  await expect(approval).toBeInViewport();
+  await expect(approval).toContainText("find_roots");
+  await expect(page.locator(".computer-permission")).not.toHaveAttribute("open", "");
+  await approval.getByRole("button", { name: "Deny", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-approval-rejected", "true");
+  await expect(approval).toHaveCount(0);
+  await expect(page.locator(".session-progress")).toBeVisible();
 });

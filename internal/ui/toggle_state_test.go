@@ -122,13 +122,13 @@ func TestLiveReloadEntriesInheritCurrentToggleState(t *testing.T) {
 }
 
 func TestLiveReloadRendererUsesToggleableThinkingAndToolMarkup(t *testing.T) {
-	// The message pane is rendered by <SessionEntry> (thinking blocks) + its
+	// The message pane is rendered by <AssistantThinking> and its adjacent
 	// <ToolOutput> child (expandable tool output) for both live reload and export;
 	// assert the toggle-compatible markup classes survive the decomposition.
-	entrySrc := readSrc(t, "web/src/components/session/SessionEntry.svelte")
+	entrySrc := readSrc(t, "web/src/components/session/AssistantThinking.svelte")
 	outputSrc := readSrc(t, "web/src/components/session/ToolOutput.svelte")
 	srcChecks := map[string][]string{
-		entrySrc: {`thinking-block`, `Thinking ...`},
+		entrySrc:  {`thinking-block`, `Thinking ...`},
 		outputSrc: {`tool-output expandable`, `output-preview`, `output-full`},
 	}
 	for src, checks := range srcChecks {

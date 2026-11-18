@@ -1124,6 +1124,9 @@
   padding: 2px 11px 8px;
   border-top: 1px solid var(--dim-2);
 }
+#spa-root .activity-disclosure:not([open]) > .activity-body {
+  display: none;
+}
 #spa-root .activity-thinking-text {
   white-space: pre-wrap;
   font-size: 13px;
@@ -1174,6 +1177,66 @@
 }
 #spa-root .assistant-activity-only .entry-actions-menu > summary {
   height: 40px;
+}
+#spa-root .activity-group {
+  margin: 5px 0 14px;
+  border-color: var(--workspace-edge);
+  background: var(--surface);
+}
+#spa-root .activity-group > summary {
+  min-height: 44px;
+  color: var(--text);
+}
+#spa-root .activity-group > summary .activity-label {
+  max-width: none;
+  flex: 0 1 auto;
+}
+#spa-root .activity-count {
+  flex: none;
+  border-radius: 6px;
+  padding: 1px 5px;
+  color: var(--text-soft);
+  background: var(--surface-2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+#spa-root .activity-group > .activity-body {
+  padding: 4px 8px 6px;
+}
+#spa-root .activity-group .assistant-activity-only {
+  padding: 0;
+  margin: 0;
+}
+#spa-root .activity-group .activity-disclosure {
+  background: transparent;
+  border-color: transparent;
+  margin-block: 0;
+}
+#spa-root .activity-group .activity-disclosure[open] {
+  border-color: var(--dim-2);
+}
+#spa-root .activity-group .activity-disclosure > summary {
+  min-height: 36px;
+  padding-block: 4px;
+}
+#spa-root .activity-group .entry-actions-menu > summary {
+  width: 32px;
+  height: 36px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  #spa-root .activity-group[open] > .activity-body {
+    animation: activity-group-reveal 140ms ease-out;
+  }
+}
+@keyframes activity-group-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 #spa-root .entry-actions-menu > summary::-webkit-details-marker,
 #spa-root .preview-thinking > summary::-webkit-details-marker {

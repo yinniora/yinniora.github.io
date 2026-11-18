@@ -264,6 +264,7 @@
               {outputs}
               {renderOutputs}
               {chatAvailable}
+              sessionRunning={runningSessionIds.has(sessionId)}
               live
             />
           {/snippet}

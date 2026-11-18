@@ -3,7 +3,7 @@
   import { icon, ShieldCheck } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
 
-  let { sessionId, model = null, running = false } = $props();
+  let { sessionId, model = null, running = false, children } = $props();
   let details = $state(null);
   let status = $state(null);
   let busy = $state(false);
@@ -42,8 +42,6 @@
             : 'computer.unavailable';
         throw new Error(t(message));
       }
-      const request = result.requests?.[0];
-      if (request && request.id !== waiting?.id && details) details.open = true;
       status = result;
       error = '';
     } catch (err) {
@@ -63,8 +61,9 @@
 
   onMount(() => {
     controller = new AbortController();
+    if (running) void load();
     const timer = setInterval(() => {
-      if (running || details?.open) void load();
+      if (running || waiting || details?.open) void load();
     }, 1500);
     return () => {
       controller.abort();
@@ -74,70 +73,89 @@
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icon -->
-<details class="computer-permission" bind:this={details} ontoggle={() => details?.open && load()}>
-  <summary class="pi-chat-icon-button" aria-label={t('computer.title')} title={t('computer.title')}>
-    {@html icon(ShieldCheck, { size: 19 })}
-    {#if waiting}<span class="pending-dot" aria-label={t('computer.waiting')}></span>{/if}
-  </summary>
-  <div class="computer-panel">
-    <strong>{t('computer.title')}</strong>
-    {#if status}
-      <p>
-        {t(
-          status.loaded
-            ? 'computer.loaded'
-            : status.checked
-              ? 'computer.notLoaded'
-              : status.installed
-                ? 'computer.installed'
-                : 'computer.notDetected',
-        )}
-      </p>
-      {#if model}
-        <p>
-          {t(model.supportsTools ? 'computer.modelTools' : 'computer.modelUnknown')}
-          {t(model.input?.includes('image') ? 'computer.modelImages' : 'computer.modelText')}
-        </p>
-      {/if}
-      <div class="computer-modes" aria-label={t('computer.sessionModes')}>
-        {#each modes as mode (mode)}
-          <button
-            type="button"
-            disabled={busy}
-            aria-pressed={status.mode === mode}
-            onclick={() => setMode(mode)}>{t('computer.mode.' + mode)}</button
-          >
-        {/each}
-      </div>
-      {#if waiting}
-        <div class="computer-approval">
-          <strong>{t('computer.waiting')}</strong>
-          <code>{waiting.tool}</code>
-          <pre>{waiting.detail}</pre>
-          <button
-            type="button"
-            disabled={busy}
-            onclick={() => load({ action: 'answer', requestID: waiting.id, allow: true })}
-            >{t('computer.allowOnce')}</button
-          >
-          <button
-            type="button"
-            disabled={busy}
-            onclick={() => load({ action: 'answer', requestID: waiting.id, allow: false })}
-            >{t('computer.deny')}</button
-          >
-        </div>
-      {:else if !status.loaded}
-        <button type="button" disabled={busy || running} onclick={() => load({ action: 'check' })}
-          >{t('computer.check')}</button
-        >
-      {/if}
-    {:else if !error}
-      <p>{t('computer.loading')}</p>
-    {/if}
+{#if waiting}
+  <div class="computer-approval" role="region" aria-label={t('computer.waiting')}>
+    <div class="approval-heading" role="status">
+      {@html icon(ShieldCheck, { size: 17 })}
+      <strong>{t('computer.waiting')}</strong>
+    </div>
+    <details>
+      <summary><code>{waiting.tool}</code></summary>
+      <pre>{waiting.detail}</pre>
+    </details>
+    <div class="approval-actions">
+      <button
+        type="button"
+        class="approval-allow"
+        disabled={busy}
+        onclick={() => load({ action: 'answer', requestID: waiting.id, allow: true })}
+        >{t('computer.allowOnce')}</button
+      >
+      <button
+        type="button"
+        disabled={busy}
+        onclick={() => load({ action: 'answer', requestID: waiting.id, allow: false })}
+        >{t('computer.deny')}</button
+      >
+    </div>
     {#if error}<p role="alert">{error}</p>{/if}
   </div>
-</details>
+{/if}
+
+{#snippet permissionControl()}
+  <details class="computer-permission" bind:this={details} ontoggle={() => details?.open && load()}>
+    <summary
+      class="pi-chat-icon-button"
+      aria-label={t('computer.title')}
+      title={t('computer.title')}
+    >
+      {@html icon(ShieldCheck, { size: 19 })}
+      {#if waiting}<span class="pending-dot" aria-label={t('computer.waiting')}></span>{/if}
+    </summary>
+    <div class="computer-panel">
+      <strong>{t('computer.title')}</strong>
+      {#if status}
+        <p>
+          {t(
+            status.loaded
+              ? 'computer.loaded'
+              : status.checked
+                ? 'computer.notLoaded'
+                : status.installed
+                  ? 'computer.installed'
+                  : 'computer.notDetected',
+          )}
+        </p>
+        {#if model}
+          <p>
+            {t(model.supportsTools ? 'computer.modelTools' : 'computer.modelUnknown')}
+            {t(model.input?.includes('image') ? 'computer.modelImages' : 'computer.modelText')}
+          </p>
+        {/if}
+        <div class="computer-modes" aria-label={t('computer.sessionModes')}>
+          {#each modes as mode (mode)}
+            <button
+              type="button"
+              disabled={busy}
+              aria-pressed={status.mode === mode}
+              onclick={() => setMode(mode)}>{t('computer.mode.' + mode)}</button
+            >
+          {/each}
+        </div>
+        {#if !waiting && !status.loaded}
+          <button type="button" disabled={busy || running} onclick={() => load({ action: 'check' })}
+            >{t('computer.check')}</button
+          >
+        {/if}
+      {:else if !error}
+        <p>{t('computer.loading')}</p>
+      {/if}
+      {#if error}<p role="alert">{error}</p>{/if}
+    </div>
+  </details>
+{/snippet}
+
+{@render children(permissionControl)}
 
 <svelte:window
   onclick={(event) => {
@@ -211,13 +229,43 @@
     color: var(--accent);
   }
   .computer-approval {
-    margin-top: 10px;
+    display: grid;
+    gap: 7px;
+    padding: 10px;
+    margin: 6px 0;
+    border: 1px solid color-mix(in srgb, var(--warning) 52%, var(--dim));
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
   }
-  .computer-approval code {
-    display: block;
-    margin-top: 3px;
+  .approval-heading,
+  .approval-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .approval-heading {
+    color: var(--warning);
+  }
+  .approval-actions {
+    justify-content: end;
+    flex-wrap: wrap;
+  }
+  .approval-actions button {
+    min-height: 40px;
+  }
+  .approval-allow {
+    background: var(--text);
+    color: var(--body-bg);
+  }
+  .computer-approval summary {
+    cursor: pointer;
+    color: var(--text-soft);
   }
   .computer-approval pre {
+    max-height: 90px;
+    overflow: auto;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }

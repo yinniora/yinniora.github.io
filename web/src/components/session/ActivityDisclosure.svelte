@@ -2,7 +2,16 @@
   import { icon, ChevronRight, Clock, Loader, Check, X } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { sessionRuntime } from '../../session/session-runtime.js';
-  let { kind, id, label, summary = '', status = '', required = false, children } = $props();
+  let {
+    kind,
+    id,
+    label,
+    count = 0,
+    summary = '',
+    status = '',
+    required = false,
+    children,
+  } = $props();
   const indicators = {
     pending: { glyph: Loader, label: 'activity.running' },
     success: { glyph: Check, label: 'activity.done' },
@@ -24,6 +33,7 @@
   bind:this={element}
   class="activity-disclosure"
   class:activity-thinking={kind === 'thinking'}
+  class:activity-group={kind === 'group'}
   data-display-kind={kind}
   data-collapse-key={id}
   data-requires-response={required ? 'true' : undefined}
@@ -33,6 +43,7 @@
     <span class="activity-chevron" aria-hidden="true">{@html icon(ChevronRight, { size: 15 })}</span
     >
     <span class="activity-label">{label}</span>
+    {#if count}<span class="activity-count">{count}</span>{/if}
     {#if summary}<span class="activity-summary" title={summary}>{summary}</span>{/if}
     {#if indicator}<span
         class="activity-status"

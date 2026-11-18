@@ -29,6 +29,14 @@ export function createSessionNavigator({
         const scrollTargetId = scrollToEntryId || targetId;
         const targetEl = documentImpl.getElementById(`entry-${scrollTargetId}`);
         if (targetEl) {
+          for (
+            let node = targetEl.parentElement;
+            node && node !== content;
+            node = node.parentElement
+          ) {
+            if (node.matches('details[data-collapse-key]:not([open])'))
+              node.querySelector(':scope > summary')?.click();
+          }
           targetEl.scrollIntoView?.({ block: 'center' });
           if (scrollToEntryId) {
             targetEl.classList.add('highlight');

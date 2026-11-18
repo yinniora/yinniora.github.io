@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import registerWorkerExtension from '../../internal/rpc/computer_guard.mjs';
 
 describe('RPC worker shell timeout', () => {
@@ -19,6 +19,32 @@ describe('RPC worker shell timeout', () => {
     const event = { toolName, input: timeout === undefined ? {} : { timeout } };
     for (const handle of toolCallHandlers) await handle(event, {});
     expect(event.input.timeout).toBe(expected);
+  });
+});
+
+describe('RPC worker computer approval', () => {
+  it('blocks unapproved actions without ending the turn and resets for a new run', async () => {
+    const handlers = {};
+    registerWorkerExtension({
+      registerCommand: () => {},
+      on: (name, handler) => {
+        if (name === 'tool_call' || name === 'agent_start') handlers[name] = handler;
+      },
+    });
+    const confirm = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const ctx = { ui: { confirm } };
+    handlers.agent_start();
+    const blocked = await handlers.tool_call({ toolName: 'find_roots' }, ctx);
+    expect(blocked.block).toBe(true);
+    expect(blocked.terminate).toBeUndefined();
+    expect(blocked.reason).toContain('Continue any remaining work');
+    expect(confirm.mock.calls[0][2].timeout).toBe(120000);
+    expect(await handlers.tool_call({ toolName: 'observe_ui' }, ctx)).toMatchObject({ block: true });
+    expect(await handlers.tool_call({ toolName: 'read' }, ctx)).toBeUndefined();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    handlers.agent_start();
+    expect(await handlers.tool_call({ toolName: 'find_roots' }, ctx)).toBeUndefined();
+    expect(confirm).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -9,6 +9,10 @@
   import ToolOutput, { toggleExpanded } from './ToolOutput.svelte';
   import AskQuestion from './AskQuestion.svelte';
   import ActivityDisclosure from './ActivityDisclosure.svelte';
+  import {
+    isQuestionTool,
+    questionNeedsResponse,
+  } from '../../session/render/conversation-activity.js';
   import { t } from '../../shared/i18n.js';
 
   let { call, model, live = false } = $props();
@@ -148,7 +152,7 @@
         >
       </div>
       {#if result && resultText.trim()}<ToolOutput text={resultText.trim()} maxLines={20} />{/if}
-    {:else if call.name === 'ask_user_question' || call.name === 'pi_web_ask_user_question' || call.name === 'ask_question'}
+    {:else if isQuestionTool(call.name)}
       <AskQuestion {args} {result} />
     {:else if rendered && (rendered.callHtml || rendered.resultHtmlCollapsed || rendered.resultHtmlExpanded)}
       {#if rendered.callHtml}<div class="tool-header ansi-rendered">
@@ -180,8 +184,7 @@
     label={call.name}
     summary={filePath || str(args.command) || ''}
     status={timedOut ? 'timeout' : statusClass}
-    required={!result &&
-      ['ask_user_question', 'pi_web_ask_user_question', 'ask_question'].includes(call.name)}
+    required={questionNeedsResponse(call.name, result)}
   >
     {@render execution()}
   </ActivityDisclosure>

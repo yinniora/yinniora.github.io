@@ -88,11 +88,15 @@ export function applyToggleStateToNode(node, state, overrides = {}) {
   if (!node) return;
   node.querySelectorAll('[data-display-kind]').forEach((el) => {
     const key = el.dataset.collapseKey;
+    const kind = el.dataset.displayKind;
+    const inGroup = el.parentElement?.closest('[data-display-kind="group"]');
     el.open =
-      key in overrides
+      el.dataset.requiresResponse === 'true' ||
+      (key in overrides
         ? overrides[key]
-        : el.dataset.requiresResponse === 'true' ||
-          (el.dataset.displayKind === 'thinking' ? state.thinkingExpanded : state.toolsVisible);
+        : kind !== 'group' &&
+          !inGroup &&
+          (kind === 'thinking' ? state.thinkingExpanded : state.toolsVisible));
   });
   node.querySelectorAll('.thinking-text').forEach((el) => {
     el.style.display = state.thinkingExpanded ? '' : 'none';
