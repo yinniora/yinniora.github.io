@@ -20,6 +20,8 @@
     setupBtwParentEvents,
     setupBtwSessionEvents,
   } from './btw-events.js';
+  import ReplyFooter from './ReplyFooter.svelte';
+  import { entriesWithReplyDetails } from '../../session/render/reply-details.js';
   import { btwContentText, createBtwMarkdownRenderer, renderBtwEntryParts } from './btw-render.js';
 
   let { cwd = '', parentId = '' } = $props();
@@ -59,7 +61,12 @@
   const toHtml = createBtwMarkdownRenderer({ documentImpl: document });
   const renderEntryParts = (entry) => renderBtwEntryParts(entry, { toHtml });
 
-  const renderedEntries = $derived(entries.map(renderEntryParts).filter(Boolean));
+  const renderedEntries = $derived(
+    entriesWithReplyDetails(entries).flatMap(({ entry, reply }) => {
+      const rendered = renderEntryParts(entry);
+      return rendered ? [{ ...rendered, reply }] : [];
+    }),
+  );
   const isEmpty = $derived(
     renderedEntries.length === 0 && !pendingUser && !(running || streamingText),
   );
@@ -437,6 +444,7 @@
                 {p.text}
               </div>{/if}
           {/each}
+          {#if r.reply}<ReplyFooter {...r.reply} />{/if}
         </div>
       {/each}
       {#if pendingUser}<div class="pi-btw-msg user pending">

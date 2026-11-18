@@ -7,10 +7,14 @@
   // imperative layer still owns. Shared by the live app + the static export.
   import { getSessionModel } from '../../session/session-context.js';
   import SessionEntry from './SessionEntry.svelte';
+  import { entriesWithReplyDetails } from '../../session/render/reply-details.js';
 
   let { model = getSessionModel(), afterRender = null, live = false } = $props();
 
   let containerEl = $state(null);
+  const entries = $derived(
+    live ? entriesWithReplyDetails(model.activePath) : model.activePath.map((entry) => ({ entry })),
+  );
 
   // Re-run post-render side effects whenever the rendered path changes.
   $effect(() => {
@@ -22,7 +26,7 @@
 </script>
 
 <div id="messages-list" class="messages-list" bind:this={containerEl}>
-  {#each model.activePath as entry (entry.id)}
-    <SessionEntry {entry} {model} {live} />
+  {#each entries as { entry, reply } (entry.id)}
+    <SessionEntry {entry} {reply} {model} {live} />
   {/each}
 </div>

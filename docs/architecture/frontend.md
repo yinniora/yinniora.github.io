@@ -74,6 +74,11 @@ The message pane is rendered by Svelte components (no string-building renderer):
 
 The index + settings Phase 4 migration is complete: those routes are Svelte-orchestrated too, with only pure/API helpers left outside components.
 
+Each visible final assistant reply in the live conversation or BTW shows a
+copy control, its recorded model, and its local reply time. Older replies can
+use a preceding model change from the displayed path. The copy action writes
+the reply's Markdown text and skips internal thinking and tool blocks.
+
 ## Static / Share Export
 
 Export/share remains separate and self-contained. `web/src/export/export-entry.js` builds `internal/ui/embedded/export/export.js`, which is inlined by `internal/ui/export.go` with vendored `marked` and `highlight.js` assets.
@@ -164,8 +169,10 @@ collapse state, and provides new-conversation and project-delete controls.
 Empty registered projects remain visible. Ordinary conversation creation uses a
 dedicated Mac workspace (configured default or the agent workspace folder),
 without asking the phone to pick a folder. The session header returns Home;
-the redundant mobile left drawer and session-creation/device shortcuts are
-hidden. Desktop keeps the existing sidebar and home composer.
+a right swipe from the left part of the transcript also returns Home. The
+gesture is scoped to the transcript and leaves vertical scroll, interactive
+controls and horizontally scrollable code with their native handling. Desktop
+keeps the existing sidebar and home composer.
 Session cards show a completion dot after a finished assistant reply. The dot
 survives reloads and clears when the conversation is viewed in the foreground.
 Read state is kept in the current browser.

@@ -1383,7 +1383,8 @@
   }
   #spa-root #content {
     min-height: 0;
-    overscroll-behavior-y: contain;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
   }
   #spa-root .pi-chat-composer {
     flex: none;

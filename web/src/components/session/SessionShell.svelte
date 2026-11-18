@@ -31,6 +31,7 @@
   import { getSessionRuntime } from '../../session/session-runtime-context.js';
   import { onMount } from 'svelte';
   import { navigate } from '../../shared/navigation.js';
+  import { setupSwipeHome } from '../../session/navigation/swipe-home.js';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { createAnnotationApi } from '../../session/annotations/annotation-api.js';
   import { createStatusEvents } from '../../shared/status-events.js';
@@ -118,6 +119,9 @@
       window.removeEventListener('keydown', onKey, { capture: true });
     };
   });
+
+  let transcript = $state(null);
+  onMount(() => setupSwipeHome(transcript));
 
   const runtime = getSessionRuntime();
   const runningSessionIds = new SvelteSet();
@@ -231,7 +235,7 @@
 <div id="app">
   <SessionTree {cwd} {sessionId} {runningSessionIds} {runningSessionProjects} {projectsRevision} />
   <div id="content-container" class="content-container">
-    <main id="content">
+    <main id="content" bind:this={transcript}>
       <div id="header-container"><SessionInfoHeader model={sessionModel} /></div>
       <LoadEarlier model={sessionModel} {sessionId} navigateTo={runtime.navigateTo} />
       <div id="messages">

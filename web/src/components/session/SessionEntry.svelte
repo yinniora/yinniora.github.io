@@ -11,18 +11,22 @@
   import { formatTimestamp } from '../../session/render/entry-format.js';
   import ToolCall from './ToolCall.svelte';
   import ActivityDisclosure from './ActivityDisclosure.svelte';
+  import ReplyFooter from './ReplyFooter.svelte';
   import ToolOutput from './ToolOutput.svelte';
 
   // `live` (passed from <SessionContent>) gates the fork/label buttons, which
   // need the chat composer; copy-link is always shown. The static export passes
   // false. (Replaces the former renderForkButton/renderLabelButton isLive check —
   // a prop, not a DOM probe, since entries mount before the composer.)
-  let { entry, model = null, live = false } = $props();
+  let { entry, reply = null, model = null, live = false } = $props();
 
   const ts = $derived(formatTimestamp(entry?.timestamp));
   const md = (text) => safeMarkedParse(text, { marked });
 
   const msg = $derived(entry?.type === 'message' ? entry.message : null);
+  const assistantContent = $derived(
+    typeof msg?.content === 'string' ? [{ type: 'text', text: msg.content }] : msg?.content || [],
+  );
   const userText = $derived.by(() => {
     if (!msg || msg.role !== 'user') return '';
     const c = msg.content;
@@ -70,8 +74,9 @@
   </div>
 {:else if msg && msg.role === 'assistant'}
   <div class="assistant-message" id={`entry-${entry.id}`}>
-    {@render actions(entry.id)}{@render timestamp()}
-    {#each msg.content as block, blockIndex (blockIndex)}
+    {@render actions(entry.id)}
+    {#if !reply}{@render timestamp()}{/if}
+    {#each assistantContent as block, blockIndex (blockIndex)}
       {#if block.type === 'text' && block.text.trim()}<div class="assistant-text markdown-content">
           {@html md(block.text)}
         </div>{:else if block.type === 'thinking' && block.thinking.trim()}
@@ -89,7 +94,7 @@
           </div>{/if}
       {/if}
     {/each}
-    {#each msg.content as block, toolBlockIndex (toolBlockIndex)}{#if block.type === 'toolCall'}<ToolCall
+    {#each assistantContent as block, toolBlockIndex (toolBlockIndex)}{#if block.type === 'toolCall'}<ToolCall
           call={block}
           {model}
           {live}
@@ -99,6 +104,7 @@
       </div>{:else if msg.stopReason === 'error'}<div class="error-text">
         Error: {msg.errorMessage || 'Unknown error'}
       </div>{/if}
+    {#if reply}<ReplyFooter {...reply} />{/if}
   </div>
 {:else if msg && msg.role === 'bashExecution'}
   <div

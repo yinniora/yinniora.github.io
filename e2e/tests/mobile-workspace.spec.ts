@@ -608,6 +608,116 @@ test("installed app taps work after reload, swipes, and closing a sheet", async 
   expect(await page.evaluate(() => history.length)).toBe(initialLength);
 });
 
+test("a right swipe in the conversation returns to mobile Home", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const { entries, lastId } = buildSession({ cwd: realWorkingDir() });
+  const code = assistantTextEntry(lastId, "```text\nA code example\n```");
+  const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "swipe-home"), [
+    ...entries,
+    code.entry,
+  ]);
+  await collapseScratchpad(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "standalone", { value: true, configurable: true });
+  });
+  await page.goto("/session?id=" + encodeURIComponent(id));
+  test.skip(!(await isMobileLayout(page)), "mobile layout");
+
+  const transcript = page.locator("#content");
+  const home = page.locator(".mobile-home");
+  const initialHistoryLength = await page.evaluate(() => history.length);
+  const swipe = (target: string, dx: number, dy: number, startX = 24) =>
+    transcript.evaluate((content, { target, dx, dy, startX }) => {
+      const rect = content.getBoundingClientRect();
+      const start = { clientX: rect.left + startX, clientY: rect.top + 100, identifier: 1 };
+      const end = { ...start, clientX: start.clientX + dx, clientY: start.clientY + dy };
+      const node = target ? content.querySelector(target)! : content;
+      function fire(type: string, touches: object[], changedTouches: object[] = []) {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperties(event, {
+          touches: { value: touches },
+          changedTouches: { value: changedTouches },
+        });
+        node.dispatchEvent(event);
+      }
+      fire("touchstart", [start]);
+      fire("touchmove", [end]);
+      fire("touchend", [], [end]);
+    }, { target, dx, dy, startX });
+
+  await swipe("", 35, 4);
+  await swipe("", -115, 4);
+  await swipe("", 120, 4, 120);
+  await swipe("", 105, 120);
+  await swipe(`#entry-${code.id} pre`, 120, 0);
+  await expect(transcript).toBeVisible();
+  await expect(home).toHaveCount(0);
+
+  await swipe("", 120, 9);
+  await expect(home).toBeVisible();
+  await page.locator(`a[data-session-id="${id}"]`).tap();
+  await page.locator("#pi-chat-message").tap();
+  await expect(page.locator("#pi-chat-message")).toBeFocused();
+  expect(await page.evaluate(() => history.length)).toBe(initialHistoryLength);
+});
+
+test("finished replies show their own model and time and copy only reply text", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const { entries, lastId } = buildSession({
+    cwd: realWorkingDir(),
+    provider: "earlier-provider",
+    modelId: "earlier-model",
+  });
+  const now = "2026-10-10T09:44:23.000Z";
+  const prelude = assistantTextEntry(lastId, "Checking the workspace...");
+  const reply = assistantTextEntry(prelude.id, "");
+  const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "reply-details"), [
+    ...entries,
+    { ...prelude.entry, message: { ...prelude.entry.message, stopReason: "toolUse" } },
+    {
+      ...reply.entry,
+      timestamp: now,
+      message: {
+        ...reply.entry.message,
+        provider: "saved-provider",
+        model: "saved-model",
+        stopReason: "stop",
+        content: [
+          { type: "thinking", thinking: "Test thinking block" },
+          { type: "text", text: "Complete **reply**." },
+          { type: "text", text: "Another paragraph." },
+        ],
+      },
+    },
+  ]);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => { document.documentElement.dataset.copiedReply = text; },
+      },
+    });
+  });
+  await collapseScratchpad(page);
+  await page.goto("/session?id=" + encodeURIComponent(id));
+  const older = page.locator(`#entry-${lastId} .reply-footer`);
+  const newer = page.locator(`#entry-${reply.id} .reply-footer`);
+  await expect(older.locator(".reply-model")).toHaveText("earlier-provider/earlier-model");
+  await expect(page.locator(`#entry-${prelude.id} .reply-footer`)).toHaveCount(0);
+  await expect(newer.locator(".reply-model")).toHaveText("saved-provider/saved-model");
+  await expect(newer.locator("time")).toBeVisible();
+  await expect(newer.locator("time")).toHaveAttribute("datetime", now);
+  await newer.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-copied-reply",
+    "Complete **reply**.\n\nAnother paragraph.",
+  );
+});
+
 test("opening and following a conversation keeps standalone iOS scroll inside the transcript", async ({
   page,
   sessionsDir,
