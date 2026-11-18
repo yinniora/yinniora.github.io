@@ -21,12 +21,16 @@ read capability from sharing.
 `/api/model-settings` is authenticated for the local window and approved encrypted
 remote devices. GET exposes labels, API formats, sanitized endpoints, cached
 available models and applied metadata, never API keys or custom headers. POST
-adds a labeled key, refreshes only that endpoint, additively applies a multi-model
-selection, or removes an applied model. Existing compatible `models.json` providers
-appear automatically; their auth.json credentials and unrelated metadata remain
-untouched. New keys use escaped literal values in a mode-0600 atomic models.json
-write, avoiding Pi's credential-command/environment interpolation. Revision
-checks reject stale mutations and malformed/symlink configurations fail closed.
+adds or edits a labeled key, refreshes its endpoint, applies selected models, or
+removes an applied model. Edits retain the provider ID and applied models. A
+blank key keeps the stored credential. Switching servers requires an entered
+key and explicitly configured credentials and routes are checked before the
+move. Replacement clears a legacy API key from `auth.json` so Pi uses the new
+escaped literal in the mode-0600 atomic `models.json` write. Revision checks
+reject stale mutations and malformed/symlink configurations fail closed.
+Endpoint or key edits verify the model catalog before writing. The API check
+uses endpoint suffixes and advertised model metadata when available. Existing
+profiles can explicitly recheck their saved endpoint and key from Settings.
 
 Discovery supports OpenAI Chat/Responses and New API, Anthropic Messages and
 Google Gemini formats, with bounded same-endpoint pagination, timeouts and

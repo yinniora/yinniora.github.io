@@ -24,13 +24,14 @@ type modelCatalog struct {
 	Models    []map[string]any
 }
 type modelProfile struct {
-	ID        string           `json:"id"`
-	Label     string           `json:"label"`
-	BaseURL   string           `json:"baseUrl"`
-	API       string           `json:"api"`
-	HasKey    bool             `json:"hasKey"`
-	Applied   []map[string]any `json:"applied"`
-	Available []map[string]any `json:"available"`
+	ID              string           `json:"id"`
+	Label           string           `json:"label"`
+	BaseURL         string           `json:"baseUrl"`
+	API             string           `json:"api"`
+	HasKey          bool             `json:"hasKey"`
+	CatalogVerified bool             `json:"catalogVerified"`
+	Applied         []map[string]any `json:"applied"`
+	Available       []map[string]any `json:"available"`
 }
 type modelSettingsRequest struct {
 	Action        string   `json:"action"`
@@ -40,6 +41,7 @@ type modelSettingsRequest struct {
 	BaseURL       string   `json:"baseUrl"`
 	API           string   `json:"api"`
 	Key           string   `json:"key"`
+	CheckAPI      bool     `json:"checkApi"`
 	ModelIDs      []string `json:"modelIds"`
 	ModelID       string   `json:"modelId"`
 	Vision        bool     `json:"vision"`
@@ -117,6 +119,16 @@ func profileSignature(p map[string]any, key string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+func publicModelBaseURL(base string) string {
+	if u, err := url.Parse(base); err == nil {
+		u.User = nil
+		u.RawQuery = ""
+		u.Fragment = ""
+		return u.String()
+	}
+	return base
+}
+
 func configuredModels(p map[string]any) []map[string]any {
 	list := []map[string]any{}
 	if raw, ok := p["models"].([]any); ok {
@@ -159,19 +171,13 @@ func (s *Server) modelProfiles(providers map[string]any) []modelProfile {
 			label = id
 		}
 		key := s.modelProfileKey(id, p)
-		publicBase := base
-		if u, e := url.Parse(base); e == nil {
-			u.User = nil
-			u.RawQuery = ""
-			u.Fragment = ""
-			publicBase = u.String()
-		}
-		row := modelProfile{ID: id, Label: label, BaseURL: publicBase, API: api, HasKey: key != "", Applied: []map[string]any{}, Available: []map[string]any{}}
+		row := modelProfile{ID: id, Label: label, BaseURL: publicModelBaseURL(base), API: api, HasKey: key != "", Applied: []map[string]any{}, Available: []map[string]any{}}
 		for _, m := range configuredModels(p) {
 			row.Applied = append(row.Applied, publicModel(m, id, label))
 		}
 		row.Available = append(row.Available, row.Applied...)
 		if catalog, ok := s.modelCatalogs[id]; ok && catalog.Signature == profileSignature(p, key) {
+			row.CatalogVerified = true
 			row.Available = []map[string]any{}
 			toolsByID := map[string]bool{}
 			for _, m := range catalog.Models {
@@ -211,6 +217,106 @@ func modelBaseURL(raw, api string) (*url.URL, error) {
 		return nil, errors.New("unsupported model API")
 	}
 	return u, nil
+}
+
+func editModelEndpoint(profile map[string]any, base, api string, replacingKey bool) (bool, error) {
+	previous, _ := profile["baseUrl"].(string)
+	if publicModelBaseURL(previous) == base {
+		return false, nil
+	}
+	next, err := modelBaseURL(base, api)
+	if err != nil || strings.TrimSpace(base) == "" {
+		return false, errors.New("invalid endpoint")
+	}
+	if next.String() == previous {
+		return false, nil
+	}
+	old, _ := url.Parse(previous)
+	newOrigin := old == nil || old.Scheme != next.Scheme || !strings.EqualFold(old.Host, next.Host)
+	if newOrigin && !replacingKey {
+		return false, errors.New("enter a new key for a different API server")
+	}
+	if newOrigin && (profile["headers"] != nil || profile["oauth"] != nil) {
+		return false, errors.New("provider has custom authentication or routes")
+	}
+
+	models := configuredModels(profile)
+	if overrides, ok := profile["modelOverrides"].(map[string]any); ok {
+		for _, value := range overrides {
+			if model, ok := value.(map[string]any); ok {
+				models = append(models, model)
+			}
+		}
+	}
+	for _, model := range models {
+		if newOrigin && model["headers"] != nil {
+			return false, errors.New("provider has custom authentication or routes")
+		}
+		modelBase, _ := model["baseUrl"].(string)
+		if modelBase == "" {
+			continue
+		}
+		if modelBase == previous {
+			model["baseUrl"] = next.String()
+			continue
+		}
+		if model["api"] == apiGemini && old != nil && strings.HasSuffix(old.Path, "/v1") {
+			oldGemini := *old
+			oldGemini.Path = strings.TrimSuffix(oldGemini.Path, "/v1") + "/v1beta"
+			if modelBase == oldGemini.String() {
+				newGemini := *next
+				if strings.HasSuffix(newGemini.Path, "/v1") {
+					newGemini.Path = strings.TrimSuffix(newGemini.Path, "/v1") + "/v1beta"
+				}
+				model["baseUrl"] = newGemini.String()
+				continue
+			}
+		}
+		if newOrigin {
+			return false, errors.New("provider has custom authentication or routes")
+		}
+	}
+	profile["baseUrl"] = next.String()
+	return true, nil
+}
+
+func applyDetectedModelRoutes(profile map[string]any, models []map[string]any, previousAPI, defaultAPI string) {
+	detected := make(map[string]map[string]any, len(models))
+	for _, model := range models {
+		id, _ := model["id"].(string)
+		detected[id] = model
+	}
+	base, _ := profile["baseUrl"].(string)
+	for _, model := range configuredModels(profile) {
+		id, _ := model["id"].(string)
+		oldAPI, _ := model["api"].(string)
+		if oldAPI == "" {
+			oldAPI = previousAPI
+		}
+		match := detected[id]
+		newAPI, _ := match["api"].(string)
+		if newAPI == "" {
+			if oldAPI != previousAPI {
+				continue
+			}
+			newAPI = defaultAPI
+		}
+		if oldAPI != newAPI {
+			model["api"] = newAPI
+			for _, field := range []string{"compat", "thinkingLevelMap"} {
+				delete(model, field)
+				if match[field] != nil {
+					model[field] = match[field]
+				}
+			}
+			if oldAPI == apiGemini && strings.HasSuffix(base, "/v1") && model["baseUrl"] == strings.TrimSuffix(base, "/v1")+"/v1beta" {
+				delete(model, "baseUrl")
+			}
+		}
+		if match["baseUrl"] != nil && (model["baseUrl"] == nil || model["baseUrl"] == base) {
+			model["baseUrl"] = match["baseUrl"]
+		}
+	}
 }
 
 func (s *Server) discoverModels(ctx context.Context, p map[string]any, key string) ([]map[string]any, error) {
@@ -292,7 +398,11 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 			}
 			seen[id] = true
 			m := map[string]any{"id": id, "name": id}
-			describeCatalogModel(m, raw, id, modelAPI, base)
+			catalogAPI := modelAPI
+			if catalogAPI == apiChat && raw["type"] == "model" && raw["display_name"] != nil && raw["created_at"] != nil {
+				catalogAPI = apiAnthropic
+			}
+			describeCatalogModel(m, raw, id, catalogAPI, base)
 			for _, field := range []string{"display_name", "displayName"} {
 				if name, ok := raw[field].(string); ok && len(name) <= 512 && !strings.Contains(name, key) {
 					m["name"] = name
@@ -370,7 +480,7 @@ func writePrivateModelFile(path string, raw []byte) error {
 	return os.Rename(f.Name(), path)
 }
 
-func deleteModelKey(agent, id string, config map[string]any) error {
+func writeModelConfigWithoutLegacyKey(agent, id string, config map[string]any, replacing bool) error {
 	authPath := filepath.Join(agent, "auth.json")
 	info, err := os.Lstat(authPath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -384,8 +494,15 @@ func deleteModelKey(agent, id string, config map[string]any) error {
 	if err != nil || json.Unmarshal(previous, &auth) != nil {
 		return errors.New("cannot read private model credentials")
 	}
+	raw := auth[id]
 	var credential struct{ Type string }
-	if raw := auth[id]; len(raw) == 0 || json.Unmarshal(raw, &credential) != nil || credential.Type != "api_key" {
+	if len(raw) == 0 {
+		return writeModelConfig(agent, config)
+	}
+	if json.Unmarshal(raw, &credential) != nil || credential.Type != "api_key" {
+		if replacing {
+			return errModelCredentialType
+		}
 		return writeModelConfig(agent, config)
 	}
 	delete(auth, id)
@@ -413,6 +530,7 @@ func deleteModelKey(agent, id string, config map[string]any) error {
 }
 
 var errModelCredentialsChanged = errors.New("model credentials changed; reload and try again")
+var errModelCredentialType = errors.New("provider has a different sign-in method")
 
 func deleteModelConfiguration(agent, provider, modelID string, config map[string]any) error {
 	settingsPath := filepath.Join(agent, "settings.json")
@@ -555,14 +673,19 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, _ := providers[request.ID].(map[string]any)
+	request.Label = strings.TrimSpace(request.Label)
+	request.Key = strings.TrimSpace(request.Key)
+	request.BaseURL = strings.TrimSpace(request.BaseURL)
+	if (request.Action == "add" || request.Action == "edit") &&
+		(request.Label == "" || len(request.Label) > 100 ||
+			(request.Action == "add" && request.Key == "") || len(request.Key) > 8192 || strings.ContainsAny(request.Key, "\r\n\x00")) {
+		writeJSONError(w, 400, "a label and valid API key are required")
+		return
+	}
+	configAffectsResources := false
+	var editedCatalog *modelCatalog
 	switch request.Action {
 	case "add":
-		request.Label = strings.TrimSpace(request.Label)
-		request.Key = strings.TrimSpace(request.Key)
-		if request.Label == "" || len(request.Label) > 100 || request.Key == "" || len(request.Key) > 8192 || strings.ContainsAny(request.Key, "\r\n\x00") {
-			writeJSONError(w, 400, "a label and valid API key are required")
-			return
-		}
 		var random [12]byte
 		if _, e := rand.Read(random[:]); e != nil {
 			writeJSONError(w, 500, "cannot create profile")
@@ -575,7 +698,7 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		if request.API == "" || request.API == "auto" {
 			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 			s.modelConfigMu.Unlock()
-			u, request.API, models, e = s.detectModelProtocol(ctx, strings.TrimSpace(request.BaseURL), request.Key)
+			u, request.API, models, e = s.detectModelProtocol(ctx, request.BaseURL, request.Key, "")
 			cancel()
 			s.modelConfigMu.Lock()
 		} else {
@@ -592,6 +715,74 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 				s.modelCatalogs = make(map[string]modelCatalog)
 			}
 			s.modelCatalogs[id] = modelCatalog{Signature: profileSignature(profile, request.Key), Models: models}
+		}
+	case "edit":
+		base, _ := p["baseUrl"].(string)
+		api, _ := p["api"].(string)
+		if base == "" || api == "" {
+			writeJSONError(w, 404, "key profile not found")
+			return
+		}
+		if request.BaseURL == publicModelBaseURL(base) && request.Key == "" && !request.CheckAPI {
+			p["name"] = request.Label
+			break
+		}
+		oldKey := s.modelProfileKey(request.ID, p)
+		signature := profileSignature(p, oldKey)
+		address, explicit := modelProtocolRoute(request.BaseURL)
+		endpointAPI := api
+		if explicit != "" {
+			endpointAPI = explicit
+		}
+		endpointChanged, err := editModelEndpoint(p, address, endpointAPI, request.Key != "")
+		if err != nil {
+			writeJSONError(w, 400, err.Error())
+			return
+		}
+		configAffectsResources = endpointChanged || request.Key != "" || explicit != ""
+		if configAffectsResources || request.CheckAPI {
+			key := request.Key
+			if key == "" {
+				key = oldKey
+			}
+			if key == "" {
+				writeJSONError(w, 400, "enter an API key to check compatibility")
+				return
+			}
+			preferred := api
+			if endpointChanged {
+				preferred = ""
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+			s.modelConfigMu.Unlock()
+			checkedURL, checkedAPI, models, checkErr := s.detectModelProtocol(ctx, request.BaseURL, key, preferred)
+			cancel()
+			s.modelConfigMu.Lock()
+			if checkErr != nil {
+				writeJSONError(w, 400, checkErr.Error())
+				return
+			}
+			_, currentProviders, currentRevision, readErr := readModelConfig(s.agentDir)
+			current, _ := currentProviders[request.ID].(map[string]any)
+			if readErr != nil || currentRevision != revision || current == nil || profileSignature(current, s.modelProfileKey(request.ID, current)) != signature {
+				writeJSONError(w, 409, "model configuration changed; reload and try again")
+				return
+			}
+			resolvedEndpointChanged, err := editModelEndpoint(p, checkedURL.String(), checkedAPI, request.Key != "")
+			if err != nil {
+				writeJSONError(w, 400, err.Error())
+				return
+			}
+			p["api"] = checkedAPI
+			if endpointChanged || resolvedEndpointChanged || api != checkedAPI {
+				applyDetectedModelRoutes(p, models, api, checkedAPI)
+				configAffectsResources = true
+			}
+			editedCatalog = &modelCatalog{Signature: profileSignature(p, key), Models: models}
+		}
+		p["name"] = request.Label
+		if request.Key != "" {
+			p["apiKey"] = literalModelKey(request.Key)
 		}
 	case "refresh":
 		if p == nil {
@@ -763,13 +954,19 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	switch request.Action {
 	case "remove-key":
-		err = deleteModelKey(s.agentDir, request.ID, config)
+		err = writeModelConfigWithoutLegacyKey(s.agentDir, request.ID, config, false)
+	case "edit":
+		if request.Key != "" {
+			err = writeModelConfigWithoutLegacyKey(s.agentDir, request.ID, config, true)
+		} else {
+			err = writeModelConfig(s.agentDir, config)
+		}
 	case "remove-model":
 		err = deleteModelConfiguration(s.agentDir, request.ID, request.ModelID, config)
 	default:
 		err = writeModelConfig(s.agentDir, config)
 	}
-	if errors.Is(err, errModelCredentialsChanged) {
+	if errors.Is(err, errModelCredentialsChanged) || errors.Is(err, errModelCredentialType) {
 		writeJSONError(w, 409, err.Error())
 		return
 	}
@@ -785,7 +982,16 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		// The process-wide Pi model enumeration can still return this profile.
 		s.removedModelProviders[request.ID] = struct{}{}
 	}
-	if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok && (request.Action == "remove-key" || request.Action == "remove-model") {
+	if configAffectsResources {
+		delete(s.modelCatalogs, request.ID)
+	}
+	if editedCatalog != nil {
+		if s.modelCatalogs == nil {
+			s.modelCatalogs = make(map[string]modelCatalog)
+		}
+		s.modelCatalogs[request.ID] = *editedCatalog
+	}
+	if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok && (configAffectsResources || request.Action == "remove-key" || request.Action == "remove-model") {
 		manager.ResourcesChanged()
 	} else if manager, ok := s.chatSender.(interface{ ModelsChanged() }); ok {
 		manager.ModelsChanged()

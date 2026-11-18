@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -15,19 +16,34 @@ const (
 	apiGemini    = "google-generative-ai"
 )
 
-func (s *Server) detectModelProtocol(ctx context.Context, base, key string) (*url.URL, string, []map[string]any, error) {
+func modelProtocolRoute(base string) (string, string) {
+	base = strings.TrimRight(base, "/")
+	u, err := url.Parse(base)
+	if err != nil {
+		return base, ""
+	}
+	for _, route := range []struct{ suffix, api string }{{"/chat/completions", apiChat}, {"/responses", apiResponses}, {"/messages", apiAnthropic}} {
+		if strings.HasSuffix(u.Path, route.suffix) {
+			u.Path = strings.TrimSuffix(u.Path, route.suffix)
+			u.RawPath = ""
+			return u.String(), route.api
+		}
+	}
+	return base, ""
+}
+
+func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred string) (*url.URL, string, []map[string]any, error) {
+	base, explicit := modelProtocolRoute(base)
 	apis := []string{apiChat, apiAnthropic, apiGemini}
-	if u, err := url.Parse(strings.TrimRight(base, "/")); err == nil {
-		for _, route := range []struct{ suffix, api string }{{"/chat/completions", apiChat}, {"/responses", apiResponses}, {"/messages", apiAnthropic}} {
-			if strings.HasSuffix(u.Path, route.suffix) {
-				u.Path = strings.TrimSuffix(u.Path, route.suffix)
-				base, apis = u.String(), []string{route.api}
-				break
-			}
-		}
-		if strings.HasSuffix(u.Path, "/v1beta") {
-			apis = []string{apiGemini, apiChat}
-		}
+	if explicit != "" {
+		apis = []string{explicit}
+	} else if preferred == apiAnthropic {
+		// Proxies can advertise alternate model routes in their Bearer catalog.
+		apis = []string{apiChat, apiAnthropic, apiGemini}
+	} else if preferred != "" {
+		apis = append([]string{preferred}, slices.DeleteFunc(apis, func(api string) bool { return api == preferred })...)
+	} else if strings.HasSuffix(base, "/v1beta") {
+		apis = []string{apiGemini, apiChat, apiAnthropic}
 	}
 	var lastErr error
 	for _, api := range apis {
@@ -35,8 +51,26 @@ func (s *Server) detectModelProtocol(ctx context.Context, base, key string) (*ur
 		if err != nil {
 			return nil, "", nil, err
 		}
-		models, err := s.discoverModels(ctx, map[string]any{"baseUrl": u.String(), "api": api}, key)
+		profile := map[string]any{"baseUrl": u.String(), "api": api}
+		if explicit == "" && api == apiChat && (preferred == apiAnthropic || preferred == apiResponses) {
+			profile["catalogFallbackAPI"] = preferred
+		}
+		models, err := s.discoverModels(ctx, profile, key)
 		if err == nil {
+			if fallback, ok := profile["catalogFallbackAPI"].(string); ok {
+				api = fallback
+			}
+			if explicit == "" && len(models) > 0 {
+				catalogAPI, _ := models[0]["api"].(string)
+				if catalogAPI != "" && !slices.ContainsFunc(models, func(model map[string]any) bool { return model["api"] != catalogAPI }) {
+					api = catalogAPI
+					if modelBase, ok := models[0]["baseUrl"].(string); ok {
+						if modelURL, err := modelBaseURL(modelBase, api); err == nil {
+							u = modelURL
+						}
+					}
+				}
+			}
 			return u, api, models, nil
 		}
 		lastErr = err

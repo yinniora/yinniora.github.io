@@ -24,7 +24,7 @@ func TestDetectMixedModelCatalog(t *testing.T) {
 	}))
 	defer provider.Close()
 
-	_, api, models, err := (&Server{}).detectModelProtocol(context.Background(), provider.URL, "testing")
+	_, api, models, err := (&Server{}).detectModelProtocol(context.Background(), provider.URL, "testing", "")
 	if err != nil || api != apiChat || len(models) != 5 {
 		t.Fatalf("detect catalog: api=%s models=%+v err=%v", api, models, err)
 	}
@@ -43,6 +43,10 @@ func TestDetectMixedModelCatalog(t *testing.T) {
 	}
 	if models[4]["api"] != apiResponses || models[4]["reasoning"] != true {
 		t.Fatalf("wrong Responses configuration: %+v", models[4])
+	}
+	_, api, models, err = (&Server{}).detectModelProtocol(context.Background(), provider.URL, "testing", apiAnthropic)
+	if err != nil || api != apiAnthropic || len(models) != 5 || models[2]["api"] != apiGemini || models[4]["api"] != apiResponses {
+		t.Fatalf("existing Claude profile lost mixed catalog routes: api=%s models=%+v err=%v", api, models, err)
 	}
 }
 

@@ -114,6 +114,20 @@ export default {
   'models.balanceUnavailable': 'Balance unavailable',
   'models.balanceLoading': 'Checking balance…',
   'models.key': 'API key',
+  'models.editKey': 'Edit key',
+  'models.keepKey': 'Leave the API key blank to keep the saved key.',
+  'models.newServerKey': 'Enter a new API key when switching to a different server.',
+  'models.customEndpoint':
+    'This profile uses custom authentication or model routes. Add a separate key for the new server.',
+  'models.otherCredential':
+    'This provider uses another sign-in method. Add a separate API key profile.',
+  'models.keyUpdated': 'Key settings saved.',
+  'models.apiType': 'API type · {api}',
+  'models.checkApi': 'Check API',
+  'models.apiChecked': 'API connection checked.',
+  'models.catalogVerified': 'Model list verified · {count}',
+  'models.catalogProtocols': 'Model protocols · {apis}',
+  'models.keyForCheck': 'Enter an API key to check compatibility.',
   'models.keyPrivacy':
     'Keys are saved privately on your Mac and are never returned to the page. Refresh contacts only the API endpoint you specify.',
   'models.saveKey': 'Save key',

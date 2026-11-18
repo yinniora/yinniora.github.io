@@ -4,7 +4,13 @@
   import { t } from '../../shared/i18n.js';
   import { supportedThinkingLevels } from '../../session/chat/chat-selectors.js';
   import { loadModelBalances, modelBalanceLabel } from '../../session/chat/model-balances.js';
-  import { icon, Trash2 } from '../../shared/icons.js';
+  import { icon, Pencil, Trash2 } from '../../shared/icons.js';
+  const apiLabels = {
+    'openai-completions': 'models.openaiCompatible',
+    'openai-responses': 'models.openaiResponses',
+    'anthropic-messages': 'models.anthropic',
+    'google-generative-ai': 'models.gemini',
+  };
   let profiles = $state([]),
     revision = $state(''),
     activeID = $state('');
@@ -12,7 +18,7 @@
     busy = $state(false),
     error = $state(''),
     status = $state('');
-  let adding = $state(false),
+  let keyFormMode = $state(''),
     label = $state(''),
     baseUrl = $state(''),
     key = $state('');
@@ -27,6 +33,17 @@
     maxTokens = $state(8192);
   const prefix = $props.id();
   const active = $derived(profiles.find((p) => p.id === activeID));
+  const catalogAPIs = $derived([
+    ...new Set((active?.available || []).map((model) => model.api).filter(Boolean)),
+  ]);
+  const newServer = $derived.by(() => {
+    if (keyFormMode !== 'edit' || !active?.baseUrl) return false;
+    try {
+      return new URL(baseUrl.trim()).origin !== new URL(active.baseUrl).origin;
+    } catch {
+      return false;
+    }
+  });
   const appliedIDs = $derived(new Set(active?.applied?.map((m) => m.id) || []));
   const filtered = $derived(
     (active?.available || []).filter((m) =>
@@ -41,7 +58,10 @@
   function accept(data) {
     profiles = data.profiles || [];
     revision = data.revision;
-    if (!profiles.some((p) => p.id === activeID)) activeID = profiles[0]?.id || '';
+    if (!profiles.some((p) => p.id === activeID)) {
+      if (keyFormMode === 'edit') closeKeyForm();
+      activeID = profiles[0]?.id || '';
+    }
     selected = [];
     void refreshBalances();
   }
@@ -77,6 +97,7 @@
     }
   }
   function selectProfile(id) {
+    if (keyFormMode === 'edit' && id !== activeID) closeKeyForm();
     activeID = id;
     selected = [];
     query = '';
@@ -92,33 +113,80 @@
       accept(data);
       return data;
     } catch (failure) {
+      const message = failure.message || '';
+      const editErrors = {
+        'enter a new key for a different API server': 'models.newServerKey',
+        'provider has custom authentication or routes': 'models.customEndpoint',
+        'provider has a different sign-in method': 'models.otherCredential',
+        'enter an API key to check compatibility': 'models.keyForCheck',
+      };
       error = t(
-        failure.message?.includes('changed')
-          ? 'models.changed'
-          : /HTTP (401|403)/.test(failure.message || '')
-            ? 'models.authFailed'
-            : 'models.operationFailed',
+        editErrors[message] ||
+          (message.includes('changed')
+            ? 'models.changed'
+            : /HTTP (401|403)/.test(message)
+              ? 'models.authFailed'
+              : 'models.operationFailed'),
       );
       return null;
     } finally {
       busy = false;
     }
   }
-  async function add(event) {
+  function closeKeyForm() {
+    keyFormMode = '';
+    label = '';
+    baseUrl = '';
+    key = '';
+    error = '';
+  }
+  function openKeyForm(profile = null) {
+    const mode = profile ? 'edit' : 'add';
+    const wasOpen = keyFormMode === mode;
+    closeKeyForm();
+    if (wasOpen) return;
+    keyFormMode = mode;
+    label = profile?.label || '';
+    baseUrl = profile?.baseUrl || '';
+    status = '';
+  }
+  async function saveKey(event) {
     event.preventDefault();
+    if (busy) return;
+    const editing = keyFormMode === 'edit';
+    const source = active;
     const previous = new Set(profiles.map((p) => p.id));
-    const data = await action({ action: 'add', label, baseUrl, api: 'auto', key });
+    const data = await action({
+      ...(editing ? { action: 'edit', id: activeID } : { action: 'add', api: 'auto' }),
+      label,
+      baseUrl,
+      key,
+    });
     if (data) {
-      activeID = data.profiles.find((p) => !previous.has(p.id))?.id || activeID;
-      key = '';
-      label = '';
-      baseUrl = '';
-      adding = false;
-      status = t('models.keySaved');
+      if (editing) {
+        if (key.trim() || baseUrl.trim() !== source?.baseUrl) delete balances[activeID];
+      } else {
+        activeID = data.profiles.find((p) => !previous.has(p.id))?.id || activeID;
+      }
+      closeKeyForm();
+      status = t(editing ? 'models.keyUpdated' : 'models.keySaved');
     }
   }
   async function refresh() {
     if (await action({ action: 'refresh', id: activeID })) status = t('models.refreshed');
+  }
+  async function checkAPI(profile) {
+    if (
+      await action({
+        action: 'edit',
+        id: profile.id,
+        label: profile.label,
+        baseUrl: profile.baseUrl,
+        checkApi: true,
+      })
+    ) {
+      status = t('models.apiChecked');
+    }
   }
   async function apply() {
     if (
@@ -142,6 +210,7 @@
     const count = t('models.appliedList', { count: profile.applied.length });
     if (busy || !window.confirm(`${title}?\n${count}`)) return;
     if (await action({ action: 'remove-key', id: profile.id })) {
+      if (keyFormMode === 'edit') closeKeyForm();
       query = '';
       status = t('common.saved');
     }
@@ -157,61 +226,76 @@
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icons -->
+{#snippet keyForm(editing)}
+  <form onsubmit={saveKey} class="model-key-form">
+    <label for={prefix + '-label'}>{t('models.label')}</label><input
+      id={prefix + '-label'}
+      bind:value={label}
+      required
+      maxlength="100"
+      disabled={busy}
+    />
+    <label for={prefix + '-url'}>{t('models.baseUrl')}</label><input
+      id={prefix + '-url'}
+      type="url"
+      bind:value={baseUrl}
+      placeholder="https://api.example.com/v1"
+      required
+      disabled={busy}
+      autocapitalize="none"
+      spellcheck={false}
+    />
+    <label for={prefix + '-key'}>{t('models.key')}</label><input
+      id={prefix + '-key'}
+      type="password"
+      bind:value={key}
+      required={!editing || newServer}
+      disabled={busy}
+      maxlength="8192"
+      autocomplete="new-password"
+      autocapitalize="none"
+      spellcheck={false}
+      aria-describedby={prefix + '-key-hint'}
+    />
+    <p id={prefix + '-key-hint'}>
+      {#if editing}
+        {t(newServer ? 'models.newServerKey' : 'models.keepKey')}
+      {:else}
+        {t('models.autoProtocol')} {t('models.keyPrivacy')}
+      {/if}
+    </p>
+    {#if editing && error}
+      <p role="alert" class="model-error">
+        {error} <button type="button" disabled={busy} onclick={load}>{t('models.reload')}</button>
+      </p>
+    {/if}
+    <div class="model-key-actions">
+      <button type="button" disabled={busy} onclick={closeKeyForm}>{t('common.cancel')}</button>
+      <button
+        type="submit"
+        class="primary"
+        disabled={busy ||
+          ((!editing || newServer) && !key.trim()) ||
+          !label.trim() ||
+          !baseUrl.trim()}
+        >{t(busy ? 'models.saving' : editing ? 'common.save' : 'models.saveKey')}</button
+      >
+    </div>
+  </form>
+{/snippet}
+
 <section class="model-settings">
   <div class="model-heading">
     <div>
       <h2>{t('models.title')}</h2>
       <p>{t('models.intro')}</p>
     </div>
-    <button
-      type="button"
-      class="primary"
-      disabled={busy}
-      onclick={() => {
-        adding = !adding;
-        key = '';
-      }}>{t('models.addKey')}</button
+    <button type="button" class="primary" disabled={busy} onclick={() => openKeyForm()}
+      >{t('models.addKey')}</button
     >
   </div>
-  {#if adding}
-    <form onsubmit={add} class="model-key-form">
-      <label for={prefix + '-label'}>{t('models.label')}</label><input
-        id={prefix + '-label'}
-        bind:value={label}
-        required
-        maxlength="100"
-        disabled={busy}
-      />
-      <label for={prefix + '-url'}>{t('models.baseUrl')}</label><input
-        id={prefix + '-url'}
-        type="url"
-        bind:value={baseUrl}
-        placeholder="https://api.example.com/v1"
-        required
-        disabled={busy}
-        autocapitalize="none"
-        spellcheck={false}
-      />
-      <label for={prefix + '-key'}>{t('models.key')}</label><input
-        id={prefix + '-key'}
-        type="password"
-        bind:value={key}
-        required
-        disabled={busy}
-        autocomplete="new-password"
-        autocapitalize="none"
-        spellcheck={false}
-      />
-      <p>{t('models.autoProtocol')} {t('models.keyPrivacy')}</p>
-      <button
-        type="submit"
-        class="primary"
-        disabled={busy || !key.trim() || !label.trim() || !baseUrl.trim()}
-        >{t(busy ? 'models.saving' : 'models.saveKey')}</button
-      >
-    </form>
-  {/if}
-  {#if error}<p role="alert" class="model-error">
+  {#if keyFormMode === 'add'}{@render keyForm(false)}{/if}
+  {#if error && keyFormMode !== 'edit'}<p role="alert" class="model-error">
       {error} <button type="button" disabled={busy} onclick={load}>{t('models.reload')}</button>
     </p>{/if}
   {#if status}<p role="status" class="model-status">{status}</p>{/if}
@@ -247,6 +331,13 @@
         <div class="model-catalog-heading">
           <h3>{t('models.availableFor', { label: active.label })}</h3>
           <div class="model-source-actions">
+            <button
+              type="button"
+              disabled={busy}
+              aria-expanded={keyFormMode === 'edit'}
+              onclick={() => openKeyForm(active)}
+              >{@html icon(Pencil, { size: 15 })}{t('models.editKey')}</button
+            >
             <button type="button" disabled={busy || !active.hasKey} onclick={refresh}
               >{t(busy ? 'models.working' : 'models.refresh')}</button
             >
@@ -260,6 +351,37 @@
           </div>
         </div>
         <p class="model-endpoint">{active.baseUrl}</p>
+        {#if active.api}
+          <div class="model-protocol">
+            <div>
+              <strong
+                >{t('models.apiType', {
+                  api: apiLabels[active.api] ? t(apiLabels[active.api]) : active.api,
+                })}</strong
+              >
+              {#if active.catalogVerified}
+                <small
+                  >{t('models.catalogVerified', { count: active.available?.length || 0 })}</small
+                >
+                {#if catalogAPIs.length > 1}
+                  <small>
+                    {t('models.catalogProtocols', {
+                      apis: catalogAPIs
+                        .map((api) => (apiLabels[api] ? t(apiLabels[api]) : api))
+                        .join(' / '),
+                    })}
+                  </small>
+                {/if}
+              {/if}
+            </div>
+            <button
+              type="button"
+              disabled={busy || !active.hasKey || keyFormMode !== ''}
+              onclick={() => checkAPI(active)}>{t('models.checkApi')}</button
+            >
+          </div>
+        {/if}
+        {#if keyFormMode === 'edit'}{@render keyForm(true)}{/if}
         <input
           type="search"
           aria-label={t('models.search')}
@@ -446,8 +568,12 @@
     margin: 14px 0 6px;
     font-size: 13px;
   }
-  .model-key-form > button {
-    margin-top: 10px;
+  .model-key-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 14px;
   }
   .model-sources {
     display: grid;
@@ -492,6 +618,18 @@
   .model-endpoint {
     overflow-wrap: anywhere;
     font-size: 11px;
+  }
+  .model-protocol {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 8px 0 14px;
+    font-size: 12px;
+  }
+  .model-protocol button {
+    flex: none;
+    font-size: 12px;
   }
   .model-selection-tools {
     display: flex;

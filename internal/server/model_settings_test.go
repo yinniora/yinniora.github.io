@@ -106,6 +106,87 @@ func TestModelDiscoveryDoesNotForwardKeysThroughRedirects(t *testing.T) {
 	}
 }
 
+func TestEditModelKeyChecksCompatibilityBeforeReplacingCredential(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		name := "inline"
+		if legacy {
+			name = "legacy"
+		}
+		t.Run(name, func(t *testing.T) {
+			s := newTestServer(t)
+			const oldKey, newKey = "existing-fixture-key", "!replacement-$fixture-key"
+			service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/v1/models" {
+					t.Error("compatibility check requested more than the model catalog")
+				}
+				if r.Header.Get("Authorization") != "Bearer "+newKey {
+					http.Error(w, "invalid fixture key", http.StatusUnauthorized)
+					return
+				}
+				w.Write([]byte(`{"data":[{"id":"claude-fixture","supported_endpoint_types":["anthropic"]}]}`))
+			}))
+			defer service.Close()
+			p := map[string]any{"name": "Original", "baseUrl": service.URL + "/v1", "api": apiChat,
+				"models": []any{map[string]any{"id": "claude-fixture", "api": apiChat, "contextWindow": 123456}}}
+			auth := map[string]any{"unrelated": map[string]any{"type": "api_key", "key": "unrelated-fixture"}}
+			if legacy {
+				auth["target"] = map[string]any{"type": "api_key", "key": oldKey}
+			} else {
+				p["apiKey"] = oldKey
+			}
+			if err := writeModelConfig(s.agentDir, map[string]any{"providers": map[string]any{"target": p}}); err != nil {
+				t.Fatal(err)
+			}
+			authPath := filepath.Join(s.agentDir, "auth.json")
+			authBefore, _ := json.Marshal(auth)
+			if err := writePrivateModelFile(authPath, authBefore); err != nil {
+				t.Fatal(err)
+			}
+			_, data, _ := modelSettingsCall(t, s, nil)
+			req := map[string]any{"action": "edit", "id": "target", "revision": data["revision"], "label": "Renamed", "baseUrl": p["baseUrl"]}
+			code, data, body := modelSettingsCall(t, s, req)
+			if code != 200 || strings.Contains(body, oldKey) {
+				t.Fatalf("label edit failed or returned a credential, status %d", code)
+			}
+			req["revision"] = data["revision"]
+			req["key"] = "invalid-fixture"
+			code, _, _ = modelSettingsCall(t, s, req)
+			_, providers, rev, _ := readModelConfig(s.agentDir)
+			if code != 400 || rev != req["revision"] || s.modelProfileKey("target", providers["target"].(map[string]any)) != oldKey {
+				t.Fatal("a failed compatibility check replaced or changed the saved configuration")
+			}
+			req["key"] = newKey
+			code, data, body = modelSettingsCall(t, s, req)
+			if code != 200 || strings.Contains(body, newKey) || strings.Contains(body, oldKey) {
+				t.Fatalf("key edit failed or returned a credential, status %d", code)
+			}
+			profile := data["profiles"].([]any)[0].(map[string]any)
+			applied := profile["applied"].([]any)[0].(map[string]any)
+			if profile["id"] != "target" || profile["label"] != "Renamed" || profile["api"] != apiAnthropic || profile["catalogVerified"] != true ||
+				applied["api"] != apiAnthropic || applied["id"] != "claude-fixture" || applied["contextWindow"] != float64(123456) {
+				t.Fatalf("edit lost the applied model or detected API: %+v", profile)
+			}
+			_, providers, _, _ = readModelConfig(s.agentDir)
+			authAfter, _ := os.ReadFile(authPath)
+			if s.modelProfileKey("target", providers["target"].(map[string]any)) != newKey || strings.Contains(string(authAfter), oldKey) || !strings.Contains(string(authAfter), "unrelated-fixture") {
+				t.Fatal("the replacement did not take precedence or modified other credentials")
+			}
+		})
+	}
+}
+
+func TestEditModelEndpointRequiresKeyForNewServerAndMovesGeneratedRoutes(t *testing.T) {
+	gemini := map[string]any{"id": "gemini", "api": apiGemini, "baseUrl": "https://old.invalid/v1beta"}
+	p := map[string]any{"baseUrl": "https://old.invalid/v1", "api": apiChat, "models": []any{gemini}}
+	if _, err := editModelEndpoint(p, "https://new.invalid/v1", apiChat, false); err == nil {
+		t.Fatal("changing servers reused an existing key")
+	}
+	changed, err := editModelEndpoint(p, "https://new.invalid/v1", apiChat, true)
+	if err != nil || !changed || gemini["baseUrl"] != "https://new.invalid/v1beta" {
+		t.Fatalf("failed to update provider-owned model route: %+v (%v)", p, err)
+	}
+}
+
 func TestRemoveModelKeyPrunesCredentialModelsAndStaleCatalog(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		label := "inline"
@@ -165,7 +246,7 @@ func TestRemoveModelKeyRestoresLegacyCredentialIfConfigSaveFails(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(agent, "models.json"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := deleteModelKey(agent, "target", map[string]any{"providers": map[string]any{}}); err == nil {
+	if err := writeModelConfigWithoutLegacyKey(agent, "target", map[string]any{"providers": map[string]any{}}, false); err == nil {
 		t.Fatal("deletion unexpectedly replaced a directory")
 	}
 	if result, err := os.ReadFile(path); err != nil || string(result) != original {
