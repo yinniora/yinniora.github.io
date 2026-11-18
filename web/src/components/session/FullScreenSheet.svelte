@@ -1,14 +1,5 @@
 <script>
-  // Reusable full-screen sheet: a centered dialog on desktop, a fullscreen
-  // bottom-sheet on mobile (≤ 900px). Svelte port of the former
-  // live/full-screen-sheet.js (showSheet) — same markup/classes/behavior:
-  // scroll-lock (ref-counted), focus trap, Escape/backdrop close, and a
-  // synthetic history entry on mobile so the back gesture closes the sheet.
-  //
-  // Driven by a single bindable `open`; internal triggers (Escape, backdrop,
-  // back/close buttons, mobile popstate) set `open = false` and an $effect runs
-  // the open/close side effects. Body content is provided as the default snippet.
-  import { onMount, tick } from 'svelte';
+  // A sheet belongs to the current view and does not add a route.
   import { icon, X } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
 
@@ -33,57 +24,12 @@
     headerExtra = null,
   } = $props();
 
-  const SHEET_BREAKPOINT = 900;
-  const REMOVE_DELAY = 300; // must match the CSS transition duration
-
-  let mounted = $state(false); // DOM presence (stays true through the close anim)
-  let shown = $state(false); // toggles the `.open` class for the CSS transition
   let mobile = $state(false);
   let backdropEl = $state(null);
   let panelEl = $state(null);
 
-  let previousActive = null;
-  let removeTimer = null;
-  let popHandler = null;
-  let historyMarker = '';
-  let skipHistoryOnce = false;
-
-  // Backdrop click-to-close, attached imperatively (not inline onclick) to match
-  // the codebase's delegated-listener convention and avoid an a11y lint on a
-  // non-interactive element — Escape (onKey) is the keyboard equivalent.
   function onBackdrop(e) {
     if (closeOnBackdrop && e.target === backdropEl) open = false;
-  }
-
-  function isMobile() {
-    return (
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia(`(max-width: ${SHEET_BREAKPOINT}px)`).matches
-    );
-  }
-
-  let scrollLocked = false;
-
-  // Ref-counted page-scroll lock so nested/stacked sheets don't unlock early.
-  function lockScroll() {
-    if (scrollLocked) return;
-    scrollLocked = true;
-    const body = document.body;
-    const count = Number(body.dataset.piSheetCount || '0') + 1;
-    body.dataset.piSheetCount = String(count);
-    body.classList.add('pi-sheet-open');
-  }
-  function unlockScroll() {
-    if (!scrollLocked) return;
-    scrollLocked = false;
-    const body = document.body;
-    const count = Math.max(0, Number(body.dataset.piSheetCount || '0') - 1);
-    if (count === 0) {
-      delete body.dataset.piSheetCount;
-      body.classList.remove('pi-sheet-open');
-    } else {
-      body.dataset.piSheetCount = String(count);
-    }
   }
 
   function getFocusable() {
@@ -121,100 +67,49 @@
     }
   }
 
-  async function doOpen() {
-    mounted = true;
-    shown = false;
-    mobile = isMobile();
-    previousActive = document.activeElement;
-    lockScroll();
-    document.addEventListener('keydown', onKey);
-
-    if (mobile && window.history && typeof window.history.pushState === 'function') {
-      historyMarker = `pi-sheet:${Math.random().toString(36).slice(2, 8)}`;
-      const cur =
-        window.history.state && typeof window.history.state === 'object'
-          ? window.history.state
-          : {};
-      try {
-        window.history.pushState({ ...cur, __piSheet: historyMarker }, '', window.location?.href);
-      } catch {
-        /* ignore */
-      }
-      popHandler = () => {
-        skipHistoryOnce = true;
-        open = false;
-      };
-      window.addEventListener('popstate', popHandler);
-    }
-
-    await tick();
-    backdropEl?.addEventListener('click', onBackdrop);
-    requestAnimationFrame(() => {
-      shown = true;
-      // Focus the panel itself (tabindex=-1, outline:none) rather than the
-      // first focusable control. Focusing a button shows :focus-visible after
-      // any keyboard-mode trigger (e.g. opening via URL after Cmd-R refresh),
-      // which surfaces a stray focus ring on the back arrow. The focus trap
-      // still works — Tab moves into the contained focusables.
-      panelEl?.focus();
-    });
-  }
-
-  function doClose() {
-    backdropEl?.removeEventListener('click', onBackdrop);
-    document.removeEventListener('keydown', onKey);
-    if (popHandler) {
-      window.removeEventListener('popstate', popHandler);
-      if (!skipHistoryOnce && window.history?.state?.__piSheet === historyMarker) {
-        try {
-          window.history.back();
-        } catch {
-          /* ignore */
-        }
-      }
-      popHandler = null;
-    }
-    skipHistoryOnce = false;
-    unlockScroll();
-    shown = false;
-    clearTimeout(removeTimer);
-    removeTimer = setTimeout(() => {
-      mounted = false;
-      if (previousActive && typeof previousActive.focus === 'function') previousActive.focus();
-    }, REMOVE_DELAY);
-    if (onClose) onClose();
-  }
-
-  // Single source of truth: the bindable `open` drives mount + teardown.
   $effect(() => {
-    if (open && !mounted) doOpen();
-    else if (!open && mounted) doClose();
-  });
+    if (!open || !backdropEl || !panelEl) return;
+    const backdrop = backdropEl;
+    const panel = panelEl;
+    const previousActive = document.activeElement;
+    const isMobile = !!window.matchMedia?.('(max-width: 900px)').matches;
+    mobile = isMobile;
+    const { body } = document;
+    body.dataset.piSheetCount = String(Number(body.dataset.piSheetCount || 0) + 1);
+    body.classList.add('pi-sheet-open');
+    backdrop.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKey);
+    if (!isMobile) panel.focus({ preventScroll: true });
 
-  // Release any global listeners / scroll-lock / pending timer if the component
-  // is destroyed while still open (e.g. SPA route change).
-  onMount(() => () => {
-    document.removeEventListener('keydown', onKey);
-    backdropEl?.removeEventListener('click', onBackdrop);
-    if (popHandler) window.removeEventListener('popstate', popHandler);
-    clearTimeout(removeTimer);
-    unlockScroll();
+    return () => {
+      backdrop.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKey);
+      const count = Number(body.dataset.piSheetCount || 1) - 1;
+      if (count > 0) body.dataset.piSheetCount = String(count);
+      else {
+        delete body.dataset.piSheetCount;
+        body.classList.remove('pi-sheet-open');
+      }
+      if (!open) {
+        if (!isMobile && previousActive?.isConnected)
+          previousActive.focus?.({ preventScroll: true });
+        onClose?.();
+      }
+    };
   });
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
 
-{#if mounted}
+{#if open}
   <div
-    class="pi-sheet-backdrop {backdropClass}"
+    class="pi-sheet-backdrop open {backdropClass}"
     class:pi-sheet-mobile={mobile}
-    class:open={shown}
     bind:this={backdropEl}
   >
     <div
-      class="pi-sheet-panel {panelClass}"
+      class="pi-sheet-panel open {panelClass}"
       class:pi-sheet-mobile={mobile}
-      class:open={shown}
       bind:this={panelEl}
       role="dialog"
       aria-modal="true"

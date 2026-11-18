@@ -14,7 +14,7 @@
   import SessionsListSettings from '../components/settings/SessionsListSettings.svelte';
   import SessionTitleSettings from '../components/settings/SessionTitleSettings.svelte';
   import { t } from '../shared/i18n.js';
-  import { navigate } from '../shared/navigation.js';
+  import { navigate, replaceLocation } from '../shared/navigation.js';
   import { loadSettings, persistSetting } from '../settings/settings-support.js';
   import { createAppEvents } from '../shared/app-events.js';
   import { applyRemoteSettings } from '../shared/settings-live.js';
@@ -59,7 +59,9 @@
 
   function syncSectionUrl(win, id) {
     try {
-      win.history.replaceState(win.history.state, '', `${win.location.pathname}?section=${id}`);
+      replaceLocation(id ? `${win.location.pathname}?section=${id}` : win.location.pathname, {
+        windowImpl: win,
+      });
     } catch {}
   }
 
@@ -71,6 +73,7 @@
 
   function backToList() {
     mobileShowingPane = false;
+    syncSectionUrl(window, '');
   }
 
   function onHomeBack(e) {
@@ -78,11 +81,9 @@
     if (typeof e.button === 'number' && e.button !== 0) return;
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    if (cameFromApp && window.history && window.history.length > 1) {
-      window.history.back();
-    } else {
-      navigate('/');
-    }
+    navigate(typeof window.history.state?.back === 'string' ? window.history.state.back : '/', {
+      back: true,
+    });
   }
 
   function flashSaved() {
@@ -103,15 +104,7 @@
     const previousTitle = document.title;
     document.title = `${t('settings.title')} — ${t('app.name')}`;
 
-    try {
-      const ref = document.referrer;
-      cameFromApp =
-        !!ref &&
-        new URL(ref).origin === window.location.origin &&
-        new URL(ref).pathname !== '/settings';
-    } catch {
-      cameFromApp = false;
-    }
+    cameFromApp = typeof window.history.state?.back === 'string';
 
     const mq = window.matchMedia?.('(max-width: 760px)');
     const updateMobile = () => {

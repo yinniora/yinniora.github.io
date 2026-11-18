@@ -1,3 +1,4 @@
+import { replaceLocation } from '../shared/navigation.js';
 // Reactive open-state for the session viewer's modals/sheets. Replaces the
 // window.__piOpen* bridge: <SessionPage> binds the modal components to this
 // state, and any consumer — Svelte component or plain-JS runtime module
@@ -76,7 +77,7 @@ export function syncDiffUrlParam(open, { windowImpl } = {}) {
   else url.searchParams.delete(DIFF_URL_PARAM);
   // replaceState (not push) so back-button behavior is unchanged — closing the
   // modal must not require a second back press.
-  win.history.replaceState(win.history.state, '', url);
+  replaceLocation(url, { windowImpl: win });
 }
 
 export function hasDiffUrlParam({ windowImpl } = {}) {

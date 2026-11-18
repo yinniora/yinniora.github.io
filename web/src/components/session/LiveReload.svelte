@@ -120,6 +120,7 @@
 
     // ── Streaming chat preview ─────────────────────────────────────────────────
     const CHAT_PREVIEW_STATE = { chatPreviewEl: null, pendingUserEl: null };
+    cleanups.push(() => clearChatPreviewState(CHAT_PREVIEW_STATE));
 
     function clearChatPreview() {
       const statusEl = documentImpl.getElementById('pi-chat-status');

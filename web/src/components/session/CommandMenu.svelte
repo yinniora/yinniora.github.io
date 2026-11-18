@@ -352,4 +352,4 @@
   </div>
 </div>
 
-<CommandPalette {runningSessionIds} />
+<CommandPalette {runningSessionIds} navigate={(url) => navigate(url)} />

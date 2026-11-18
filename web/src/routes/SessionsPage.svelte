@@ -20,7 +20,7 @@
     hydrateSettings,
     writeSetting,
   } from '../shared/settings-store.js';
-  import { navigate, backState } from '../shared/navigation.js';
+  import { navigate, backState, handleNavClick } from '../shared/navigation.js';
   import { getJSON } from '../shared/api.js';
   import { t } from '../shared/i18n.js';
   import {
@@ -416,7 +416,9 @@
 <!-- eslint-disable svelte/no-at-html-tags -- Lucide icons only -->
 <div class="personal-home">
   <aside class="personal-home-nav" aria-label={t('home.navigation')}>
-    <a class="personal-brand" href="/">{t('app.name')}<span>Workspace</span></a>
+    <a class="personal-brand" href="/" onclick={(event) => handleNavClick(event, '/')}
+      >{t('app.name')}<span>Workspace</span></a
+    >
     <button class="personal-nav-new" onclick={openNewSessionModal}
       >{@html icon(Plus, { size: 18 })}{t('index.startNewSession')}</button
     >
@@ -436,7 +438,7 @@
     <button onclick={() => openHub('trash')}
       >{@html icon(Trash2, { size: 17 })}{t('hub.trash')}</button
     >
-    <button onclick={() => navigate('/settings')}
+    <button onclick={() => navigate('/settings', { state: backState() })}
       >{@html icon(Settings, { size: 17 })}{t('common.settings')}</button
     >
     <div class="personal-nav-caption">{t('home.privateWorkspace')}</div>

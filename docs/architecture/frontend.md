@@ -167,14 +167,21 @@ without asking the phone to pick a folder. The session header returns Home;
 the redundant mobile left drawer and session-creation/device shortcuts are
 hidden. Desktop keeps the existing sidebar and home composer.
 
-`trackVisualViewport` is installed once at App mount. The whole mobile session,
-model picker, sheets and BTW window use the same visible-height/offset variables.
+`trackVisualViewport` is installed once per document. The whole mobile session,
+model picker, sheets and BTW window use one height. A browser resize takes
+precedence. When the keyboard overlays an editor, the visual viewport height is
+the fallback. Focus-scroll offsets never translate the app shell.
 Editable controls use at least 16px text. Model selection and BTW opening do
 not automatically focus a text field on mobile; page zoom is blocked by viewport metadata, touch-action and non-passive mobile
 gesture guards. Only image-viewer controls scale an image, never the page. All
 phone routes scroll inside a bounded root; the outer document cannot pan or
 overscroll horizontally. The unpaired standalone entry installs the same guards
 before mounting the connection screen. Scroll remains inside the transcript, model results or sheet body.
+
+The installed app uses a bounded in-memory route stack for Home, Back and edge
+swipes. The current address is mirrored for reload and deep links. Browser tabs
+retain normal browser history. Sheets are view state, unmount on close, and
+never push or traverse history. Navigation clears the old view's input focus.
 
 `ImageModal` handles transcript/Markdown images and gallery images/SVGs in a
 native modal with an explicit close button, blank/letterbox dismissal, zoom and reset controls.

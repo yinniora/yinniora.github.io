@@ -20,6 +20,7 @@ export function createFollowScrollController({
   setTimeoutImpl = windowImpl.setTimeout.bind(windowImpl),
 } = {}) {
   const scrollImpls = { documentImpl, windowImpl };
+  let active = true;
   let following = true;
   let followBtn = null;
   let pendingCount = 0;
@@ -106,9 +107,10 @@ export function createFollowScrollController({
 
   function scrollAfterLayout(smooth, target) {
     requestAnimationFrameImpl(() => {
+      if (!active) return;
       scrollElementAboveComposer(target, !!smooth, scrollImpls);
       setTimeoutImpl(() => {
-        scrollElementAboveComposer(target, !!smooth, scrollImpls);
+        if (active) scrollElementAboveComposer(target, !!smooth, scrollImpls);
       }, 40);
     });
   }
@@ -141,6 +143,9 @@ export function createFollowScrollController({
     forceFollowToBottom,
     scrollAfterLayout,
     dispose: () => {
+      active = false;
+      followBtn?.remove();
+      followBtn = null;
       for (const fn of cleanups) fn();
     },
   };

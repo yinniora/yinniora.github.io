@@ -409,17 +409,20 @@ test("mobile workspace collapses projects, returns home and fits the keyboard vi
   await expect(page.locator("#spa-root")).toHaveCSS("height", "420px");
   const root = await page.locator("#spa-root").boundingBox(),
     composer = await page.locator("#pi-chat-composer").boundingBox();
-  expect(root!.y).toBe(24);
-  expect(composer!.y + composer!.height).toBeLessThanOrEqual(445);
+  expect(root!.y).toBe(0);
+  expect(composer!.y + composer!.height).toBeLessThanOrEqual(421);
+  expect(composer!.y + composer!.height).toBeGreaterThan(418);
   await page.locator("#pi-chat-model-label").click();
   await expect(page.locator("#pi-chat-model-popup")).toBeVisible();
+  await page.locator("#pi-chat-model-search").focus();
+  await expect(page.locator("#spa-root")).toHaveCSS("height", "420px");
   expect(
     await page
       .locator("#pi-chat-model-search")
       .evaluate((el) => getComputedStyle(el).fontSize),
   ).toBe("16px");
   const picker = await page.locator("#pi-chat-model-popup").boundingBox();
-  expect(picker!.y + picker!.height).toBeLessThanOrEqual(445);
+  expect(picker!.y + picker!.height).toBeLessThanOrEqual(421);
   await page.locator(".mobile-model-heading button").click();
   await page.locator(".session-header-back").click();
   await expect(page.locator(".mobile-home")).toBeVisible();
@@ -428,6 +431,88 @@ test("mobile workspace collapses projects, returns home and fits the keyboard vi
     path: testInfo.outputPath("mobile-home.png"),
     scale: "css",
   });
+});
+
+test("installed app edge swipes keep views and controls usable without browser history entries", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const { entries } = buildSession({ cwd: realWorkingDir() });
+  const id = writeSession(
+    sessionsDir,
+    uniqueSessionName(testInfo, "edge-swipes"),
+    entries,
+  );
+  await collapseScratchpad(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "standalone", {
+      value: true,
+      configurable: true,
+    });
+  });
+  await page.goto("/");
+  test.skip(!(await isMobileLayout(page)), "mobile layout");
+  const initialLength = await page.evaluate(() => history.length);
+  const session = page.locator(`a[data-session-id="${id}"]`);
+  const composer = page.locator("#pi-chat-message");
+  const home = page.locator(".mobile-home");
+  const swipe = (from: "left" | "right", cancel = false) =>
+    page.evaluate(
+      ({ from, cancel }) => {
+        const start = from === "left" ? 8 : innerWidth - 8;
+        const x = start + (from === "left" ? 105 : -105);
+        const touch = { clientX: start, clientY: 150, identifier: 1 };
+        function fire(
+          type: string,
+          touches: unknown[],
+          changedTouches: unknown[] = [],
+        ) {
+          const event = new Event(type, { bubbles: true, cancelable: true });
+          Object.defineProperties(event, {
+            touches: { value: touches },
+            changedTouches: { value: changedTouches },
+          });
+          document.querySelector("#spa-root")!.dispatchEvent(event);
+        }
+        fire("touchstart", [touch]);
+        fire("touchmove", [{ ...touch, clientX: x }]);
+        if (cancel) fire("touchcancel", []);
+        fire("touchend", [], [{ ...touch, clientX: x }]);
+      },
+      { from, cancel },
+    );
+
+  await session.tap();
+  await expect(composer).toBeVisible();
+  await swipe("right");
+  await expect(composer).toBeVisible();
+  await swipe("left", true);
+  await expect(composer).toBeVisible();
+  for (let i = 0; i < 5; i += 1) {
+    await swipe("left");
+    await expect(home).toBeVisible();
+    await swipe("left");
+    await expect(home).toBeVisible();
+    await swipe("right");
+    await expect(composer).toBeVisible();
+  }
+  await page.evaluate(() =>
+    window.dispatchEvent(new CustomEvent("pi:devices")),
+  );
+  const sheet = page.getByRole("dialog", { name: "Devices", exact: true });
+  await expect(sheet).toBeVisible();
+  await swipe("left");
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "Close Devices", exact: true }).tap();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.locator("body")).not.toHaveClass(/\bpi-sheet-open\b/);
+  await expect(composer).toBeEditable();
+  await composer.fill("still editable");
+  await page.locator(".session-header-back").tap();
+  await expect(home).toBeVisible();
+  await swipe("right");
+  await expect(composer).toBeVisible();
+  expect(await page.evaluate(() => history.length)).toBe(initialLength);
 });
 
 test("mobile images zoom independently and BTW explains itself before opening the keyboard", async ({

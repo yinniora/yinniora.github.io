@@ -65,7 +65,8 @@ export function runChatComposer({
   const URLSearchParams = URLSearchParamsImpl;
   const CustomEvent = CustomEventImpl;
   const setInterval = setIntervalImpl;
-  const cleanups = [];
+  const scope = window.AbortController ? new window.AbortController() : null;
+  const cleanups = [() => scope?.abort()];
   let onWorkerModelUpdate = null;
   let currentModelForThinking = null;
   let positionPopover = () => {};
@@ -89,6 +90,7 @@ export function runChatComposer({
   const setModelLabel = toolbar.setModelLabel;
   const setThinkingLabel = toolbar.setThinkingLabel;
   const selectorLoaders = createChatSelectorLoaders({
+    scope: scope?.signal,
     documentImpl: document,
     windowImpl: window,
     locationImpl: location,
@@ -276,6 +278,7 @@ export function runChatComposer({
     _thinkingSelectorApi = selectorLoaders.loadThinkingSelector();
     _slashSelectorApi = selectorLoaders.loadSlashSelector();
     _mentionSelectorApi = selectorLoaders.loadMentionSelector();
+    cleanups.push(() => _mentionSelectorApi?.close?.());
   }
 
   if (document.readyState === 'loading') {

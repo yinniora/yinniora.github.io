@@ -23,6 +23,7 @@ export function renderThinkingLevelList({
 
 export function setupThinkingLevelSelector({
   documentImpl = document,
+  scope,
   windowImpl = window,
   sessionId,
   entries = [],
@@ -102,15 +103,19 @@ export function setupThinkingLevelSelector({
     await cycleQueue;
   });
 
-  documentImpl.addEventListener('click', (e) => {
-    if (
-      thinkingPopup.style.display !== 'none' &&
-      !thinkingPopup.contains(e.target) &&
-      e.target !== thinkingLabelBtn
-    ) {
-      closeThinkingPopup();
-    }
-  });
+  documentImpl.addEventListener(
+    'click',
+    (e) => {
+      if (
+        thinkingPopup.style.display !== 'none' &&
+        !thinkingPopup.contains(e.target) &&
+        e.target !== thinkingLabelBtn
+      ) {
+        closeThinkingPopup();
+      }
+    },
+    { signal: scope },
+  );
 
   // Cycle to the next supported thinking level without opening the popup.
   async function cycleThinkingLevel() {

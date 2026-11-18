@@ -143,7 +143,9 @@
     <div class="session-loading" role="status" aria-live="polite">
       <span class="session-loading-spinner" aria-hidden="true"></span>
       <span class="session-loading-text">{t('session.loading')}</span>
-      <a href="/" onclick={(event) => handleNavClick(event, '/')}>{t('session.backToSessions')}</a>
+      <a href="/" onclick={(event) => handleNavClick(event, '/', { back: true })}
+        >{t('session.backToSessions')}</a
+      >
     </div>
   {/if}
 {:else if error}
@@ -151,7 +153,9 @@
     <h1>{error}</h1>
     <button type="button" class="btn-secondary" onclick={onRetry}>{t('common.retry')}</button>
     <p>
-      <a href="/" onclick={(event) => handleNavClick(event, '/')}>{t('session.backToSessions')}</a>
+      <a href="/" onclick={(event) => handleNavClick(event, '/', { back: true })}
+        >{t('session.backToSessions')}</a
+      >
     </p>
   </div>
 {:else}

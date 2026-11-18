@@ -10,7 +10,7 @@
   import NotFoundPage from './routes/NotFoundPage.svelte';
   import VersionController from './components/shared/VersionController.svelte';
   import { trackVisualViewport } from './shared/visual-viewport.js';
-  import { handleNavClick } from './shared/navigation.js';
+  import { handleNavClick, setupInstalledNavigation } from './shared/navigation.js';
   import { t } from './shared/i18n.js';
 
   let {
@@ -32,15 +32,9 @@
   let sessionAttempt = $state(0);
   const retrySession = () => (sessionAttempt += 1);
 
-  // Make in-app history navigation swap views without a full reload. popstate
-  // covers back/forward; pushState/replaceState don't emit a native event, so
-  // we wrap them to dispatch one. syncPath re-reads pathname + search: the
-  // pathname drives which page renders, and search drives the session-route
-  // {#key} so /session?id=A → ?id=B remounts <SessionPage>. A pushState that
-  // changes neither (e.g. FullScreenSheet's mobile back-button trap, which
-  // pushes the same URL) is a no-op.
   onMount(() => {
     const stopViewport = trackVisualViewport();
+    const stopNavigation = setupInstalledNavigation();
     const remoteEvents = createAppEvents({
       event: 'remote-config',
       onEvent: (config) => window.__PI_REMOTE_CLIENT__?.updateConfiguration(config),
@@ -51,26 +45,12 @@
       if (path !== window.location.pathname || sessionId !== nextSessionId) {
         const root = document.getElementById('spa-root');
         if (root) root.scrollTop = 0;
+        const focused = document.activeElement;
+        if (focused?.matches('input, textarea, [contenteditable]')) focused.blur();
       }
       path = window.location.pathname;
       search = window.location.search;
     };
-    const { history } = window;
-    const wrap = (name) => {
-      const original = history[name];
-      if (typeof original !== 'function' || original.__piPatched) return original;
-      const patched = function (...args) {
-        const result = original.apply(this, args);
-        window.dispatchEvent(new window.CustomEvent('pi:locationchange'));
-        return result;
-      };
-      patched.__piPatched = true;
-      patched.__piOriginal = original;
-      history[name] = patched;
-      return original;
-    };
-    const originalPush = wrap('pushState');
-    const originalReplace = wrap('replaceState');
     window.addEventListener('popstate', syncPath);
     window.addEventListener('pi:locationchange', syncPath);
     const restorePath = (event) => {
@@ -79,13 +59,11 @@
     window.addEventListener('pageshow', restorePath);
     return () => {
       stopViewport();
+      stopNavigation();
       remoteEvents.cleanup();
       window.removeEventListener('popstate', syncPath);
       window.removeEventListener('pi:locationchange', syncPath);
       window.removeEventListener('pageshow', restorePath);
-      if (history.pushState?.__piOriginal === originalPush) history.pushState = originalPush;
-      if (history.replaceState?.__piOriginal === originalReplace)
-        history.replaceState = originalReplace;
     };
   });
 </script>
@@ -103,7 +81,7 @@
             >{t('common.retry')}</button
           >
           <p>
-            <a href="/" onclick={(event) => handleNavClick(event, '/')}
+            <a href="/" onclick={(event) => handleNavClick(event, '/', { back: true })}
               >{t('session.backToSessions')}</a
             >
           </p>
@@ -121,5 +99,7 @@
 
 <VersionController />
 
-<HubPanel />
-<DevicePanel />
+{#key `${path}:${sessionId}`}
+  <HubPanel />
+  <DevicePanel />
+{/key}

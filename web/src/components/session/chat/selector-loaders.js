@@ -14,6 +14,7 @@ const noopKeydownSelector = { handleKeydown: () => false };
 
 export function createChatSelectorLoaders({
   documentImpl = document,
+  scope,
   windowImpl = window,
   locationImpl = windowImpl.location,
   URLSearchParamsImpl = URLSearchParams,
@@ -40,6 +41,7 @@ export function createChatSelectorLoaders({
   function loadModelSelector() {
     return modelSelector.setupModelSelector({
       documentImpl,
+      ...(scope ? { scope } : {}),
       sessionId: getSessionId(),
       entries,
       chatApi,
@@ -59,6 +61,7 @@ export function createChatSelectorLoaders({
     }
     return slashSelector.setupSlashCommands({
       documentImpl,
+      ...(scope ? { scope } : {}),
       sessionId: getSessionId(),
       chatApi,
       escapeHtml,
@@ -71,6 +74,7 @@ export function createChatSelectorLoaders({
     }
     return mentionSelector.setupMentionAutocomplete({
       documentImpl,
+      ...(scope ? { scope } : {}),
       windowImpl,
       sessionId: getSessionId(),
       chatApi,
@@ -81,6 +85,7 @@ export function createChatSelectorLoaders({
   function loadThinkingSelector() {
     return thinkingSelector.setupThinkingLevelSelector({
       documentImpl,
+      ...(scope ? { scope } : {}),
       windowImpl,
       sessionId: getSessionId(),
       entries,

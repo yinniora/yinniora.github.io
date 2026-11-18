@@ -87,6 +87,7 @@ export function renderCommandList(
 
 export function setupSlashCommands({
   documentImpl = document,
+  scope,
   sessionId,
   chatApi,
   escapeHtml = String,
@@ -221,9 +222,13 @@ export function setupSlashCommands({
     insert(item.dataset.insert || '');
   });
 
-  documentImpl.addEventListener('click', (event) => {
-    if (isOpen() && !popup.contains(event.target) && event.target !== textarea) close();
-  });
+  documentImpl.addEventListener(
+    'click',
+    (event) => {
+      if (isOpen() && !popup.contains(event.target) && event.target !== textarea) close();
+    },
+    { signal: scope },
+  );
 
   return { handleKeydown, open, close, isOpen, refresh };
 }

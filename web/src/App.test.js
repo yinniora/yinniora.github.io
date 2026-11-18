@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { flushSync, unmount } from 'svelte';
 import { mountApp } from './main.js';
+import { navigate, replaceLocation } from './shared/navigation.js';
 
 let mounted;
 
@@ -63,7 +64,7 @@ describe('App', () => {
     flushSync(); // let onMount attach the history listeners
     expect(document.querySelector('[data-sessions-content]')).toBeTruthy();
 
-    window.history.pushState({}, '', '/settings');
+    navigate('/settings');
     flushSync();
 
     expect(document.querySelector('.session-header-title')?.textContent).toBe('Settings');
@@ -75,7 +76,7 @@ describe('App', () => {
     mounted = mountApp({ props: { path: '/' } });
     flushSync(); // let onMount attach the history listeners
 
-    window.history.pushState({}, '', '/settings');
+    navigate('/settings');
     flushSync();
     expect(document.querySelector('.settings-page')).toBeTruthy();
 
@@ -89,16 +90,14 @@ describe('App', () => {
     expect(document.querySelector('[data-sessions-content]')).toBeTruthy();
   });
 
-  it('does not swap when pushState keeps the same pathname', () => {
+  it('does not remount for a settings URL update', () => {
     document.body.innerHTML = '<div id="app"></div>';
     window.history.pushState({}, '', '/settings');
     mounted = mountApp({ props: { path: '/settings' } });
     flushSync(); // let onMount attach the history listeners
     expect(document.querySelector('.settings-page')).toBeTruthy();
 
-    // Mirrors FullScreenSheet's mobile back-button trap: a pushState that keeps
-    // the pathname must not tear down and remount the current page.
-    window.history.pushState({}, '', '/settings?sheet=1');
+    replaceLocation('/settings?section=appearance');
     flushSync();
 
     expect(document.querySelector('.settings-page')).toBeTruthy();
@@ -118,7 +117,7 @@ describe('App', () => {
       expect(fetchSpy.mock.calls.some(([url]) => String(url).includes('id=A'))).toBe(true);
 
       fetchSpy.mockClear();
-      window.history.pushState({}, '', '/session?id=B');
+      navigate('/session?id=B');
       flushSync();
       expect(fetchSpy.mock.calls.some(([url]) => String(url).includes('id=B'))).toBe(true);
     } finally {
@@ -139,7 +138,7 @@ describe('App', () => {
       // A within-session URL change (non-id query param) must not tear down and
       // reload the live session view.
       fetchSpy.mockClear();
-      window.history.pushState({}, '', '/session?id=A&panel=tree');
+      replaceLocation('/session?id=A&panel=tree');
       flushSync();
       expect(fetchSpy).not.toHaveBeenCalled();
     } finally {

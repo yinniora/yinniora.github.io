@@ -297,7 +297,7 @@
   }
   @media (max-width: 900px) {
     dialog.image-modal {
-      top: var(--pi-visual-top, 0px);
+      top: 0;
       bottom: auto;
       height: var(--pi-visual-height, 100dvh);
     }

@@ -37,6 +37,7 @@ export function renderFileList(files, { escapeHtml = String, loading = false } =
 
 export function setupMentionAutocomplete({
   documentImpl = document,
+  scope,
   windowImpl = window,
   sessionId,
   chatApi,
@@ -185,9 +186,13 @@ export function setupMentionAutocomplete({
     insert(item.dataset.insert || '', item.dataset.isdir === '1');
   });
 
-  documentImpl.addEventListener('click', (event) => {
-    if (isOpen() && !popup.contains(event.target) && event.target !== textarea) close();
-  });
+  documentImpl.addEventListener(
+    'click',
+    (event) => {
+      if (isOpen() && !popup.contains(event.target) && event.target !== textarea) close();
+    },
+    { signal: scope },
+  );
 
   return { handleKeydown, open, close, isOpen, refresh };
 }

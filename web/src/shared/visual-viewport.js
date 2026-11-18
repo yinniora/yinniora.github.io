@@ -1,48 +1,65 @@
 const viewportTrackers = new WeakMap();
 const zoomLocks = new WeakMap();
 
-// One viewport for the whole mobile UI: header, content, composer and sheets.
-// Ignore page pinch zoom so an enlarged image does not relayout the application.
+// A resize of the layout viewport already accounts for the keyboard. Only
+// fall back to the visual viewport on browsers where the keyboard overlays it.
 export function trackVisualViewport({ windowImpl = window, documentImpl = document } = {}) {
   if (viewportTrackers.has(documentImpl)) return () => {};
   const viewport = windowImpl.visualViewport;
   const style = documentImpl.documentElement.style;
   let frame = 0;
+  let restingHeight = windowImpl.innerHeight;
+  let width = windowImpl.innerWidth;
   const update = () => {
     frame = 0;
     if (viewport && Math.abs(viewport.scale - 1) > 0.01) return;
     const layoutHeight = windowImpl.innerHeight;
+    if (!Number.isFinite(layoutHeight) || layoutHeight < 1) return;
+    const active = documentImpl.activeElement;
+    const editing =
+      active?.matches(
+        'textarea, [contenteditable]:not([contenteditable="false"]), input:not([type]), input:is([type="text"], [type="search"], [type="url"], [type="email"], [type="password"], [type="tel"], [type="number"])',
+      ) &&
+      !active.readOnly &&
+      !active.disabled;
+    if (!editing || width !== windowImpl.innerWidth) restingHeight = layoutHeight;
+    width = windowImpl.innerWidth;
     const reportedHeight = viewport?.height;
-    const height =
-      reportedHeight >= Math.min(120, layoutHeight)
-        ? Math.min(reportedHeight, layoutHeight)
-        : layoutHeight;
-    const keyboard = layoutHeight - height > 120;
-    const top = keyboard
-      ? Math.min(layoutHeight - height, Math.max(0, viewport?.offsetTop || 0))
-      : 0;
+    const layoutAlreadyResized = restingHeight - layoutHeight > 100;
+    const overlay =
+      editing &&
+      !layoutAlreadyResized &&
+      reportedHeight >= Math.min(120, layoutHeight) &&
+      layoutHeight - reportedHeight > 100;
+    const height = overlay ? reportedHeight : layoutHeight;
     style.setProperty('--pi-visual-height', `${height}px`);
-    style.setProperty('--pi-visual-top', `${top}px`);
-    documentImpl.documentElement.classList.toggle('pi-keyboard-open', keyboard);
+    documentImpl.documentElement.classList.toggle(
+      'pi-keyboard-open',
+      Boolean(editing && (layoutAlreadyResized || overlay)),
+    );
   };
   const schedule = () => {
     if (!frame) frame = windowImpl.requestAnimationFrame(update);
   };
   viewport?.addEventListener('resize', schedule);
-  viewport?.addEventListener('scroll', schedule);
   windowImpl.addEventListener('resize', schedule);
   windowImpl.addEventListener('popstate', schedule);
   windowImpl.addEventListener('pageshow', schedule);
+  documentImpl.addEventListener('focusin', schedule);
+  documentImpl.addEventListener('focusout', schedule);
+  documentImpl.addEventListener('visibilitychange', schedule);
   update();
   const dispose = () => {
     viewportTrackers.delete(documentImpl);
     viewport?.removeEventListener('resize', schedule);
-    viewport?.removeEventListener('scroll', schedule);
     windowImpl.removeEventListener('resize', schedule);
     windowImpl.removeEventListener('popstate', schedule);
     windowImpl.removeEventListener('pageshow', schedule);
+    documentImpl.removeEventListener('focusin', schedule);
+    documentImpl.removeEventListener('focusout', schedule);
+    documentImpl.removeEventListener('visibilitychange', schedule);
     windowImpl.cancelAnimationFrame(frame);
-    for (const name of ['--pi-visual-height', '--pi-visual-top']) style.removeProperty(name);
+    style.removeProperty('--pi-visual-height');
     documentImpl.documentElement.classList.remove('pi-keyboard-open');
   };
   viewportTrackers.set(documentImpl, dispose);

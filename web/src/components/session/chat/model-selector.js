@@ -6,6 +6,7 @@ import {
   modelDisplayLabel,
 } from '../../../session/chat/chat-selectors.js';
 import { t } from '../../../shared/i18n.js';
+import { handleNavClick, backState } from '../../../shared/navigation.js';
 
 export function renderModelList(
   models,
@@ -37,6 +38,7 @@ export function renderModelList(
 
 export function setupModelSelector({
   documentImpl = document,
+  scope,
   sessionId,
   entries = [],
   chatApi,
@@ -143,6 +145,15 @@ export function setupModelSelector({
   });
 
   popupList?.addEventListener('click', async (e) => {
+    const settings = e.target.closest('a[href="/settings?section=models"]');
+    if (settings) {
+      const windowImpl = documentImpl.defaultView;
+      handleNavClick(e, settings.getAttribute('href'), {
+        windowImpl,
+        state: backState({ windowImpl }),
+      });
+      return;
+    }
     const item = e.target.closest('.model-item');
     if (!item) return;
     const provider = item.dataset.provider;
@@ -168,12 +179,16 @@ export function setupModelSelector({
     }
   });
 
-  documentImpl.addEventListener('click', (e) => {
-    if (popup && popup.style.display !== 'none') {
-      const modelLabelBtnEl = documentImpl.getElementById('pi-chat-model-label');
-      if (!popup.contains(e.target) && e.target !== modelLabelBtnEl) closePopup();
-    }
-  });
+  documentImpl.addEventListener(
+    'click',
+    (e) => {
+      if (popup && popup.style.display !== 'none') {
+        const modelLabelBtnEl = documentImpl.getElementById('pi-chat-model-label');
+        if (!popup.contains(e.target) && e.target !== modelLabelBtnEl) closePopup();
+      }
+    },
+    { signal: scope },
+  );
 
   // Load the model list asynchronously; the button is already wired.
   // Fire-and-forget: the popup opens immediately (Ctrl+L) and renders
