@@ -1,6 +1,6 @@
 // The independently hosted client sends HTTP over the authenticated page's
 // DTLS channel. Media Range requests stream through the same encrypted path.
-const CACHE = 'pi-remote-0.1.0-yugo.11';
+const CACHE = 'pi-remote-0.1.0-yugo.12';
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
