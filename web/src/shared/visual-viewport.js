@@ -11,9 +11,18 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
   const update = () => {
     frame = 0;
     if (viewport && Math.abs(viewport.scale - 1) > 0.01) return;
-    style.setProperty('--pi-visual-height', `${viewport?.height || windowImpl.innerHeight}px`);
-    style.setProperty('--pi-visual-top', `${Math.max(0, viewport?.offsetTop || 0)}px`);
-    const keyboard = windowImpl.innerHeight - (viewport?.height || windowImpl.innerHeight) > 120;
+    const layoutHeight = windowImpl.innerHeight;
+    const reportedHeight = viewport?.height;
+    const height =
+      reportedHeight >= Math.min(120, layoutHeight)
+        ? Math.min(reportedHeight, layoutHeight)
+        : layoutHeight;
+    const keyboard = layoutHeight - height > 120;
+    const top = keyboard
+      ? Math.min(layoutHeight - height, Math.max(0, viewport?.offsetTop || 0))
+      : 0;
+    style.setProperty('--pi-visual-height', `${height}px`);
+    style.setProperty('--pi-visual-top', `${top}px`);
     documentImpl.documentElement.classList.toggle('pi-keyboard-open', keyboard);
   };
   const schedule = () => {
@@ -22,12 +31,16 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
   viewport?.addEventListener('resize', schedule);
   viewport?.addEventListener('scroll', schedule);
   windowImpl.addEventListener('resize', schedule);
+  windowImpl.addEventListener('popstate', schedule);
+  windowImpl.addEventListener('pageshow', schedule);
   update();
   const dispose = () => {
     viewportTrackers.delete(documentImpl);
     viewport?.removeEventListener('resize', schedule);
     viewport?.removeEventListener('scroll', schedule);
     windowImpl.removeEventListener('resize', schedule);
+    windowImpl.removeEventListener('popstate', schedule);
+    windowImpl.removeEventListener('pageshow', schedule);
     windowImpl.cancelAnimationFrame(frame);
     for (const name of ['--pi-visual-height', '--pi-visual-top']) style.removeProperty(name);
     documentImpl.documentElement.classList.remove('pi-keyboard-open');

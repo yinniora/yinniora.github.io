@@ -27,6 +27,7 @@ export async function handleSessionReload({
   if (!response.ok || signal?.aborted) return;
   const data = await response.json();
   if (signal?.aborted) return;
+  if (data?.sessionId && data.sessionId !== sessionId) return;
   const entries = data.entries || [];
   onReloaded({ ...data, entries });
   if (typeof data.name === 'string' && data.name.trim()) {

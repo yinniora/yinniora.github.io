@@ -132,7 +132,11 @@ export async function loadSessionPageState({
 
   // Prefer the payload embedded in the page shell — no fetch on first paint.
   const boot = readSessionBootstrap({ documentImpl, atobImpl, TextDecoderImpl });
-  if (boot && boot.id === sessionId && boot.data) {
+  if (
+    boot?.id === sessionId &&
+    boot.data &&
+    (!boot.data.sessionId || boot.data.sessionId === sessionId)
+  ) {
     return buildSessionPageState({
       sessionId,
       data: boot.data,
@@ -154,6 +158,7 @@ export async function loadSessionPageState({
       data = null;
     }
   }
+  if (data?.sessionId && data.sessionId !== sessionId) data = null;
   signal?.throwIfAborted();
   if (!data) {
     const resp = await fetchImpl(`/api/session?id=${encodeURIComponent(sessionId)}&paginate=1`, {
@@ -163,6 +168,7 @@ export async function loadSessionPageState({
     if (!resp.ok)
       throw new Error(resp.status === 404 ? t('session.notFound') : t('session.loadFailed'));
     data = await resp.json();
+    if (data?.sessionId && data.sessionId !== sessionId) throw new Error(t('session.loadFailed'));
   }
   // Scratchpad is sidebar content, not on the first-paint path: returning ''
   // here lets the session render as soon as /api/session resolves, and

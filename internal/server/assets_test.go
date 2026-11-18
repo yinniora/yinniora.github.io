@@ -72,6 +72,23 @@ func TestAssetsListRecentFilesAndReferencedOlderFiles(t *testing.T) {
 	}
 }
 
+func TestSessionGalleryExcludesUnrelatedRecentFiles(t *testing.T) {
+	s, cwd := assetTestServer(t)
+	createAsset(t, cwd, "old.svg")
+	createAsset(t, cwd, "from-another-conversation.svg")
+	w := httptest.NewRecorder()
+	s.handleAssets(w, httptest.NewRequest("GET", "/api/assets?id=a.jsonl&scope=session", nil))
+	var body struct {
+		Assets []workspaceAsset `json:"assets"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || len(body.Assets) != 1 || body.Assets[0].Path != "old.svg" {
+		t.Fatalf("session gallery listed an unrelated file: %d %+v", w.Code, body.Assets)
+	}
+}
+
 func TestAssetRejectsTraversalHiddenPathsAndEscapingSymlinks(t *testing.T) {
 	s, cwd := assetTestServer(t)
 	outside := filepath.Join(t.TempDir(), "outside.svg")

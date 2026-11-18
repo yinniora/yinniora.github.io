@@ -30,9 +30,13 @@ it('resizes the whole visible area for a keyboard and ignores page pinch zoom', 
   expect(document.documentElement.style.getPropertyValue('--pi-visual-height')).toBe('390px');
   viewport.scale = 1;
   viewport.height = 760;
-  viewport.offsetTop = 0;
-  viewport.dispatchEvent(new Event('resize'));
+  viewport.offsetTop = 500;
+  win.dispatchEvent(new Event('pageshow'));
+  expect(document.documentElement.style.getPropertyValue('--pi-visual-top')).toBe('0px');
   expect(document.documentElement.classList.contains('pi-keyboard-open')).toBe(false);
+  viewport.height = 1;
+  win.dispatchEvent(new Event('popstate'));
+  expect(document.documentElement.style.getPropertyValue('--pi-visual-height')).toBe('760px');
   dispose();
   expect(document.documentElement.style.getPropertyValue('--pi-visual-height')).toBe('');
   viewport.height = 300;

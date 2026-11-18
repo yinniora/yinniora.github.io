@@ -42,15 +42,15 @@ export function collectOutputs(entries, assets = [], cwd = '', sessionId = '') {
   return files;
 }
 
-// SVG runs without script permission. HTML is click-to-run in an opaque origin.
-export function outputDocument(content, kind = 'svg') {
-  const scripts = kind === 'html' ? " script-src 'unsafe-inline';" : '';
-  const csp = `default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:;${scripts}`;
-  const fit =
-    kind === 'svg'
-      ? '<style>html,body{margin:0;height:100%;overflow:hidden;background:#fff}body>svg{display:block;width:100%;height:100vh}</style>'
-      : '';
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}">${fit}</head><body>${content || ''}</body></html>`;
+export function svgPreviewURL(content) {
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(String(content).toWellFormed());
+}
+
+// HTML opens on request in a sandboxed iframe with an opaque origin.
+export function outputDocument(content) {
+  const csp =
+    "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; script-src 'unsafe-inline';";
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"></head><body>${content || ''}</body></html>`;
 }
 
 export function formatAssetSize(bytes) {

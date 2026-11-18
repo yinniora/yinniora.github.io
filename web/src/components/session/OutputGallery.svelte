@@ -7,6 +7,7 @@
   import {
     collectOutputs,
     outputDocument,
+    svgPreviewURL,
     formatAssetSize,
   } from '../../session/artifacts/outputs.js';
   import FullScreenSheet from './FullScreenSheet.svelte';
@@ -27,7 +28,7 @@
     if (!sessionId) return;
     try {
       const response = await (fetchImpl || fetch)(
-        `/api/assets?id=${encodeURIComponent(sessionId)}`,
+        `/api/assets?id=${encodeURIComponent(sessionId)}&scope=session`,
       );
       if (!response.ok) return;
       const data = await response.json();
@@ -62,10 +63,7 @@
       window.dispatchEvent(
         new CustomEvent('pi:image-preview', {
           detail: {
-            src:
-              output.kind === 'svg'
-                ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(output.content)
-                : output.previewUrl,
+            src: output.kind === 'svg' ? svgPreviewURL(output.content) : output.previewUrl,
             alt: output.title,
           },
         }),
@@ -152,20 +150,18 @@
             >
           </div>
           {#if output.kind === 'svg' && output.content}
-            <div class="output-svg-preview">
-              <iframe
+            <button
+              class="output-image-button"
+              aria-label={`${t('media.enlarge')} ${output.title}`}
+              onclick={() => open(output)}
+            >
+              <img
                 class="output-inline-preview"
-                title={output.title}
-                sandbox=""
-                referrerpolicy="no-referrer"
-                srcdoc={outputDocument(output.content)}
-              ></iframe>
-              <button
-                class="output-svg-enlarge"
-                aria-label={`${t('media.enlarge')} ${output.title}`}
-                onclick={() => open(output)}
-              ></button>
-            </div>
+                src={svgPreviewURL(output.content)}
+                alt={output.title}
+                loading="lazy"
+              />
+            </button>
           {:else if output.kind === 'image'}
             <button
               class="output-image-button"
@@ -212,13 +208,15 @@
         >
       </div>
       {#if error}<p class="output-error">{error}</p>{/if}
-      {#if selected.kind === 'svg' || selected.kind === 'html'}
+      {#if selected.kind === 'svg' && previewText}
+        <img class="output-full-image" src={svgPreviewURL(previewText)} alt={selected.title} />
+      {:else if selected.kind === 'html'}
         <iframe
           class="output-full-frame"
           title={selected.title}
-          sandbox={selected.kind === 'html' ? 'allow-scripts' : ''}
+          sandbox="allow-scripts"
           referrerpolicy="no-referrer"
-          srcdoc={outputDocument(previewText, selected.kind)}
+          srcdoc={outputDocument(previewText)}
         ></iframe>
       {:else if selected.kind === 'image'}
         <img class="output-full-image" src={selected.previewUrl} alt={selected.title} />

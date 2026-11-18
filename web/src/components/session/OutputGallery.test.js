@@ -28,9 +28,9 @@ it('shows SVG, images, videos and audio inline through authenticated asset URLs'
     },
   });
   await waitFor(() => expect(document.querySelectorAll('.output-card')).toHaveLength(4));
-  const frame = document.querySelector('iframe');
-  expect(frame.getAttribute('sandbox')).toBe('');
-  expect(frame.srcdoc).toContain("default-src 'none'");
+  const svg = document.querySelector('img.output-inline-preview');
+  expect(svg.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+  expect(document.querySelector('iframe')).toBeNull();
   expect(document.querySelector('video').hasAttribute('controls')).toBe(true);
   expect(document.querySelector('video').hasAttribute('playsinline')).toBe(true);
   expect(document.querySelector('video').getAttribute('src')).toContain('/api/asset?');

@@ -141,7 +141,7 @@ The live SPA shell uses `theme.css`, `index.css`, `settings.css`, `schedules.css
 
 ## Personal client
 
-The live client adds `OutputGallery` with confined asset URLs and scriptless SVG previews, plus `personal.css` for desktop/mobile layout. `remote-entry.js` boots the independent DTLS client before mounting the same SPA. Its service worker sends native media/download requests through that authenticated channel; it does not cache private content. See [remote security](remote-security.md). Static exports remain independent.
+The live client adds `OutputGallery` with confined asset URLs and scriptless SVG previews, plus `personal.css` for desktop/mobile layout. The gallery requests files referenced by the session, so a new conversation does not inherit recently modified project files. `remote-entry.js` boots the independent DTLS client before mounting the same SPA. Its service worker sends native media/download requests through that authenticated channel; it does not cache private content. See [remote security](remote-security.md). Static exports remain independent.
 
 `ProjectsModal` offers project deletion for discovered and registered folders. Its confirmation defaults to preserving files; selecting a Mac Trash move opens a second confirmation covering the entire folder and its descendants, without a typed challenge. The client supplies the existing API confirmation field only after that second click. Live thinking and tool calls use native `ActivityDisclosure` details/summary controls. The existing toggle controller persists per-entry overrides and exposes expand/collapse-all through `ActivityControls`. Static exports retain their existing markup.
 
@@ -182,8 +182,7 @@ Two touch pointers pinch around their midpoint (1–4x), with single-finger pann
 when enlarged. Pointer cancellation and capture release do not close the viewer.
 Trackpad pinch uses a non-passive Ctrl-wheel handler. All these gestures scale
 the image alone; the application's global page-zoom lock remains active.
-Tapping the image or dragging a zoomed view does not dismiss it. SVG zoom uses an image resource
-(no script execution); inline SVG remains sandboxed. Videos keep native controls,
+Tapping the image or dragging a zoomed view does not dismiss it. SVG thumbnails and zoom use image resources, which have no nested navigation or script execution. Videos keep native controls,
 inline playback, fullscreen through the viewer and an unsupported-format download
 fallback. The authenticated asset bridge continues supporting Range requests.
 

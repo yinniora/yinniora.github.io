@@ -1837,17 +1837,6 @@ body .pi-btw-send {
   }
 }
 
-#spa-root .output-svg-preview {
-  position: relative;
-}
-#spa-root .output-svg-enlarge {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  background: transparent;
-  width: 100%;
-  cursor: zoom-in;
-}
 #spa-root .output-media-help {
   font-size: 12px;
   line-height: 1.7;

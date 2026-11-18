@@ -76,6 +76,9 @@ func referencedAssets(session *sessions.Session, cwd string) map[string]bool {
 			args, _ := block["arguments"].(map[string]any)
 			filePath, _ := args["path"].(string)
 			if filePath == "" {
+				filePath, _ = args["file_path"].(string)
+			}
+			if filePath == "" {
 				continue
 			}
 			if filepath.IsAbs(filePath) {
@@ -85,7 +88,7 @@ func referencedAssets(session *sessions.Session, cwd string) map[string]bool {
 					continue
 				}
 			}
-			filePath = filepath.ToSlash(filePath)
+			filePath = filepath.ToSlash(filepath.Clean(filePath))
 			if allowedAssetPath(filePath) {
 				refs[filePath] = true
 			}
@@ -118,6 +121,11 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 	stamp, _ := resolved.Session.Header["timestamp"].(string)
 	since, _ := time.Parse(time.RFC3339Nano, stamp)
 	refs := referencedAssets(&resolved.Session, cwd)
+	sessionOnly := r.URL.Query().Get("scope") == "session"
+	if sessionOnly && len(refs) == 0 {
+		writeJSON(w, 200, map[string]any{"assets": out})
+		return
+	}
 	visited := 0
 	_ = fs.WalkDir(root.FS(), ".", func(name string, entry fs.DirEntry, walkErr error) error {
 		visited++
@@ -137,7 +145,8 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 			}
 			return nil
 		}
-		if entry.Type()&os.ModeSymlink != 0 || !allowedAssetPath(name) {
+		if entry.Type()&os.ModeSymlink != 0 || !allowedAssetPath(name) ||
+			(sessionOnly && !refs[name]) {
 			return nil
 		}
 		info, err := entry.Info()

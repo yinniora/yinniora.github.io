@@ -291,6 +291,7 @@ func paginatedEntries(entries []map[string]any) (out []map[string]any, total, fr
 // the /api/session endpoint and the bootstrap embedded in the page shell.
 func sessionResponseMap(session sessions.Session, entries []map[string]any, total, from int) map[string]any {
 	return map[string]any{
+		"sessionId":          session.ID,
 		"header":             session.Header,
 		"entries":            entries,
 		"name":               session.Name,

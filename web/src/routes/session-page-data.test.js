@@ -171,6 +171,18 @@ describe('session-page-data', () => {
     expect(attempt).toBe(2);
   });
 
+  it('never displays a prefetched payload belonging to another session', async () => {
+    prefetchSession('new.jsonl', {
+      fetchImpl: async () => new Response(JSON.stringify({ sessionId: 'old.jsonl', name: 'Old' })),
+    });
+    const state = await loadSessionPageState({
+      locationSearch: '?id=new.jsonl',
+      fetchImpl: async () => new Response(JSON.stringify({ sessionId: 'new.jsonl', name: 'New' })),
+      btoaImpl,
+    });
+    expect(state.title).toBe('New');
+  });
+
   it('falls back to fetch when the bootstrap is for a different session', async () => {
     const b64utf8 = (value) => Buffer.from(value, 'utf8').toString('base64');
     const bootstrap = b64utf8(

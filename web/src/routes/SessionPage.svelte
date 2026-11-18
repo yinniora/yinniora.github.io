@@ -20,7 +20,7 @@
   import { handleNavClick } from '../shared/navigation.js';
   import { t } from '../shared/i18n.js';
 
-  let { onRetry = () => window.location.reload() } = $props();
+  let { routeSearch = window.location.search, onRetry = () => window.location.reload() } = $props();
 
   // The reactive session model (docs/dev/svelte-migration-plan.md): created once
   // and provided via context so descendant components read from it. Hydrated
@@ -50,7 +50,7 @@
 
   onMount(() => {
     const previousTitle = document.title;
-    const locationSearch = window.location.search;
+    const locationSearch = routeSearch;
     const request = new AbortController();
     let active = true;
     let disposeRuntime = null;

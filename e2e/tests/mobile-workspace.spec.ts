@@ -447,7 +447,20 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
   sessionsDir,
 }, testInfo) => {
   const cwd = realWorkingDir();
-  const { entries } = buildSession({ cwd });
+  const { entries, lastId } = buildSession({ cwd });
+  const assetEntry = assistantTextEntry(lastId, "");
+  entries.push({
+    ...assetEntry.entry,
+    message: {
+      ...assetEntry.entry.message,
+      content: ["clip.mp4", "diagram.svg"].map((path) => ({
+        type: "toolCall",
+        name: "read",
+        id: "read-" + path,
+        arguments: { path },
+      })),
+    },
+  } as any);
   copyFileSync(
     new URL("../fixtures/media/clip.mp4", import.meta.url),
     join(cwd, "clip.mp4"),
@@ -461,8 +474,17 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
     uniqueSessionName(testInfo, "gallery"),
     entries,
   );
+  const other = writeSession(
+    sessionsDir,
+    uniqueSessionName(testInfo, "empty-gallery"),
+    entries.slice(0, 1).map((entry) => ({ ...entry, id: "empty-gallery" })),
+  );
   await collapseScratchpad(page);
   await page.goto("/session?id=" + encodeURIComponent(id));
+  await expect(
+    page.locator(".output-gallery img.output-inline-preview"),
+  ).toBeVisible();
+  await expect(page.locator(".output-gallery iframe")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Enlarge diagram.svg", exact: true })
     .click();
@@ -538,6 +560,32 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
   const card = page.locator(".output-card").filter({ has: video });
   await card.getByRole("button", { name: "Open", exact: true }).click();
   await expect(page.locator(".output-full-video")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".output-full-video")).toBeHidden();
+  if (await isMobileLayout(page)) {
+    await page.locator(".session-header-back").tap();
+    const otherAssets = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/api/assets" && url.searchParams.get("id") === other
+      );
+    });
+    await page.locator(`a[data-session-id="${other}"]`).tap();
+    await expect(page.locator("#pi-chat-composer")).toHaveAttribute(
+      "data-session-id",
+      other,
+    );
+    await expect(page.locator("#messages-list .assistant-message")).toHaveCount(
+      0,
+    );
+    expect((await (await otherAssets).json()).assets).toEqual([]);
+    await expect(page.locator(".output-gallery")).toHaveCount(0);
+    await page.goBack();
+    await expect(page.locator(".mobile-home")).toBeVisible();
+    await page.locator(`a[data-session-id="${id}"]`).tap();
+    await expect(page.locator(".output-inline-preview")).toBeVisible();
+    await expect(page.locator(".session-header-back")).toBeVisible();
+  }
 });
 
 test("all phone routes keep the outer page fixed and disable page zoom", async ({

@@ -47,6 +47,11 @@
     });
     if (window.__PI_REMOTE_CLIENT__) remoteEvents.connect();
     const syncPath = () => {
+      const nextSessionId = new URLSearchParams(window.location.search).get('id') || '';
+      if (path !== window.location.pathname || sessionId !== nextSessionId) {
+        const root = document.getElementById('spa-root');
+        if (root) root.scrollTop = 0;
+      }
       path = window.location.pathname;
       search = window.location.search;
     };
@@ -90,7 +95,7 @@
 {:else if path === '/session'}
   {#key `${sessionId}:${sessionAttempt}`}
     <svelte:boundary>
-      <SessionPage onRetry={retrySession} />
+      <SessionPage routeSearch={search} onRetry={retrySession} />
       {#snippet failed()}
         <div class="session-loading session-loading--error" role="alert">
           <h1>{t('session.loadFailed')}</h1>
