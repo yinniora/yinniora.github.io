@@ -240,8 +240,17 @@
       <LoadEarlier model={sessionModel} {sessionId} navigateTo={runtime.navigateTo} />
       <div id="messages">
         <ActivityControls />
-        <SessionContent model={sessionModel} afterRender={contentRuntime.afterRender} live />
-        <OutputGallery model={sessionModel} {sessionId} {cwd} />
+        <OutputGallery model={sessionModel} {sessionId} {cwd}>
+          {#snippet children(outputs, renderOutputs)}
+            <SessionContent
+              model={sessionModel}
+              afterRender={contentRuntime.afterRender}
+              {outputs}
+              {renderOutputs}
+              live
+            />
+          {/snippet}
+        </OutputGallery>
       </div>
     </main>
     <ChatComposer {sessionId} {chatAvailable} {chatDisabledReason} {cwd} {modelLabel} />

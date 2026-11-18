@@ -853,14 +853,30 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
     ...assetEntry.entry,
     message: {
       ...assetEntry.entry.message,
-      content: ["clip.mp4", "diagram.svg"].map((path) => ({
+      content: ["./clip.mp4", join(cwd, "diagram.svg")].map((path, index) => ({
         type: "toolCall",
         name: "read",
-        id: "read-" + path,
+        id: "read-" + index,
         arguments: { path },
       })),
     },
   } as any);
+  const reply = assistantTextEntry(assetEntry.id, "The SVG and video are ready.");
+  const model = "claude-opus-" + "extended-model-identifier-".repeat(4) + "thinking";
+  const modelReply = { ...reply.entry, message: { ...reply.entry.message, provider: "test", model } };
+  const nextPrompt = {
+    type: "message",
+    id: "next-gallery-prompt",
+    parentId: reply.id,
+    timestamp: new Date().toISOString(),
+    message: {
+      role: "user",
+      content: [{ type: "text", text: "Thanks, could you summarize?" }],
+      timestamp: Date.now(),
+    },
+  };
+  const nextReply = assistantTextEntry(nextPrompt.id, "Here is a summary.");
+  entries.push(modelReply, nextPrompt, nextReply.entry);
   copyFileSync(
     new URL("../fixtures/media/clip.mp4", import.meta.url),
     join(cwd, "clip.mp4"),
@@ -884,6 +900,24 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
   await expect(
     page.locator(".output-gallery img.output-inline-preview"),
   ).toBeVisible();
+  const mediaReply = page.locator(`#entry-${reply.id}`);
+  await expect(mediaReply.locator(".assistant-text + .output-gallery + .reply-footer")).toBeVisible();
+  await expect(mediaReply.locator(".output-card")).toHaveCount(2);
+  await expect(page.locator(".output-gallery")).toHaveCount(1);
+  await expect(page.locator(`#entry-${nextReply.id} .reply-footer`)).toBeVisible();
+  await expect(mediaReply.locator(".reply-model")).toHaveText("test/" + model);
+  if (await isMobileLayout(page)) {
+    const layout = await mediaReply.locator(".reply-footer").evaluate((footer) => {
+      const copy = footer.querySelector(".reply-copy")!.getBoundingClientRect();
+      const time = footer.querySelector("time")!.getBoundingClientRect();
+      const model = footer.querySelector(".reply-model")!.getBoundingClientRect();
+      return {
+        copyAndTimeShareRow: Math.abs((copy.top + copy.bottom - time.top - time.bottom) / 2) < 1,
+        longModelWrapsBelow: model.top >= copy.bottom && model.right <= footer.getBoundingClientRect().right,
+      };
+    });
+    expect(layout).toEqual({ copyAndTimeShareRow: true, longModelWrapsBelow: true });
+  }
   await expect(page.locator(".output-gallery iframe")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Enlarge diagram.svg", exact: true })

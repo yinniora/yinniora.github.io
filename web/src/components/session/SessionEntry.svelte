@@ -18,7 +18,7 @@
   // need the chat composer; copy-link is always shown. The static export passes
   // false. (Replaces the former renderForkButton/renderLabelButton isLive check —
   // a prop, not a DOM probe, since entries mount before the composer.)
-  let { entry, reply = null, model = null, live = false } = $props();
+  let { entry, reply = null, model = null, live = false, outputs, renderOutputs = null } = $props();
 
   const ts = $derived(formatTimestamp(entry?.timestamp));
   const md = (text) => safeMarkedParse(text, { marked });
@@ -104,6 +104,9 @@
       </div>{:else if msg.stopReason === 'error'}<div class="error-text">
         Error: {msg.errorMessage || 'Unknown error'}
       </div>{/if}
+    {#if outputs?.length}
+      {@render renderOutputs?.(outputs)}
+    {/if}
     {#if reply}<ReplyFooter {...reply} />{/if}
   </div>
 {:else if msg && msg.role === 'bashExecution'}

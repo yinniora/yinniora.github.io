@@ -8,13 +8,21 @@
   import { getSessionModel } from '../../session/session-context.js';
   import SessionEntry from './SessionEntry.svelte';
   import { entriesWithReplyDetails } from '../../session/render/reply-details.js';
+  import { groupOutputsByReply } from '../../session/artifacts/outputs.js';
 
-  let { model = getSessionModel(), afterRender = null, live = false } = $props();
+  let {
+    model = getSessionModel(),
+    afterRender = null,
+    live = false,
+    outputs = [],
+    renderOutputs = null,
+  } = $props();
 
   let containerEl = $state(null);
   const entries = $derived(
     live ? entriesWithReplyDetails(model.activePath) : model.activePath.map((entry) => ({ entry })),
   );
+  const groups = $derived(outputs.length ? groupOutputsByReply(entries, outputs) : null);
 
   // Re-run post-render side effects whenever the rendered path changes.
   $effect(() => {
@@ -27,6 +35,16 @@
 
 <div id="messages-list" class="messages-list" bind:this={containerEl}>
   {#each entries as { entry, reply } (entry.id)}
-    <SessionEntry {entry} {reply} {model} {live} />
+    <SessionEntry
+      {entry}
+      {reply}
+      {model}
+      {live}
+      outputs={groups?.byEntry.get(entry.id)}
+      {renderOutputs}
+    />
   {/each}
+  {#if groups?.unassigned.length}
+    {@render renderOutputs?.(groups.unassigned)}
+  {/if}
 </div>

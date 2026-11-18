@@ -13,7 +13,7 @@
   import FullScreenSheet from './FullScreenSheet.svelte';
   import { SvelteSet } from 'svelte/reactivity';
 
-  let { model, sessionId = '', cwd = '', fetchImpl = null } = $props();
+  let { model, sessionId = '', cwd = '', fetchImpl = null, children = null } = $props();
   let assets = $state([]);
   let selected = $state(null);
   let previewOpen = $state(false);
@@ -125,11 +125,11 @@
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- Lucide icons and sanitized Markdown -->
-{#if outputs.length}
+{#snippet gallery(group)}
   <section class="output-gallery" aria-label={t('outputs.title')}>
-    <div class="output-section-title">{t('outputs.title')}<span>{outputs.length}</span></div>
+    <div class="output-section-title">{t('outputs.title')}<span>{group.length}</span></div>
     <div class="output-grid">
-      {#each outputs as output (output.id)}
+      {#each group as output (output.id)}
         <article
           class="output-card"
           class:output-visual={['svg', 'image', 'video'].includes(output.kind)}
@@ -197,6 +197,12 @@
       {/each}
     </div>
   </section>
+{/snippet}
+
+{#if children}
+  {@render children(outputs, gallery)}
+{:else if outputs.length}
+  {@render gallery(outputs)}
 {/if}
 
 <FullScreenSheet bind:open={previewOpen} title={selected?.title || t('outputs.title')}>

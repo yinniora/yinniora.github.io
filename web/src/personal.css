@@ -532,6 +532,9 @@
   padding: 0 0 35px;
   width: 100%;
 }
+#spa-root .assistant-message .output-gallery {
+  padding: 12px 0 0;
+}
 #spa-root .output-section-title {
   display: flex;
   gap: 8px;

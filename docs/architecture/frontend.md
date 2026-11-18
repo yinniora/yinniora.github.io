@@ -75,9 +75,11 @@ The message pane is rendered by Svelte components (no string-building renderer):
 The index + settings Phase 4 migration is complete: those routes are Svelte-orchestrated too, with only pure/API helpers left outside components.
 
 Each visible final assistant reply in the live conversation or BTW shows a
-copy control, its recorded model, and its local reply time. Older replies can
-use a preceding model change from the displayed path. The copy action writes
-the reply's Markdown text and skips internal thinking and tool blocks.
+copy control and its local reply time on one line, followed by the recorded
+model, which can wrap below them. The footer follows the output cards associated
+with that reply. Older replies can use a preceding model change from the
+displayed path. The copy action writes the reply's Markdown text and skips
+internal thinking and tool blocks.
 
 ## Static / Share Export
 
