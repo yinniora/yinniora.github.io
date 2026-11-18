@@ -209,6 +209,11 @@ async function launchWorkspace(client) {
     /* Existing pinned transport remains usable while settings sync is unavailable. */
   }
   const settings = await prepareStartupSettings({ fetchImpl: window.fetch });
+  if (settings?.['pi-web:v1:standalone-tap-diagnostics'] === 'true') {
+    import('./remote/tap-diagnostics.js')
+      .then(({ showTapDiagnostics }) => showTapDiagnostics())
+      .catch(() => {});
+  }
   if (settings)
     applyRemoteSettings(
       { settings },
