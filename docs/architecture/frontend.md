@@ -211,8 +211,9 @@ The existing worker poll carries the current session's pending Pi extension
 dialogs and notifications. Native keyboard-aware sheets handle confirmation,
 selection and text input. The computer approval guard still uses its
 dedicated controls.
-The Mac folder picker can create one child in the browsed folder and fills
-its path for project registration or new-session creation.
+The Mac folder picker can create a child beside either the browsed or the
+selected path. Creation selects the child, so the same action can be repeated
+to build nested folders before registering a project or starting a session.
 Editable controls use at least 16px text. Model selection and BTW opening do
 not automatically focus a text field on mobile. Viewport metadata, CSS touch
 behavior and WebKit zoom events lock page zoom while single-finger touch

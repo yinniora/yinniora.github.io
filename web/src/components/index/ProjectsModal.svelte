@@ -22,6 +22,7 @@
 
   let query = $state('');
   let addPath = $state('');
+  let folderEditing = $state(false);
   let deleting = $state(null);
   let deleteFiles = $state(false);
   let confirmFiles = $state(false);
@@ -69,7 +70,7 @@
 
   async function registerProject() {
     const path = addPath.trim();
-    if (!path) return;
+    if (!path || busy || folderEditing) return;
     await onRegister(path);
     addPath = '';
   }
@@ -234,19 +235,29 @@
     {/if}
     <div class="projects-footer" class:hidden={!!deleting}>
       <label class="projects-footer-label" for="projectsAddPath">{t('index.registerFolder')}</label>
-      <input
-        type="text"
-        id="projectsAddPath"
-        placeholder={t('index.sessionPathPlaceholder')}
-        bind:value={addPath}
-        onkeydown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            registerProject();
-          }
-        }}
-      />
-      <MacFolderPicker value={addPath} disabled={busy} onSelect={(path) => (addPath = path)} />
+      <MacFolderPicker
+        value={addPath}
+        disabled={busy}
+        active={open && !deleting}
+        bind:editing={folderEditing}
+        onSelect={(path) => (addPath = path)}
+      >
+        {#snippet pathField()}
+          <input
+            type="text"
+            id="projectsAddPath"
+            placeholder={t('index.sessionPathPlaceholder')}
+            bind:value={addPath}
+            disabled={busy || folderEditing}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' && !e.isComposing) {
+                e.preventDefault();
+                registerProject();
+              }
+            }}
+          />
+        {/snippet}
+      </MacFolderPicker>
       <div class="modal-error" id="projectsModalError">{error}</div>
       <div class="modal-actions">
         <button class="btn-secondary" id="projectsDoneBtn" type="button" onclick={onClose}
@@ -256,7 +267,7 @@
           class="btn-primary"
           id="projectsAddBtn"
           type="button"
-          disabled={busy || !addPath.trim()}
+          disabled={busy || folderEditing || !addPath.trim()}
           onclick={registerProject}>{t('common.add')}</button
         >
       </div>

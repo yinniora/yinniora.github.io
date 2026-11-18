@@ -43,7 +43,7 @@ test("native session tools and interactive extension commands work in one conver
   await expect(page.locator("#pi-chat-send")).toBeEnabled();
 });
 
-test("mobile project sheet keeps a folder name visible above the keyboard and selects the created folder", async ({ page }) => {
+test("mobile project sheet creates nested folders beside the selected path above the keyboard", async ({ page }) => {
   const fullHeight = page.viewportSize()!.height;
   await page.addInitScript((height) => {
     Object.defineProperty(navigator, "standalone", { value: true });
@@ -69,7 +69,8 @@ test("mobile project sheet keeps a folder name visible above the keyboard and se
           const req = JSON.parse(String(options.body));
           return Promise.resolve(Response.json({ path: req.parent + "/" + req.name, name: req.name }));
         }
-        return Promise.resolve(Response.json({ path: "/fixture", folders: [], parent: "" }));
+        const path = new URL(String(input), location.href).searchParams.get("path") || "/fixture";
+        return Promise.resolve(Response.json({ path, folders: [], parent: path === "/fixture" ? "" : path.slice(0, path.lastIndexOf("/")) }));
       }
       return original(input, options);
     };
@@ -79,8 +80,15 @@ test("mobile project sheet keeps a folder name visible above the keyboard and se
   await page.getByRole("button", { name: "New project", exact: true }).click();
   const panel = page.locator("#projectsModalOverlay .modal");
   await panel.locator(".mac-folder-browse").click();
-  await panel.getByRole("button", { name: "New folder", exact: true }).click();
+  await expect(panel.locator(".mac-folder-current").getByRole("button", { name: "New folder" })).toBeVisible();
+  await panel.getByRole("button", { name: "Choose this folder" }).click();
+  const path = page.locator("#projectsAddPath");
+  await expect(path).toHaveValue("/fixture");
+  const newFolder = panel.locator(".mac-folder-field").getByRole("button", { name: "New folder" });
+  await newFolder.click();
   const name = panel.getByLabel("Folder name");
+  await expect(name).toBeFocused();
+  await expect(page.locator("#projectsAddBtn")).toBeDisabled();
   await name.fill("My project");
   await page.evaluate(() => {
     const viewport = (window as any).projectTestViewport;
@@ -99,5 +107,22 @@ test("mobile project sheet keeps a folder name visible above the keyboard and se
     return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === input;
   })).toBe(true);
   await panel.getByRole("button", { name: "Create", exact: true }).click();
-  await expect(page.locator("#projectsAddPath")).toHaveValue("/fixture/My project");
+  await expect(path).toHaveValue("/fixture/My project");
+  await page.evaluate((height) => {
+    const viewport = (window as any).projectTestViewport;
+    Object.assign(viewport, { height, layoutHeight: height, offsetTop: 0 });
+    viewport.dispatchEvent(new Event("resize"));
+  }, fullHeight);
+  await newFolder.click();
+  await name.fill("Documents");
+  await panel.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(path).toHaveValue("/fixture/My project/Documents");
+  await expect(page.locator("#projectsAddBtn")).toBeEnabled();
+
+  await panel.locator(".mac-folder-browse").click();
+  await panel.locator(".mac-folder-current").getByRole("button", { name: "New folder" }).click();
+  await name.fill("Drafts");
+  await panel.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(path).toHaveValue("/fixture/My project/Documents/Drafts");
+  await expect(panel.locator(".mac-folder-current code")).toHaveText("/fixture/My project/Documents/Drafts");
 });

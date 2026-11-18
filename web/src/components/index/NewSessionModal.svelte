@@ -11,6 +11,7 @@
     onClose = () => {},
     onCreate = () => {},
   } = $props();
+  let folderEditing = $state(false);
 
   function chooseRecent(loc) {
     path = loc;
@@ -18,9 +19,9 @@
   }
 
   function handleKeydown(e) {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.isComposing) {
       e.preventDefault();
-      onCreate();
+      if (!creating && !folderEditing) onCreate();
     }
   }
 </script>
@@ -52,18 +53,33 @@
     <h2>{t('index.startNewSession')}</h2>
     <div class="recent-locations" id="recentLocations">
       {#each recent as loc (loc)}
-        <button type="button" class="recent-chip" onclick={() => chooseRecent(loc)}>{loc}</button>
+        <button
+          type="button"
+          class="recent-chip"
+          disabled={creating || folderEditing}
+          onclick={() => chooseRecent(loc)}>{loc}</button
+        >
       {/each}
     </div>
     <label class="mac-path-label" for="sessionPath">{t('folders.pathLabel')}</label>
-    <input
-      type="text"
-      id="sessionPath"
-      placeholder={t('index.sessionPathPlaceholder')}
-      bind:value={path}
-      onkeydown={handleKeydown}
-    />
-    <MacFolderPicker value={path} disabled={creating} onSelect={(folder) => (path = folder)} />
+    <MacFolderPicker
+      value={path}
+      disabled={creating}
+      active={open}
+      bind:editing={folderEditing}
+      onSelect={(folder) => (path = folder)}
+    >
+      {#snippet pathField()}
+        <input
+          type="text"
+          id="sessionPath"
+          placeholder={t('index.sessionPathPlaceholder')}
+          bind:value={path}
+          disabled={creating || folderEditing}
+          onkeydown={handleKeydown}
+        />
+      {/snippet}
+    </MacFolderPicker>
     <div class="modal-actions">
       <button class="btn-secondary" id="cancelBtn" type="button" onclick={onClose}
         >{t('common.cancel')}</button
@@ -72,7 +88,7 @@
         class="btn-primary"
         id="createBtn"
         type="button"
-        disabled={creating}
+        disabled={creating || folderEditing}
         onclick={onCreate}>{t('common.create')}</button
       >
     </div>
