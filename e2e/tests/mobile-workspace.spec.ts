@@ -236,22 +236,9 @@ test("model settings refresh labeled keys and explicitly apply and remove multip
   page,
 }, testInfo) => {
   let sawKey = false;
-  let effortProbes = 0;
-  const endpoint = createServer(async (request, response) => {
+  const endpoint = createServer((request, response) => {
     sawKey = request.headers.authorization === "Bearer fixture-e2e-key-only";
     response.setHeader("Content-Type", "application/json");
-    if (request.method === "POST") {
-      effortProbes++;
-      const chunks = [];
-      for await (const chunk of request) chunks.push(chunk);
-      const probe = JSON.parse(Buffer.concat(chunks).toString());
-      if (probe.reasoning_effort === "yugo-invalid-effort") {
-        response.writeHead(400).end(JSON.stringify({ error: { message: "Invalid reasoning_effort" } }));
-      } else {
-        response.end(JSON.stringify({ choices: [{ message: { content: "1" } }] }));
-      }
-      return;
-    }
     response.end(
       JSON.stringify({
         data: [{ id: "yugo-chat-one" }, { id: "yugo-chat-two" }],
@@ -299,18 +286,7 @@ test("model settings refresh labeled keys and explicitly apply and remove multip
       payload.models.filter((m: any) => m.providerLabel === label),
     ).toHaveLength(2);
     expect(JSON.stringify(payload)).not.toContain("fixture-e2e-key-only");
-    const first = group.locator(".model-applied-row").filter({ hasText: "yugo-chat-one" });
-    const checkEffort = first.getByRole("button", { name: "Check effort" });
-    page.once("dialog", (dialog) => dialog.dismiss());
-    await checkEffort.click();
-    expect(effortProbes).toBe(0);
-    page.once("dialog", (dialog) => dialog.accept());
-    await checkEffort.click();
-    await expect(first.getByText("Adjustable reasoning effort")).toBeVisible();
-    expect(effortProbes).toBe(3);
-    payload = await (await page.request.get("/api/models")).json();
-    expect(payload.models.find((m: any) => m.providerLabel === label && m.id === "yugo-chat-one").reasoning).toBe(true);
-    expect(payload.models.find((m: any) => m.providerLabel === label && m.id === "yugo-chat-two").reasoning).toBe(false);
+    await expect(group.getByRole("button", { name: "Check effort" })).toHaveCount(0);
     await page
       .getByRole("button", {
         name: `Remove yugo-chat-one from ${label}`,
@@ -1265,11 +1241,13 @@ test("composer switches effort on model change and sends a file using the attach
   await page.locator("#pi-chat-model-label").click();
   await page.locator('.model-item[data-provider="catalog"][data-model-id="parameter-model"]').click();
   await expect(effort).toHaveAttribute("title", "Switch effort · off");
-  await expect(effort.locator("svg")).toBeVisible();
-  await expect(effort).toHaveCSS("height", "36px");
+  await expect(effort.locator("svg").first()).toBeVisible();
+  await expect(effort.locator("span")).toBeVisible();
+  await expect(effort).toHaveCSS("height", "40px");
   await expect(page.locator("#pi-chat-model-label")).toHaveText("Pro key · parameter-model");
   await effort.click();
   await expect(page.locator("#pi-chat-thinking-list button")).toHaveCount(4);
+  await expect(page.locator("#pi-chat-thinking-list button[data-level=off]")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#pi-chat-thinking-list button[data-level=max]")).toBeVisible();
   await effort.click();
   await page.locator("#pi-chat-model-label").click();

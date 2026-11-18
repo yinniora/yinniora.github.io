@@ -73,7 +73,6 @@ type Server struct {
 	modelConfigMu         sync.Mutex
 	pluginConfigMu        sync.Mutex
 	modelCatalogs         map[string]modelCatalog
-	modelEffortChecks     map[[2]string]struct{}
 	removedModelProviders map[string]struct{}
 	remoteControl         *relay.Controller
 	sessionManagementMu   sync.Mutex

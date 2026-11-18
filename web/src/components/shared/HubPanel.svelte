@@ -262,14 +262,14 @@
             <button disabled={busy} onclick={() => (fileDeleteConfirm = false)}
               >{t('common.cancel')}</button
             ><button
-              class="hub-danger"
+              class="hub-danger danger-confirm"
               disabled={busy || cleanupLoading}
               onclick={() => run('delete')}>{t('cleanup.confirmDelete')}</button
             >
           </div>
         </div>
       {:else}<button
-          class="hub-action hub-danger"
+          class="hub-action hub-danger danger-button"
           disabled={busy || cleanupLoading}
           onclick={() => {
             if (cleanupEnabled && selectedFiles.size) fileDeleteConfirm = true;
@@ -285,7 +285,7 @@
           <div class="hub-confirm-buttons">
             <button disabled={busy} onclick={() => (purgeId = '')}>{t('common.cancel')}</button>
             <button
-              class="hub-danger"
+              class="hub-danger danger-confirm"
               disabled={busy || cleanupLoading}
               onclick={() => run('purge')}>{t('hub.purgeConfirm')}</button
             >
@@ -293,7 +293,7 @@
         </div>
       {:else}
         <button
-          class="hub-action hub-danger hub-purge-direct"
+          class="hub-action hub-danger hub-purge-direct danger-button"
           disabled={busy || cleanupLoading}
           onclick={() => (purgeId = id)}>{@html icon(Trash2)}{t('hub.purge')}</button
         >
@@ -315,13 +315,17 @@
             >
             {#if purgeId === item.id}
               <p class="hub-error">{t('hub.purgeWarning')}</p>
-              <button class="hub-danger" disabled={busy} onclick={() => run('purge', item.id)}
-                >{t('hub.purgeConfirm')}</button
+              <button
+                class="hub-danger danger-confirm"
+                disabled={busy}
+                onclick={() => run('purge', item.id)}>{t('hub.purgeConfirm')}</button
               >
               <button disabled={busy} onclick={() => (purgeId = '')}>{t('common.cancel')}</button>
             {:else}
-              <button class="hub-danger" disabled={busy} onclick={() => (purgeId = item.id)}
-                >{t('hub.purge')}</button
+              <button
+                class="hub-danger danger-button"
+                disabled={busy}
+                onclick={() => (purgeId = item.id)}>{t('hub.purge')}</button
               >
             {/if}
           </div>

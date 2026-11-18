@@ -468,7 +468,7 @@
             </button>
             <button
               type="button"
-              class="sched-btn sched-btn-danger"
+              class="sched-btn sched-btn-danger danger-button"
               data-testid="schedule-delete"
               onclick={() => remove(schedule)}
             >

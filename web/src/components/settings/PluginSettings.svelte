@@ -139,6 +139,7 @@
               <span>{item.label}</span>
               {#if item.removable}<button
                   type="button"
+                  class="danger-button"
                   disabled={busy}
                   onclick={() => remove('remove-package', { source: item.id })}
                   >{t('plugins.remove')}</button
@@ -153,6 +154,7 @@
             <li>
               <span>{path}</span><button
                 type="button"
+                class="danger-button"
                 disabled={busy}
                 onclick={() => remove('remove-skill', { source: path })}
                 >{t('plugins.remove')}</button
@@ -229,6 +231,7 @@
               </button>
               <button
                 type="button"
+                class="danger-button"
                 disabled={busy}
                 onclick={() => remove('remove-mcp', { name: server.name })}
                 >{t('plugins.remove')}</button

@@ -68,11 +68,9 @@
       error = t(
         failure.message?.includes('changed')
           ? 'models.changed'
-          : failure.message === 'model effort is unconfirmed'
-            ? 'models.effortUnconfirmed'
-            : /HTTP (401|403)/.test(failure.message || '')
-              ? 'models.authFailed'
-              : 'models.operationFailed',
+          : /HTTP (401|403)/.test(failure.message || '')
+            ? 'models.authFailed'
+            : 'models.operationFailed',
       );
       return null;
     } finally {
@@ -111,12 +109,6 @@
   async function remove(profile, model) {
     if (await action({ action: 'remove-model', id: profile.id, modelId: model.id }))
       status = t('models.removed');
-  }
-  async function verifyEffort(profile, model) {
-    if (busy || !window.confirm(t('models.effortConfirm', { model: model.name || model.id })))
-      return;
-    if (await action({ action: 'verify-effort', id: profile.id, modelId: model.id }))
-      status = t('models.effortVerified');
   }
   async function removeKey(profile) {
     const title = t('models.removeNamed', { label: profile.label, name: t('models.key') });
@@ -218,7 +210,7 @@
             >
             <button
               type="button"
-              class="remove-key"
+              class="danger-button"
               disabled={busy}
               onclick={() => removeKey(active)}>{t('models.remove')} {t('models.key')}</button
             >
@@ -314,13 +306,9 @@
                   {t('models.effortAvailable')}
                 </small>{/if}
             </div>
-            {#if model.canVerifyEffort}
-              <button type="button" disabled={busy} onclick={() => verifyEffort(profile, model)}
-                >{t('models.effortVerify')}</button
-              >
-            {/if}
             <button
               type="button"
+              class="danger-button"
               disabled={busy}
               aria-label={t('models.removeNamed', {
                 name: model.name || model.id,
@@ -450,9 +438,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-  }
-  button.remove-key {
-    color: var(--error, #cf5f5f);
   }
   .model-endpoint {
     overflow-wrap: anywhere;

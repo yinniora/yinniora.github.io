@@ -388,15 +388,17 @@
   const META_STYLE = 'color:var(--muted,#858a96);font-size:11px;';
   const ROW_STYLE = 'display:flex;gap:6px;justify-content:flex-end;';
 
-  function styledButton(label, onClick, primary) {
+  function styledButton(label, onClick, variant) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = label;
     btn.style.cssText =
       'cursor:pointer;border-radius:5px;padding:3px 10px;font-size:12px;border:1px solid var(--border,#444);' +
-      (primary
-        ? 'background:var(--accent,#9cc7c0);color:#111;border-color:var(--accent,#9cc7c0);'
-        : 'background:transparent;color:var(--text,#e6e7eb);');
+      (variant === 'danger'
+        ? 'background:var(--danger-surface);color:var(--danger-fg);border-color:var(--danger-border);'
+        : variant
+          ? 'background:var(--accent,#9cc7c0);color:#111;border-color:var(--accent,#9cc7c0);'
+          : 'background:transparent;color:var(--text,#e6e7eb);');
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -588,7 +590,7 @@
     const row = document.createElement('div');
     row.style.cssText = ROW_STYLE;
     row.append(
-      styledButton(t('diff.delete'), () => removeComment(comment), false),
+      styledButton(t('diff.delete'), () => removeComment(comment), 'danger'),
       styledButton(
         t('diff.edit'),
         () => {

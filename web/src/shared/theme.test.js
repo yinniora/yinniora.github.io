@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyTheme, toggleTheme } from './theme.js';
+import { applyTheme, toggleTheme, watchSystemTheme } from './theme.js';
 
 function fakeStorage() {
   const values = new Map();
@@ -72,5 +72,24 @@ describe('theme helpers', () => {
 
     expect(documentImpl.documentElement.dataset.theme).toBe('custom');
     expect(storage.getItem('pi-web-theme')).toBe('custom');
+  });
+
+  it('follows the system only when the saved preference is System', () => {
+    const storage = fakeStorage();
+    const documentImpl = fakeDocument();
+    const media = Object.assign(new EventTarget(), { matches: false });
+    const windowImpl = { localStorage: storage, navigator: {}, matchMedia: () => media };
+    watchSystemTheme(windowImpl, documentImpl);
+    applyTheme(windowImpl, documentImpl, 'system');
+    expect(documentImpl.documentElement.dataset.theme).toBe('light');
+    media.matches = true;
+    media.dispatchEvent(new Event('change'));
+    expect(documentImpl.documentElement.dataset.theme).toBe('dark');
+    expect(storage.getItem('pi-web-theme')).toBe('system');
+
+    applyTheme(windowImpl, documentImpl, 'nord');
+    media.matches = false;
+    media.dispatchEvent(new Event('change'));
+    expect(documentImpl.documentElement.dataset.theme).toBe('nord');
   });
 });

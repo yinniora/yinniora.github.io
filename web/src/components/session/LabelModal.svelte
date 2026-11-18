@@ -65,7 +65,7 @@
       <div class="label-modal-actions">
         <button
           type="button"
-          class="label-modal-remove"
+          class="label-modal-remove danger-button"
           hidden={!currentLabel}
           onclick={() => submit('')}>{t('session.removeLabel')}</button
         >

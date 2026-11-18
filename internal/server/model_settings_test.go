@@ -246,56 +246,46 @@ func TestDiscoveryProtocolHeadersAndPagination(t *testing.T) {
 	}
 }
 
-func TestVerifyEffortIsScopedToKeyAndModel(t *testing.T) {
+func TestRemoveModelClearsLocalOverridesAndStartupSelection(t *testing.T) {
 	s := newTestServer(t)
-	calls := 0
-	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil ||
-			r.URL.Path != "/v1/chat/completions" || payload["model"] != "same-model" ||
-			payload["max_tokens"] != float64(128) {
-			t.Errorf("unexpected effort probe: %s %+v", r.URL.Path, payload)
-			http.Error(w, "unexpected request", 500)
-			return
-		}
-		if r.Header.Get("Authorization") == "Bearer test-validates" &&
-			payload["reasoning_effort"] == "yugo-invalid-effort" {
-			http.Error(w, `{"error":{"message":"invalid reasoning_effort"}}`, 400)
-			return
-		}
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"1"}}]}`))
-	}))
-	defer service.Close()
-	providers := map[string]any{}
-	for _, key := range []string{"validates", "ignores"} {
-		providers[key] = map[string]any{
-			"api": apiChat, "baseUrl": service.URL, "apiKey": "test-" + key,
-			"models": []any{map[string]any{"id": "same-model", "reasoning": false}},
-		}
+	profile := map[string]any{
+		"api": apiChat, "baseUrl": "https://example.invalid/v1", "apiKey": "fixture",
+		"models": []any{
+			map[string]any{"id": "target", "reasoning": true, "thinkingLevelMap": map[string]any{"high": "high"}},
+			map[string]any{"id": "keep"},
+		},
+		"modelOverrides": map[string]any{"target": map[string]any{"maxTokens": 512}, "keep": map[string]any{"maxTokens": 1024}},
 	}
-	if err := writeModelConfig(s.agentDir, map[string]any{"providers": providers}); err != nil {
+	if err := writeModelConfig(s.agentDir, map[string]any{"providers": map[string]any{"provider": profile}}); err != nil {
 		t.Fatal(err)
 	}
-	_, before, _ := modelSettingsCall(t, s, nil)
-	code, after, raw := modelSettingsCall(t, s, map[string]any{
-		"action": "verify-effort", "id": "validates", "modelId": "same-model", "revision": before["revision"],
-	})
-	if code != 200 || strings.Contains(raw, "test-validates") || calls != 3 {
-		t.Fatalf("valid model verification failed: HTTP %d, %d calls", code, calls)
+	path := filepath.Join(s.agentDir, "settings.json")
+	if err := os.WriteFile(path, []byte(`{"defaultProvider":"provider","defaultModel":"target","defaultThinkingLevel":"low","enabledModels":["provider/target:high","provider/target","provider/keep","other/target","target"]}`), 0600); err != nil {
+		t.Fatal(err)
 	}
-	code, _, _ = modelSettingsCall(t, s, map[string]any{
-		"action": "verify-effort", "id": "ignores", "modelId": "same-model", "revision": after["revision"],
-	})
-	if code != 422 || calls != 4 {
-		t.Fatalf("endpoint ignored the test field: HTTP %d, %d calls", code, calls)
+	_, current, _ := modelSettingsCall(t, s, nil)
+	code, _, _ := modelSettingsCall(t, s, map[string]any{"action": "remove-model", "id": "provider", "modelId": "target", "revision": current["revision"]})
+	if code != 200 {
+		t.Fatalf("remove model: HTTP %d", code)
 	}
-	models, err := s.appliedModels(nil)
-	if err != nil || len(models) != 2 || models[0]["reasoning"] != false || models[1]["reasoning"] != true {
-		t.Fatalf("wrong profile was enabled: %+v %v", models, err)
+	_, providers, _, err := readModelConfig(s.agentDir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	levels, _ := models[1]["thinkingLevelMap"].(map[string]any)
-	if levels["low"] != "low" || levels["high"] != "high" || levels["medium"] != nil {
-		t.Fatalf("wrong levels were enabled: %+v", levels)
+	p := providers["provider"].(map[string]any)
+	models := configuredModels(p)
+	overrides := p["modelOverrides"].(map[string]any)
+	if len(models) != 1 || models[0]["id"] != "keep" || overrides["target"] != nil || overrides["keep"] == nil || p["apiKey"] != "fixture" {
+		t.Fatalf("incorrect config cleanup: %+v", p)
+	}
+	data, err := os.ReadFile(path)
+	var settings map[string]any
+	if err != nil || json.Unmarshal(data, &settings) != nil {
+		t.Fatal("could not read cleaned settings")
+	}
+	enabled, _ := json.Marshal(settings["enabledModels"])
+	if settings["defaultModel"] != nil || settings["defaultProvider"] != nil || settings["defaultThinkingLevel"] != "low" ||
+		string(enabled) != `["provider/keep","other/target","target"]` {
+		t.Fatalf("incorrect startup cleanup: %+v", settings)
 	}
 }

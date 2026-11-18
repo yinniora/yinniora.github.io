@@ -1,5 +1,6 @@
 /* Personal live workspace. Static exports keep the upstream document layout. */
 :root {
+  color-scheme: dark;
   --sidebar-width: 248px;
   --right-sidebar-width: 360px;
   --sidebar-resizer-width: 1px;
@@ -8,9 +9,21 @@
   --font-size-ui: 14px;
   --font-content-size: 15px;
   --line-height: 1.65;
+  --danger-fg: #ffb2b9;
+  --danger-surface: #38262d;
+  --danger-hover: #50313a;
+  --danger-border: #ba6676;
+  --danger-solid: #b02439;
+  --danger-solid-hover: #c0263e;
+  --danger-on-solid: #fff;
 }
 
 :root[data-theme='light'] {
+  color-scheme: light;
+  --danger-fg: #9f182d;
+  --danger-surface: #fff1f3;
+  --danger-hover: #ffe2e7;
+  --danger-border: #b74a5a;
   --body-bg: #fff;
   --chrome-bg: #f7f7f8;
   --surface: #fff;
@@ -31,6 +44,10 @@
   --selected-bg: #ededf0;
   --selectedBg: #ededf0;
   --hover: #eeeef0;
+}
+
+#spa-root {
+  --danger: var(--danger-fg);
 }
 
 :root[data-theme='dark'] {
@@ -291,10 +308,6 @@
   max-width: 250px;
   font-size: 11px;
   color: var(--text-soft);
-}
-#spa-root .pi-chat-thinking-label {
-  border: 0;
-  font-size: 11px;
 }
 #spa-root #pi-chat-send {
   min-height: 34px;
@@ -868,11 +881,8 @@
   cursor: pointer;
 }
 #spa-root .device-revoke-confirm {
-  border: 1px solid var(--error);
   border-radius: 8px;
   padding: 7px 10px;
-  background: transparent;
-  color: var(--error);
   cursor: pointer;
   font-size: 11px;
 }
@@ -1172,10 +1182,7 @@
   margin-top: 18px;
 }
 #spa-root .project-delete-submit {
-  border: 0;
   border-radius: 8px;
-  background: #bd3333;
-  color: white;
   padding: 9px 14px;
   cursor: pointer;
 }
@@ -1267,10 +1274,6 @@
   font-size: 11px;
   color: var(--text-soft);
   line-height: 1.7;
-}
-#spa-root .device-revoke-confirm {
-  border-color: var(--danger, #c66);
-  color: var(--danger, #c66);
 }
 #spa-root .device-remove-cancel {
   border: 1px solid var(--dim);
@@ -2051,4 +2054,20 @@ body .pi-btw-input {
     opacity: 1;
     transform: translateX(0);
   }
+}
+
+#spa-root button:is(.danger-button, .danger-confirm) {
+  border: 1px solid var(--danger-border);
+  color: var(--danger-fg);
+  background: var(--danger-surface);
+}
+#spa-root .danger-button:enabled:is(:hover, :focus-visible, :active) {
+  background: var(--danger-hover);
+}
+#spa-root .danger-confirm {
+  color: var(--danger-on-solid);
+  background: var(--danger-solid);
+}
+#spa-root .danger-confirm:enabled:is(:hover, :focus-visible, :active) {
+  background: var(--danger-solid-hover);
 }

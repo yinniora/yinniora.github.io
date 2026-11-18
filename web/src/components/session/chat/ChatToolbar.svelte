@@ -1,5 +1,5 @@
 <script>
-  import { icon, Camera, Gauge, Paperclip, Plus } from '../../../shared/icons.js';
+  import { icon, Camera, ChevronDown, Gauge, Paperclip, Plus } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
   import { supportedThinkingLevels } from '../../../session/chat/chat-selectors.js';
   import { ChatToolbarState } from './chat-toolbar-state.svelte.js';
@@ -84,8 +84,9 @@
       aria-controls="pi-chat-thinking-popup"
       aria-expanded="false"
       disabled={!chatAvailable}
-      >{@html icon(Gauge, { size: 19 })}
-      {#if effortLabel}<span>{effortLabel}</span>{/if}</button
+      >{@html icon(Gauge, { size: 20, strokeWidth: 2.4 })}
+      <span>{effortLabel || t('composer.switchEffort')}</span>
+      {@html icon(ChevronDown, { size: 13 })}</button
     >
     <button
       type="button"
@@ -121,25 +122,22 @@
 />
 
 <style>
-  .pi-chat-thinking-label {
+  :global(#spa-root) .pi-chat-thinking-label {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    min-width: 36px;
-    min-height: 36px;
-    padding: 4px 8px;
-    border-radius: 8px;
+    gap: 5px;
+    min-height: 40px;
+    padding: 5px 9px;
+    border: 1px solid color-mix(in srgb, var(--text) 45%, var(--input-bg));
+    border-radius: 10px;
     color: var(--text);
-    background: color-mix(in srgb, var(--text) 8%, transparent);
+    background: color-mix(in srgb, var(--text) 14%, var(--input-bg));
+    font-size: 13px;
+    font-weight: 650;
   }
   .pi-chat-thinking-label:is(:hover, :focus-visible) {
-    background: color-mix(in srgb, var(--text) 15%, transparent);
-  }
-  @media (max-width: 760px) {
-    .pi-chat-thinking-label span {
-      display: none;
-    }
+    background: color-mix(in srgb, var(--text) 22%, var(--input-bg));
   }
   .pi-chat-toolbar:has(:global(details[open])) {
     overflow: visible;

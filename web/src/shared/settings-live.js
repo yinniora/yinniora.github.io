@@ -1,5 +1,6 @@
 import { applyFonts } from './fonts.js';
 import { applySettingsFromServer } from './settings-store.js';
+import { paintTheme } from './theme.js';
 
 const LOCALE_KEY = 'pi-web:v1:locale';
 const CUSTOM_LANGUAGES_KEY = 'pi-web:v1:custom-languages';
@@ -29,7 +30,7 @@ export function applyRemoteSettings(
 
   const theme = applied['pi-web-theme'];
   if (theme && documentImpl?.documentElement) {
-    documentImpl.documentElement.dataset.theme = theme;
+    paintTheme(windowImpl || documentImpl.defaultView, documentImpl, theme);
     try {
       documentImpl.cookie = `pi-web-theme=${theme};path=/;SameSite=Lax;max-age=31536000`;
     } catch {

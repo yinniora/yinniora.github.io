@@ -3007,10 +3007,6 @@
       color: var(--body-bg) !important;
     }
 
-    .label-modal-remove {
-      color: var(--error, #ef4444) !important;
-    }
-
     /* Highlight effect for deep-linked messages */
     .user-message.highlight,
     .assistant-message.highlight {
@@ -5084,75 +5080,43 @@
     .pi-chat-model-label:hover { background: var(--selected-bg, #3a3a4a); color: var(--text); }
 
     .pi-chat-thinking-label {
-      background: none;
-      border: none;
-      font-size: 11px;
-      font-family: inherit;
       cursor: pointer;
-      padding: 1px 6px;
-      border-radius: 3px;
       flex-shrink: 0;
       white-space: nowrap;
-      transition: background 0.1s, color 0.1s;
     }
-    .pi-chat-thinking-label:hover { background: var(--selected-bg, #3a3a4a); }
-
     .pi-chat-thinking-popup {
       position: fixed;
-      background: var(--container-bg, #1e1e2e);
-      border: 1px solid var(--dim);
-      border-radius: 6px;
-      box-shadow: 0 -4px 16px rgba(0,0,0,0.3);
+      background: var(--surface, var(--container-bg));
+      border: 1px solid color-mix(in srgb, var(--text) 35%, var(--surface));
+      border-radius: 12px;
+      box-shadow: 0 10px 28px #0005;
       z-index: 200;
-      display: flex;
       flex-direction: column;
-      min-width: 120px;
-      max-height: 240px;
+      min-width: 156px;
+      max-height: min(320px, 50dvh);
       overflow-y: auto;
+      font-size: 14px;
     }
-    .pi-chat-thinking-list {
-      padding: 4px;
-    }
+    .pi-chat-thinking-list { padding: 5px; }
     .thinking-level-item {
-      display: block;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 40px;
       width: 100%;
-      background: none;
-      border: none;
-      color: var(--muted);
-      font-size: 11px;
-      font-family: inherit;
-      cursor: pointer;
-      padding: 5px 8px;
-      border-radius: 3px;
-      text-align: left;
-      transition: background 0.1s;
-    }
-    .thinking-level-item:hover { background: var(--selected-bg, #3a3a4a); color: var(--text); }
-    .thinking-level-item.selected { background: var(--selected-bg, #3a3a4a); color: var(--text); }
-    .thinking-level-item:disabled {
-      cursor: not-allowed;
-      opacity: 0.38;
+      color: var(--text);
       background: transparent;
+      border: 0;
+      border-radius: 7px;
+      cursor: pointer;
+      padding: 6px 10px;
+      text-align: left;
     }
-    .thinking-level-item:disabled:hover { background: transparent; color: var(--muted); }
-    .thinking-level-item.thinking-off { color: var(--text-soft); }
-    .thinking-level-item.thinking-minimal { color: var(--thinkingMinimal); }
-    .thinking-level-item.thinking-low { color: var(--thinkingLow); }
-    .thinking-level-item.thinking-medium { color: var(--thinkingMedium); }
-    .thinking-level-item.thinking-high { color: var(--thinkingHigh); }
-    .thinking-level-item.thinking-xhigh { color: var(--thinkingXhigh); }
-    .thinking-level-item.selected.thinking-off,
-    .thinking-level-item:hover.thinking-off { color: var(--text); }
-    .thinking-level-item.selected.thinking-minimal,
-    .thinking-level-item:hover.thinking-minimal { color: var(--thinkingMinimal); }
-    .thinking-level-item.selected.thinking-low,
-    .thinking-level-item:hover.thinking-low { color: var(--thinkingLow); }
-    .thinking-level-item.selected.thinking-medium,
-    .thinking-level-item:hover.thinking-medium { color: var(--thinkingMedium); }
-    .thinking-level-item.selected.thinking-high,
-    .thinking-level-item:hover.thinking-high { color: var(--thinkingHigh); }
-    .thinking-level-item.selected.thinking-xhigh,
-    .thinking-level-item:hover.thinking-xhigh { color: var(--thinkingXhigh); }
+    .thinking-level-item:is(:hover, :focus-visible, .selected) {
+      color: var(--text);
+      background: color-mix(in srgb, var(--text) 14%, var(--surface));
+    }
+    .thinking-level-item.selected { font-weight: 650; }
 
     /* Share overlay */
     .share-overlay-backdrop {

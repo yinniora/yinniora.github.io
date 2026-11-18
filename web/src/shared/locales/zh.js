@@ -204,11 +204,6 @@ export default {
   'composer.attachPhotos': '附加照片',
   'models.autoProtocol': 'YuGo Pi 会根据提供商的模型目录自动识别 API 格式。',
   'models.effortAvailable': '可调推理强度',
-  'models.effortVerify': '检查强度',
-  'models.effortConfirm':
-    '要检查 {model} 的强度选项吗？YuGo Pi 将使用此密钥发送最多三个小型测试请求，服务商可能会对此收费。',
-  'models.effortVerified': '此模型可用的强度选项已就绪。',
-  'models.effortUnconfirmed': '服务商未确认此模型有足够的可调级别。',
   'thinking.max': '最高',
   'composer.addAttachment': '添加附件',
   'composer.uploadFiles': '上传文件',

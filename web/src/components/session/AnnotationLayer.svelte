@@ -325,7 +325,7 @@
         <div class="annotation-item" data-annotation-id={a.id} data-anchor-id={a.anchorId}>
           <button
             type="button"
-            class="annotation-delete"
+            class="annotation-delete danger-button"
             data-action="delete"
             title={t('annotation.deleteNote')}>{@html icon(X, { size: 14 })}</button
           >

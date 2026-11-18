@@ -118,10 +118,11 @@
         data-setting-theme
         value={theme}
         onchange={(e) => commitTheme(e.currentTarget.value)}
-        ><option value="dark">{t('settings.themeDark')}</option><option value="light"
-          >{t('settings.themeLight')}</option
-        ><option value="nord">Nord</option><option value="dracula">Dracula</option><option
-          value="custom">{t('settings.themeCustom')}</option
+        ><option value="system">{t('settings.fontSystem')}</option><option value="dark"
+          >{t('settings.themeDark')}</option
+        ><option value="light">{t('settings.themeLight')}</option><option value="nord">Nord</option
+        ><option value="dracula">Dracula</option><option value="custom"
+          >{t('settings.themeCustom')}</option
         ></select
       >
     </div>

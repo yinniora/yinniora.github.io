@@ -15,6 +15,7 @@ import '../../internal/ui/embedded/styles/menu.css';
 import '../../internal/ui/embedded/styles/palette.css';
 import './personal.css';
 import { lockPageZoom, trackVisualViewport } from './shared/visual-viewport.js';
+import { paintTheme, watchSystemTheme } from './shared/theme.js';
 
 lockPageZoom();
 trackVisualViewport();
@@ -51,12 +52,11 @@ function waitForMediaBridge() {
 
 async function start() {
   try {
-    document.documentElement.dataset.theme =
-      localStorage.getItem('pi-web-theme') ||
-      (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    paintTheme(window, document, localStorage.getItem('pi-web-theme') || 'system');
     if (!localStorage.getItem(LOCALE_KEY))
       localStorage.setItem(LOCALE_KEY, navigator.language.startsWith('zh') ? 'zh' : 'en');
   } catch {}
+  watchSystemTheme(window, document);
   resetI18n();
   const host = document.getElementById('remote-status');
   let config = readRemoteConfig();

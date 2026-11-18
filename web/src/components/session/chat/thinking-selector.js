@@ -4,6 +4,7 @@ import {
   supportedThinkingLevels,
 } from '../../../session/chat/chat-selectors.js';
 import { t } from '../../../shared/i18n.js';
+import { icon, Check } from '../../../shared/icons.js';
 import { escapeHtml } from '../../../session/render/session-format.js';
 
 export function renderThinkingLevelList({
@@ -16,7 +17,8 @@ export function renderThinkingLevelList({
   supported.forEach((level) => {
     const active = level === selectedLevel ? ' selected' : '';
     const label = escapeHtml(t('thinking.' + level));
-    html += `<button type="button" class="thinking-level-item thinking-${level}${active}" data-level="${level}">${label}</button>`;
+    const mark = active ? icon(Check, { size: 16, strokeWidth: 2.5 }) : '';
+    html += `<button type="button" class="thinking-level-item${active}" data-level="${level}" aria-pressed="${Boolean(active)}"><span>${label}</span>${mark}</button>`;
   });
   return html;
 }
@@ -56,7 +58,7 @@ export function setupThinkingLevelSelector({
     thinkingLabelBtn.setAttribute('aria-expanded', 'true');
     renderThinkingList(getKnownThinkingLevel());
     const rect = thinkingLabelBtn.getBoundingClientRect();
-    const minW = 120;
+    const minW = 156;
     let left = rect.right - minW;
     if (left < 4) left = 4;
     if (left + minW > windowImpl.innerWidth - 4) left = windowImpl.innerWidth - minW - 4;

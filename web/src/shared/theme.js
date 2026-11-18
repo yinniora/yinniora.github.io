@@ -18,16 +18,17 @@ function readThemeBg(windowImpl, documentImpl) {
   }
 }
 
-export function applyTheme(windowImpl, documentImpl, next) {
-  next = next || 'dark';
+export function paintTheme(windowImpl, documentImpl, preference = 'dark') {
+  const next =
+    preference === 'system'
+      ? windowImpl?.matchMedia?.('(prefers-color-scheme: dark)')?.matches
+        ? 'dark'
+        : 'light'
+      : preference;
+  documentImpl.documentElement.dataset.themePreference = preference;
   documentImpl.documentElement.dataset.theme = next;
-  writeSetting('pi-web-theme', next, { storage: windowImpl.localStorage });
-  try {
-    documentImpl.cookie = 'pi-web-theme=' + next + ';path=/;SameSite=Lax;max-age=31536000';
-  } catch (e) {}
-
   const wco = !!(
-    windowImpl.navigator &&
+    windowImpl?.navigator &&
     windowImpl.navigator.windowControlsOverlay &&
     windowImpl.navigator.windowControlsOverlay.visible
   );
@@ -39,13 +40,32 @@ export function applyTheme(windowImpl, documentImpl, next) {
   try {
     documentImpl.documentElement.style.backgroundColor = color;
   } catch (e) {}
-  const meta = documentImpl.querySelector('meta[name="theme-color"]');
+  const meta = documentImpl.querySelector?.('meta[name="theme-color"]');
   if (meta) meta.content = color;
+  syncThemeIcons(documentImpl);
+}
+
+export function watchSystemTheme(windowImpl, documentImpl) {
+  const media = windowImpl.matchMedia?.('(prefers-color-scheme: dark)');
+  media?.addEventListener('change', () => {
+    if (documentImpl.documentElement.dataset.themePreference === 'system')
+      paintTheme(windowImpl, documentImpl, 'system');
+  });
+}
+
+export function applyTheme(windowImpl, documentImpl, next) {
+  const preference = next || 'dark';
+  paintTheme(windowImpl, documentImpl, preference);
+  writeSetting('pi-web-theme', preference, { storage: windowImpl.localStorage });
+  try {
+    documentImpl.cookie = 'pi-web-theme=' + preference + ';path=/;SameSite=Lax;max-age=31536000';
+  } catch (e) {}
 }
 
 export function toggleTheme(windowImpl, documentImpl) {
-  const themes = ['dark', 'light', 'nord', 'dracula', 'custom'];
-  const current = documentImpl.documentElement.dataset.theme || 'dark';
+  const themes = ['dark', 'light', 'nord', 'dracula', 'custom', 'system'];
+  const { themePreference, theme } = documentImpl.documentElement.dataset;
+  const current = themePreference || theme || 'dark';
   let idx = themes.indexOf(current);
   if (idx === -1) idx = 0;
   const next = themes[(idx + 1) % themes.length];
@@ -54,10 +74,10 @@ export function toggleTheme(windowImpl, documentImpl) {
 
 export function syncThemeIcons(documentImpl) {
   const current = documentImpl.documentElement.dataset.theme || 'dark';
-  documentImpl.querySelectorAll('[data-command-theme-icon]').forEach((el) => {
+  documentImpl.querySelectorAll?.('[data-command-theme-icon]').forEach((el) => {
     setThemeIconElement(el, current, { documentImpl });
   });
-  documentImpl.querySelectorAll('[data-theme-icon]').forEach((el) => {
+  documentImpl.querySelectorAll?.('[data-theme-icon]').forEach((el) => {
     setThemeIconElement(el, current, { documentImpl });
   });
 }

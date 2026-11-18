@@ -143,7 +143,7 @@
           >
           <button
             type="button"
-            class="project-delete-submit"
+            class="project-delete-submit danger-confirm"
             disabled={busy}
             onclick={deleteProject}
             >{busy
@@ -218,7 +218,7 @@
                 >
                 <button
                   type="button"
-                  class="project-row-remove"
+                  class="project-row-remove danger-button"
                   disabled={busy}
                   aria-label={`${t('projects.delete')} ${basename(project.path)}`}
                   onclick={() => askDelete(project)}

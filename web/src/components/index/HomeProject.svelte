@@ -120,7 +120,7 @@
             }}>{@html icon(Plus, { size: 16 })}{t('index.newSession')}</button
           >
           <button
-            class="home-danger"
+            class="home-danger danger-button"
             onclick={() => {
               menu.open = false;
               onDeleteProject(project);

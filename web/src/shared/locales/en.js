@@ -75,12 +75,6 @@ export default {
   'models.protocol': 'API format',
   'models.autoProtocol': 'YuGo Pi detects the API format from the provider’s model catalog.',
   'models.effortAvailable': 'Adjustable reasoning effort',
-  'models.effortVerify': 'Check effort',
-  'models.effortConfirm':
-    'Check the effort options for {model}? YuGo Pi sends up to three small test requests using this key. Your provider may charge for them.',
-  'models.effortVerified': 'The accepted effort options are ready for this model.',
-  'models.effortUnconfirmed':
-    'The provider did not confirm enough adjustable levels for this model.',
   'models.openaiCompatible': 'OpenAI compatible / New API — Chat Completions',
   'models.openaiResponses': 'OpenAI / New API — Responses',
   'models.anthropic': 'Claude / Anthropic compatible',

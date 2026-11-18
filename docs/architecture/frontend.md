@@ -237,22 +237,28 @@ Settings → Models is shared by desktop and mobile. `ModelSettings` groups keys
 by user labels, refreshes one provider at a time, allows searching and selecting
 multiple models, then explicitly applies them. The backend detects API format from
 the catalog and keeps model IDs intact. Advertised effort capability and available
-levels drive the conversation effort picker. A locally verified model can also
-record `reasoning` and a `thinkingLevelMap` in Pi's model configuration when its
+levels drive the conversation effort picker. A custom model can also
+use `reasoning` and a `thinkingLevelMap` in Pi's model configuration when its
 catalog omits those fields. Fixed-effort aliases and models with unknown capability
 stay selectable with the effort picker hidden. The applied list
 groups models by key label and offers per-model removal plus context, output and
 image input options when applying models.
-Applied models that use a compatible chat endpoint can be checked explicitly.
-The check uses a fixed synthetic prompt and up to three bounded requests for
-that key and model. It requires the gateway to reject an invalid parameter
-and accept adjustable levels before saving them. Ordinary model switching and
-catalog refreshes do not run inference probes. The composer shows an effort
-gauge beside the computer-control button when the selected model has adjustable
-levels. The menu lists only those levels. The model label keeps the configured
-key label as worker status updates.
+Reasoning uses Pi's native registry and map semantics. Catalogs may also
+describe exact levels using the OpenCode/models.dev `capabilities.reasoning`
+shape. Model discovery uses the provider's read-only catalog, and switching
+reads the selected model's declared options locally. The composer shows an
+effort button with an icon and the current level. Its menu uses a checkmark
+for the selected option. The model label keeps the configured key label as
+worker status updates.
+
+Appearance settings can follow the device's light or dark preference in real
+time. Destructive controls share theme-aware colors, with solid buttons in
+confirmation steps and outlined actions elsewhere.
 The selected key can be removed after confirmation. This also removes its
 applied models and saved API credential from the Mac's Pi configuration.
+Removing one applied model clears the model's native configuration, its exact
+provider override and exact references in local Pi startup settings. The key
+can still be used with its other models.
 Conversation history is retained. Idle workers reload after deletion, and
 active replies finish with their original configuration.
 Key entry uses a password field, is cleared after save, and never uses browser

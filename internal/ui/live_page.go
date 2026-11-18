@@ -82,7 +82,7 @@ const wcoBootScript = `<script>
     if(t) return t;
     t = serverTheme();
     if(!t){ try{ t = localStorage.getItem('pi-web-theme') || 'dark'; }catch(e){ t = 'dark'; } }
-    return t;
+    return t === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : t;
   }
   function applyBg(){
     var t = resolveTheme();
@@ -180,8 +180,12 @@ func themeBootScript(defaultTheme string) template.HTML {
 	return template.HTML(fmt.Sprintf(`<script>
 (function(){
   var STORAGE_KEY = 'pi-web-theme';
-  var themes = ['dark', 'light', 'nord', 'dracula', 'custom'];
-  function applyTheme(t){ document.documentElement.dataset.theme = t || 'dark'; }
+  var themes = ['dark', 'light', 'nord', 'dracula', 'custom', 'system'];
+  var systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+  function applyTheme(t){
+    document.documentElement.dataset.themePreference = t || 'dark';
+    document.documentElement.dataset.theme = t === 'system' ? (systemTheme.matches ? 'dark' : 'light') : (t || 'dark');
+  }
   function currentTheme(){ return document.documentElement.dataset.theme || 'dark'; }
   // Lucide theme icons, inlined so the indicator is painted before the JS
   // bundle loads. Must match themeIcon() in web/src/shared/icons.js exactly.
@@ -213,7 +217,7 @@ func themeBootScript(defaultTheme string) template.HTML {
     if(meta) { meta.content = color; }
   }
   function toggleTheme(){
-    var idx = themes.indexOf(currentTheme());
+    var idx = themes.indexOf(document.documentElement.dataset.themePreference || currentTheme());
     if(idx === -1) idx = 0;
     var next = themes[(idx + 1) %% themes.length];
     applyTheme(next);
@@ -246,6 +250,9 @@ func themeBootScript(defaultTheme string) template.HTML {
   }
   // Keep theme-color/html background in sync if WCO turns on/off after load.
   try{ window.matchMedia('(display-mode: window-controls-overlay)').addEventListener('change', updateBtn); }catch(e){}
+  systemTheme.addEventListener('change', function(){
+    if(document.documentElement.dataset.themePreference === 'system'){ applyTheme('system'); updateBtn(); }
+  });
 })();
 </script>`, defaultTheme))
 }

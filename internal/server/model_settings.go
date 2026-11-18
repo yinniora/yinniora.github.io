@@ -168,11 +168,7 @@ func (s *Server) modelProfiles(providers map[string]any) []modelProfile {
 		}
 		row := modelProfile{ID: id, Label: label, BaseURL: publicBase, API: api, HasKey: key != "", Applied: []map[string]any{}, Available: []map[string]any{}}
 		for _, m := range configuredModels(p) {
-			visible := publicModel(m, id, label)
-			if key != "" && modelEffortCheckable(p, m) {
-				visible["canVerifyEffort"] = true
-			}
-			row.Applied = append(row.Applied, visible)
+			row.Applied = append(row.Applied, publicModel(m, id, label))
 		}
 		row.Available = append(row.Available, row.Applied...)
 		if catalog, ok := s.modelCatalogs[id]; ok && catalog.Signature == profileSignature(p, key) {
@@ -418,6 +414,74 @@ func deleteModelKey(agent, id string, config map[string]any) error {
 
 var errModelCredentialsChanged = errors.New("model credentials changed; reload and try again")
 
+func deleteModelConfiguration(agent, provider, modelID string, config map[string]any) error {
+	settingsPath := filepath.Join(agent, "settings.json")
+	info, err := os.Lstat(settingsPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return writeModelConfig(agent, config)
+	}
+	if err != nil || !info.Mode().IsRegular() || info.Size() > 4<<20 {
+		return errors.New("cannot read local Pi settings")
+	}
+	previous, err := os.ReadFile(settingsPath)
+	var settings map[string]any
+	if err != nil || json.Unmarshal(previous, &settings) != nil || settings == nil {
+		return errors.New("cannot read local Pi settings")
+	}
+	changed := false
+	if settings["defaultProvider"] == provider && settings["defaultModel"] == modelID {
+		delete(settings, "defaultProvider")
+		delete(settings, "defaultModel")
+		changed = true
+	}
+	if patterns, ok := settings["enabledModels"].([]any); ok {
+		qualified := provider + "/" + modelID
+		remaining := make([]any, 0, len(patterns))
+		for _, item := range patterns {
+			pattern, _ := item.(string)
+			level, exact := strings.CutPrefix(pattern, qualified+":")
+			switch {
+			case pattern == qualified:
+			case exact && (level == "off" || level == "minimal" || level == "low" || level == "medium" ||
+				level == "high" || level == "xhigh" || level == "max"):
+			default:
+				remaining = append(remaining, item)
+			}
+		}
+		if len(remaining) != len(patterns) {
+			if len(remaining) == 0 {
+				delete(settings, "enabledModels")
+			} else {
+				settings["enabledModels"] = remaining
+			}
+			changed = true
+		}
+	}
+	if !changed {
+		return writeModelConfig(agent, config)
+	}
+	next, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	next = append(next, '\n')
+	if current, err := os.ReadFile(settingsPath); err != nil || !bytes.Equal(current, previous) {
+		return errModelCredentialsChanged
+	}
+	if err := writePrivateModelFile(settingsPath, next); err != nil {
+		return err
+	}
+	if err := writeModelConfig(agent, config); err != nil {
+		if current, readErr := os.ReadFile(settingsPath); readErr == nil && bytes.Equal(current, next) {
+			if restoreErr := writePrivateModelFile(settingsPath, previous); restoreErr != nil {
+				return errors.New("model could not be removed and local settings could not be restored")
+			}
+		}
+		return err
+	}
+	return nil
+}
+
 // Canonical custom models take precedence over a stale Pi enumeration cache.
 // Only public metadata is sent to browsers; provider headers and keys stay local.
 func (s *Server) appliedModels(fallback []map[string]any) ([]map[string]any, error) {
@@ -429,12 +493,15 @@ func (s *Server) appliedModels(fallback []map[string]any) ([]map[string]any, err
 	}
 	result := []map[string]any{}
 	availableProviders := map[string]bool{}
+	runtimeModels := map[[2]string]map[string]any{}
 	for _, m := range fallback {
 		id, _ := m["provider"].(string)
+		modelID, _ := m["id"].(string)
 		if _, removed := s.removedModelProviders[id]; removed && providers[id] == nil {
 			continue
 		}
 		availableProviders[id] = true
+		runtimeModels[[2]string{id, modelID}] = m
 		if p, ok := providers[id].(map[string]any); ok && p["models"] != nil {
 			continue
 		}
@@ -442,6 +509,20 @@ func (s *Server) appliedModels(fallback []map[string]any) ([]map[string]any, err
 	}
 	for _, p := range s.modelProfiles(providers) {
 		if p.HasKey || availableProviders[p.ID] {
+			profile, _ := providers[p.ID].(map[string]any)
+			for i, configured := range configuredModels(profile) {
+				if _, explicit := configured["reasoning"]; explicit {
+					continue
+				}
+				modelID, _ := configured["id"].(string)
+				if runtime := runtimeModels[[2]string{p.ID, modelID}]; runtime != nil {
+					native := publicModel(runtime, p.ID, p.Label)
+					p.Applied[i]["reasoning"] = native["reasoning"]
+					if levelMap := native["thinkingLevelMap"]; levelMap != nil && configured["thinkingLevelMap"] == nil {
+						p.Applied[i]["thinkingLevelMap"] = levelMap
+					}
+				}
+			}
 			result = append(result, p.Applied...)
 		}
 	}
@@ -648,47 +729,6 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			present[id] = true
 		}
 		p["models"] = existing
-	case "verify-effort":
-		check := [2]string{request.ID, request.ModelID}
-		if _, running := s.modelEffortChecks[check]; running {
-			writeJSONError(w, 409, "an effort check is already running")
-			return
-		}
-		var model map[string]any
-		for _, candidate := range configuredModels(p) {
-			if candidate["id"] == request.ModelID {
-				model = candidate
-				break
-			}
-		}
-		if model == nil || !modelEffortCheckable(p, model) {
-			writeJSONError(w, 400, "the selected model cannot be checked")
-			return
-		}
-		if s.modelEffortChecks == nil {
-			s.modelEffortChecks = map[[2]string]struct{}{}
-		}
-		s.modelEffortChecks[check] = struct{}{}
-		key := s.modelProfileKey(request.ID, p)
-		ctx, cancel := context.WithTimeout(r.Context(), 22*time.Second)
-		s.modelConfigMu.Unlock()
-		levels, compat, verifyErr := verifyModelEffort(ctx, p, model, key)
-		cancel()
-		s.modelConfigMu.Lock()
-		delete(s.modelEffortChecks, check)
-		if verifyErr != nil {
-			writeJSONError(w, 422, verifyErr.Error())
-			return
-		}
-		if s.modelProfileKey(request.ID, p) != key {
-			writeJSONError(w, 409, "model credentials changed; reload and try again")
-			return
-		}
-		model["reasoning"] = true
-		model["thinkingLevelMap"] = levels
-		if len(compat) > 0 {
-			model["compat"] = compat
-		}
 	case "remove-model":
 		if p == nil || request.ModelID == "" {
 			writeJSONError(w, 404, "model not found")
@@ -701,6 +741,9 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		p["models"] = list
+		if overrides, ok := p["modelOverrides"].(map[string]any); ok {
+			delete(overrides, request.ModelID)
+		}
 	case "remove-key":
 		base, _ := p["baseUrl"].(string)
 		api, _ := p["api"].(string)
@@ -718,9 +761,12 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, 409, "model configuration changed; reload and try again")
 		return
 	}
-	if request.Action == "remove-key" {
+	switch request.Action {
+	case "remove-key":
 		err = deleteModelKey(s.agentDir, request.ID, config)
-	} else {
+	case "remove-model":
+		err = deleteModelConfiguration(s.agentDir, request.ID, request.ModelID, config)
+	default:
 		err = writeModelConfig(s.agentDir, config)
 	}
 	if errors.Is(err, errModelCredentialsChanged) {
@@ -739,7 +785,7 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		// The process-wide Pi model enumeration can still return this profile.
 		s.removedModelProviders[request.ID] = struct{}{}
 	}
-	if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok && (request.Action == "remove-key" || request.Action == "verify-effort") {
+	if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok && (request.Action == "remove-key" || request.Action == "remove-model") {
 		manager.ResourcesChanged()
 	} else if manager, ok := s.chatSender.(interface{ ModelsChanged() }); ok {
 		manager.ModelsChanged()

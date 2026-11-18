@@ -63,3 +63,17 @@ func TestEffortFromNativeGeminiAndAdvertisedResponseLevels(t *testing.T) {
 		t.Fatalf("wrong Responses levels: %+v", responses)
 	}
 }
+
+func TestEffortFromStructuredProviderCapabilities(t *testing.T) {
+	model := map[string]any{}
+	describeCatalogModel(model, map[string]any{
+		"capabilities": map[string]any{"reasoning": map[string]any{
+			"supported": true, "toggle": true, "effort": []any{"default", "low", "high"},
+		}},
+	}, "provider-model", apiChat, "https://example.invalid/v1")
+	levels, _ := model["thinkingLevelMap"].(map[string]any)
+	if model["reasoning"] != true || levels["off"] != "none" || levels["low"] != "low" ||
+		levels["high"] != "high" || levels["medium"] != nil {
+		t.Fatalf("incorrect declared effort mapping: %+v", model)
+	}
+}

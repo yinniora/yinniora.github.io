@@ -198,7 +198,7 @@
           {#if confirmRevoke === device.id}<div class="device-remove-actions">
               <p>{t('devices.removeHint')}</p>
               <button
-                class="device-revoke-confirm"
+                class="device-revoke-confirm danger-confirm"
                 disabled={busy}
                 onclick={() => revoke(device.id)}
                 >{busy ? t('devices.removing') : t('devices.confirmRemove')}</button
@@ -209,7 +209,7 @@
               >
             </div>
           {:else}<button
-              class="device-revoke"
+              class="device-revoke danger-button"
               title={t('devices.remove')}
               aria-label={`${t('devices.remove')} ${device.name} ${String(device.id).slice(0, 12)}`}
               disabled={busy}

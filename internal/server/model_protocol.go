@@ -116,8 +116,20 @@ func describeCatalogModel(model, raw map[string]any, id, api, base string) {
 		host = providerURL.Hostname()
 	}
 	levels := catalogStrings(raw["supported_reasoning_efforts"])
+	capabilities, _ := raw["capabilities"].(map[string]any)
+	reasoning, _ := capabilities["reasoning"].(map[string]any)
+	if reasoning["supported"] == false {
+		return
+	}
+	if len(levels) == 0 {
+		levels = catalogStrings(reasoning["effort"])
+		delete(levels, "default")
+		if len(levels) > 0 && reasoning["toggle"] == true && (api == apiChat || api == apiResponses) {
+			levels["none"] = true
+		}
+	}
 	if api == apiAnthropic && ((host == "api.anthropic.com" && adaptiveClaude.MatchString(id)) ||
-		params["output_config.effort"] || (adaptiveClaude.MatchString(id) && (params["output_config"] || params["effort"]))) {
+		params["output_config.effort"] || (adaptiveClaude.MatchString(id) && (params["output_config"] || params["effort"] || len(levels) > 0))) {
 		model["reasoning"] = true
 		model["compat"] = map[string]any{"forceAdaptiveThinking": true}
 		levels := map[string]any{"minimal": nil}
@@ -140,7 +152,7 @@ func describeCatalogModel(model, raw map[string]any, id, api, base string) {
 			model["reasoning"] = true
 			model["compat"] = map[string]any{"supportsReasoningEffort": true}
 		}
-	} else if api == apiGemini && (raw["thinking"] == true || params["thinkingconfig.thinkinglevel"]) {
+	} else if api == apiGemini && (raw["thinking"] == true || params["thinkingconfig.thinkinglevel"] || len(levels) > 0) {
 		model["reasoning"] = true
 		if len(levels) == 0 {
 			levels = map[string]bool{"low": true, "medium": true, "high": true}
