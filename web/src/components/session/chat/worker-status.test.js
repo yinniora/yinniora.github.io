@@ -55,7 +55,7 @@ describe('setupWorkerStatusPolling', () => {
     expect(setModelLabel).toHaveBeenCalledWith('gpt-4o @ openai');
     expect(setThinkingLabel).toHaveBeenCalledWith('high');
     expect(updateContextUsage).toHaveBeenCalled();
-    expect(onWorkerModelUpdate).toHaveBeenCalledWith('openai', 'gpt-4o');
+    expect(onWorkerModelUpdate).toHaveBeenCalledWith('openai', 'gpt-4o', undefined);
   });
 
   it('dispatches pi-worker-done on running to idle transition', async () => {

@@ -183,8 +183,10 @@ keeps the existing sidebar and home composer.
 In mobile settings, a right swipe leaves the current subsection or returns
 from the settings list along the same route as the header back control.
 Forward and back navigation animate incoming content in opposite directions
-while the header stays fixed. The animation follows the system motion preference
-and pauses while the keyboard is open.
+while headers and the composer stay fixed. Sheets, dialogs and anchored menus
+use short entrance and exit transitions. Closing a layer releases interaction
+immediately. Motion follows the system preference, and route movement pauses
+while the keyboard is open.
 Session cards show a completion dot after a finished assistant reply. The dot
 survives reloads and clears when the conversation is viewed in the foreground.
 Read state is kept in the current browser.
@@ -195,6 +197,12 @@ visible, the app fits the smaller valid window or visual viewport height. The
 outer document and the composer use the same height throughout the transition.
 Mobile settings scroll in their own pane and reveal the focused field inside
 the visible keyboard boundary, with standalone iOS page pan corrected once.
+The reasoning menu is positioned relative to its toolbar button, so viewport
+changes move the menu, toolbar and composer together.
+The selected Pi worker supplies the available reasoning levels. Before a worker
+exists, or with an older Pi version, the composer uses model catalog metadata.
+The add menu also opens the command picker for skills and prompt templates
+loaded by the current Pi session.
 Editable controls use at least 16px text. Model selection and BTW opening do
 not automatically focus a text field on mobile. Viewport metadata, CSS touch
 behavior and WebKit zoom events lock page zoom while single-finger touch

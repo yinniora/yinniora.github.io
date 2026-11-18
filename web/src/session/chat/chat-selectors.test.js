@@ -51,6 +51,10 @@ describe('chat selector helpers', () => {
     expect(supportedThinkingLevels({ reasoning: false })).toEqual(['off']);
     expect(supportedThinkingLevels(models[0])).not.toContain('low');
     expect(supportedThinkingLevels(models[0])).toContain('xhigh');
+    expect(supportedThinkingLevels({ reasoning: false, thinkingLevels: ['off', 'high'] })).toEqual([
+      'off',
+      'high',
+    ]);
     expect(
       detectCurrentThinkingLevel([{ type: 'thinking_level_change', thinkingLevel: 'medium' }]),
     ).toBe('medium');

@@ -52,6 +52,8 @@ export function createChatSelectorLoaders({
       getKnownModelLabel,
       setCurrentModelForThinking,
       setWorkerModelUpdate,
+      setKnownThinkingLevel,
+      setThinkingLabel,
     });
   }
 
@@ -86,7 +88,6 @@ export function createChatSelectorLoaders({
     return thinkingSelector.setupThinkingLevelSelector({
       documentImpl,
       ...(scope ? { scope } : {}),
-      windowImpl,
       sessionId: getSessionId(),
       entries,
       getCurrentModel: getCurrentModelForThinking,

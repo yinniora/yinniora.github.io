@@ -19,7 +19,14 @@ describe('ChatToolbar', () => {
     expect(document.getElementById('pi-chat-status').textContent).toBe('running');
     expect(document.getElementById('pi-chat-status').classList.contains('running')).toBe(true);
     expect(document.getElementById('pi-chat-thinking-label').disabled).toBe(false);
-    expect(document.getElementById('pi-chat-thinking-label').style.display).toBe('');
+    const thinkingControl = document.querySelector('.thinking-control');
+    expect(thinkingControl.hidden).toBe(false);
+    expect(thinkingControl.querySelector('#pi-chat-thinking-popup').hasAttribute('inert')).toBe(
+      true,
+    );
+    expect(thinkingControl.querySelector('#pi-chat-thinking-list').getAttribute('role')).toBe(
+      'group',
+    );
     expect(document.getElementById('pi-chat-model-label').textContent).toBe('gpt-test');
     expect(document.getElementById('pi-chat-model-label').style.display).toBe('');
     // Cancel + Queue surface only while a response is running; Send becomes Steer.
@@ -37,7 +44,7 @@ describe('ChatToolbar', () => {
     expect(document.querySelector('.composer-add summary')).toBeNull();
     expect(document.getElementById('pi-chat-status').textContent).toBe('unavailable');
     expect(document.getElementById('pi-chat-thinking-label').disabled).toBe(true);
-    expect(document.getElementById('pi-chat-thinking-label').style.display).toBe('none');
+    expect(document.querySelector('.thinking-control').hidden).toBe(true);
     expect(document.getElementById('pi-chat-model-label').disabled).toBe(true);
     expect(document.getElementById('pi-chat-model-label').style.display).toBe('none');
     expect(document.getElementById('pi-chat-model-label').textContent).toBe('Model');
@@ -49,7 +56,7 @@ describe('ChatToolbar', () => {
     render(ChatToolbar, { props: { chatAvailable: true, toolbar } });
 
     expect(document.getElementById('pi-chat-status').textContent).toBe('idle');
-    expect(document.getElementById('pi-chat-thinking-label').style.display).toBe('none');
+    expect(document.querySelector('.thinking-control').hidden).toBe(true);
     expect(document.getElementById('pi-chat-cancel').style.display).toBe('none');
     expect(document.getElementById('pi-chat-queue').style.display).toBe('none');
     expect(document.getElementById('pi-chat-send').textContent).toBe('Send');

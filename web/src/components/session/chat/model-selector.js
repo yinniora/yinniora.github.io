@@ -49,6 +49,8 @@ export function setupModelSelector({
   getKnownModelLabel = () => '',
   setCurrentModelForThinking = () => {},
   setWorkerModelUpdate = () => {},
+  setKnownThinkingLevel = () => {},
+  setThinkingLabel = () => {},
 } = {}) {
   let allModels = [];
   let selectedModel = null;
@@ -61,12 +63,23 @@ export function setupModelSelector({
   }
 
   function reconcileSelection() {
-    setSelected(findModel(allModels, current.provider, current.modelId) || null);
+    const { provider, modelId, thinkingLevels } = current;
+    const model = findModel(allModels, provider, modelId);
+    setSelected(
+      Array.isArray(thinkingLevels) && thinkingLevels.length
+        ? { provider, id: modelId, ...model, thinkingLevels }
+        : model || null,
+    );
   }
 
-  setWorkerModelUpdate((provider, modelId) => {
+  setWorkerModelUpdate((provider, modelId, thinkingLevels) => {
     if (changingModel || !provider || !modelId) return;
-    current = { provider, modelId };
+    const sameModel = current.provider === provider && current.modelId === modelId;
+    current = {
+      provider,
+      modelId,
+      thinkingLevels: thinkingLevels || (sameModel ? current.thinkingLevels : undefined),
+    };
     reconcileSelection();
   });
 
@@ -180,10 +193,13 @@ export function setupModelSelector({
       const setData = await setRes.json();
       if (!setRes.ok) throw new Error(setData.error || 'set model failed');
       if (scope?.aborted) return;
-      current = { provider, modelId };
-      const model = findModel(allModels, provider, modelId);
-      setSelected(model || { provider, id: modelId, name: modelId });
-      const newLabel = modelDisplayLabel(model || { provider, id: modelId, name: modelId });
+      current = { provider, modelId, thinkingLevels: setData.thinkingLevels };
+      reconcileSelection();
+      if (setData.thinkingLevel) {
+        setKnownThinkingLevel(setData.thinkingLevel);
+        setThinkingLabel(setData.thinkingLevel);
+      }
+      const newLabel = modelDisplayLabel(selectedModel || { provider, id: modelId });
       setKnownModelLabel(newLabel);
       setModelLabel(newLabel);
     } catch (err) {

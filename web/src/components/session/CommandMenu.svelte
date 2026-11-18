@@ -45,8 +45,6 @@
 
   // Close animations must outlast the matching CSS transitions before the panel
   // is display:none'd (see command-menu styles).
-  const MOBILE_PANEL_CLOSE_MS = 260;
-  const DESKTOP_POPOVER_CLOSE_MS = 160;
 
   // Primary actions shared by the desktop popover and mobile panel. kbd hints
   // render on desktop only.
@@ -99,50 +97,26 @@
 
     let open = false;
 
-    const openMobilePanel = () => {
-      if (!mobileBackdrop || !mobilePanel) return;
-      mobileBackdrop.style.display = '';
-      mobilePanel.style.display = '';
-      requestAnimationFrame(() => {
-        mobileBackdrop.classList.add('open');
-        mobilePanel.classList.add('open');
-      });
-    };
-    const closeMobilePanel = () => {
-      if (!mobileBackdrop || !mobilePanel) return;
-      mobileBackdrop.classList.remove('open');
-      mobilePanel.classList.remove('open');
-      setTimeout(() => {
-        if (!mobilePanel.classList.contains('open')) {
-          mobileBackdrop.style.display = 'none';
-          mobilePanel.style.display = 'none';
-        }
-      }, MOBILE_PANEL_CLOSE_MS);
-    };
-    const openDesktopPopover = () => {
-      if (!desktopPopover) return;
-      desktopPopover.style.display = '';
-      requestAnimationFrame(() => desktopPopover.classList.add('open'));
-    };
-    const closeDesktopPopover = () => {
-      if (!desktopPopover) return;
-      desktopPopover.classList.remove('open');
-      setTimeout(() => {
-        if (!desktopPopover.classList.contains('open')) desktopPopover.style.display = 'none';
-      }, DESKTOP_POPOVER_CLOSE_MS);
+    const setOpen = (element, visible) => {
+      if (!element) return;
+      element.inert = !visible;
+      element.classList.toggle('open', visible);
     };
 
     const openMenu = () => {
       open = true;
       menuBtn.setAttribute('aria-expanded', 'true');
-      if (isMobile()) openMobilePanel();
-      else openDesktopPopover();
+      const mobile = isMobile();
+      setOpen(mobileBackdrop, mobile);
+      setOpen(mobilePanel, mobile);
+      setOpen(desktopPopover, !mobile);
     };
     const hideMenu = () => {
       open = false;
       menuBtn.setAttribute('aria-expanded', 'false');
-      closeMobilePanel();
-      closeDesktopPopover();
+      setOpen(mobileBackdrop, false);
+      setOpen(mobilePanel, false);
+      setOpen(desktopPopover, false);
     };
     closeMenu = hideMenu;
 
@@ -339,14 +313,14 @@
   class="command-menu-popover"
   role="menu"
   aria-labelledby="command-menu-btn"
-  style="display: none;"
+  inert
 >
   <div class="command-menu-body">
     {@render menuBody('command-menu-item', 'command-menu-section', true)}
   </div>
 </div>
-<div id="mobile-command-backdrop" class="mobile-command-backdrop" style="display: none;"></div>
-<div id="mobile-command-panel" class="mobile-command-panel" style="display: none;">
+<div id="mobile-command-backdrop" class="mobile-command-backdrop" inert></div>
+<div id="mobile-command-panel" class="mobile-command-panel" inert>
   <div class="mobile-command-body">
     {@render menuBody('mobile-command-item', 'mobile-command-section', false)}
   </div>

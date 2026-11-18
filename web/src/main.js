@@ -1,6 +1,7 @@
 import { mount } from 'svelte';
 import App from './App.svelte';
 import './personal.css';
+import './interaction.css';
 import { prepareStartupSettings } from './shared/startup-settings.js';
 import { lockPageZoom } from './shared/visual-viewport.js';
 

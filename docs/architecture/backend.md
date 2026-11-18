@@ -306,6 +306,7 @@ A single `pi --mode rpc` subprocess. Communicates via JSONL on stdin/stdout.
 type piRPCWorker struct {
     mu                   sync.Mutex
     writeMu              sync.Mutex
+    modelMu              sync.Mutex // serializes model changes with capability reads
     sessionPath          string
     startedAt            time.Time // process start; feeds metrics uptime
     cmd                  *exec.Cmd
@@ -316,6 +317,8 @@ type piRPCWorker struct {
     currentModel         string
     currentProvider      string
     currentThinkingLevel string
+    thinkingLevels       []string // Pi's cached levels for the current provider/model
+    thinkingLevelsLoaded bool
     stderrBuf            *strings.Builder
     commands             []workers.SlashCommand // cached get_commands result
     commandsCached       bool
@@ -325,6 +328,11 @@ type piRPCWorker struct {
     streamPreview        *streamPreviewAccumulator
 }
 ```
+
+The worker queries Pi's `get_available_thinking_levels` RPC after discovering
+the current model or switching models. Status polling and model selection
+reuse that capability data. Older Pi versions omit the list and the client
+uses the model catalog. A status poll never starts a worker.
 
 ## HTTP Handler Map
 

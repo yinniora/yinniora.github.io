@@ -1,0 +1,316 @@
+/* Live workspace surfaces share an easing curve. The viewport and scroll containers stay put. */
+:root {
+  --motion-control: 140ms;
+  --motion-menu: 170ms;
+  --motion-panel: 240ms;
+  --motion-ease: cubic-bezier(0.2, 0.75, 0.22, 1);
+}
+
+#spa-root
+  :is(
+    .hub-dialog,
+    .home-menu,
+    .pi-sheet-panel,
+    .modal-overlay > .modal,
+    .home-project-popover,
+    .pi-chat-model-popup
+  ) {
+  border-color: var(--workspace-edge);
+}
+#spa-root .hub-purge-confirm {
+  background: var(--danger-surface);
+  border-color: var(--danger-border);
+}
+#spa-root :is(.hub-hint, .hub-empty, .hub-purge-confirm p, .hub-row small) {
+  color: var(--workspace-secondary);
+}
+
+#spa-root :is(.command-menu-popover, .mobile-command-panel, .mobile-command-backdrop):not(.open) {
+  display: none !important;
+}
+
+@media (min-width: 901px) {
+  #spa-root :is(.mobile-command-panel, .mobile-command-backdrop) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not(.pi-keyboard-open)
+    #spa-root[data-route-motion='forward']
+    :is(
+      .mobile-home-content,
+      .personal-home-main:not(:has(.mobile-home)),
+      .settings-pane,
+      .settings-page-mobile-list .settings-sidebar,
+      .schedules-page,
+      #messages
+    ) {
+    animation: pi-route-forward var(--motion-panel) var(--motion-ease);
+  }
+  :root:not(.pi-keyboard-open)
+    #spa-root[data-route-motion='back']
+    :is(
+      .mobile-home-content,
+      .personal-home-main:not(:has(.mobile-home)),
+      .settings-pane,
+      .settings-page-mobile-list .settings-sidebar,
+      .schedules-page,
+      #messages
+    ) {
+    animation: pi-route-back var(--motion-panel) var(--motion-ease);
+  }
+
+  #spa-root
+    :is(
+      .session-loading,
+      .project-delete-confirm,
+      .project-delete-final-warning,
+      .hub-purge-confirm,
+      .mac-folder-browser,
+      .model-key-form,
+      .version-modal-overlay,
+      .label-modal,
+      .pi-chat-attachment-modal
+    ) {
+    animation: workspace-reveal var(--motion-panel) var(--motion-ease);
+  }
+
+  #spa-root
+    :is(
+      button.danger-button,
+      button.danger-confirm,
+      .thinking-level-item,
+      .home-menu-row,
+      .settings-sidebar-item,
+      .pi-chat-thinking-label
+    ) {
+    transition:
+      background-color var(--motion-control) ease,
+      border-color var(--motion-control) ease,
+      color var(--motion-control) ease,
+      scale 90ms ease-out;
+  }
+  #spa-root
+    :is(
+      button.danger-button,
+      button.danger-confirm,
+      .thinking-level-item,
+      .pi-chat-thinking-label
+    ):enabled:active {
+    scale: 0.98;
+  }
+
+  /* Keep an exit frame for panels whose existing controllers switch display or close a dialog. */
+  #spa-root
+    :is(
+      .hub-dialog,
+      .image-modal,
+      .modal-overlay,
+      .home-menu,
+      .home-menu-backdrop,
+      .command-menu-popover,
+      .mobile-command-panel,
+      .mobile-command-backdrop,
+      .pi-chat-model-popup,
+      .pi-chat-thinking-popup,
+      .pi-chat-slash-popup,
+      .pi-chat-context-popover,
+      .command-palette-overlay,
+      .share-overlay-backdrop
+    ),
+  body .pi-btw-window {
+    opacity: 1;
+    translate: 0 0;
+    transition:
+      opacity var(--overlay-duration, var(--motion-menu)) ease-out,
+      translate var(--overlay-duration, var(--motion-menu)) var(--motion-ease),
+      display var(--overlay-duration, var(--motion-menu)) allow-discrete,
+      overlay var(--overlay-duration, var(--motion-menu)) allow-discrete;
+  }
+
+  #spa-root :is(.hub-dialog, .modal-overlay, .pi-chat-model-popup, .image-modal),
+  #spa-root .mobile-command-panel,
+  body .pi-btw-window {
+    --overlay-duration: var(--motion-panel);
+  }
+  #spa-root :is(.home-menu, .pi-chat-slash-popup, .command-menu-popover) {
+    --overlay-offset: -6px;
+  }
+  #spa-root .mobile-command-panel {
+    --overlay-offset: 18px;
+    transition:
+      opacity var(--motion-panel) ease-out,
+      translate var(--motion-panel) var(--motion-ease),
+      display var(--motion-panel) allow-discrete !important;
+    transform: none !important;
+  }
+  #spa-root .command-menu-popover {
+    transform: none;
+  }
+  #spa-root
+    :is(
+      .image-modal,
+      .modal-overlay,
+      .home-menu-backdrop,
+      .mobile-command-backdrop,
+      .share-overlay-backdrop,
+      .command-palette-overlay
+    ) {
+    --overlay-offset: 0px;
+  }
+  .pi-keyboard-open #spa-root,
+  .pi-keyboard-open body .pi-btw-window {
+    --overlay-offset: 0px;
+  }
+
+  #spa-root
+    :is(
+      .hub-dialog:not([open]),
+      .image-modal:not([open]),
+      .modal-overlay:not(.visible),
+      .home-menu[hidden],
+      .home-menu-backdrop[hidden],
+      .command-menu-popover[inert],
+      .mobile-command-panel[inert],
+      .mobile-command-backdrop[inert],
+      .pi-chat-model-popup[style*='display: none'],
+      .pi-chat-thinking-popup[inert],
+      .pi-chat-slash-popup[style*='display: none'],
+      .pi-chat-context-popover[style*='display: none'],
+      .command-palette-overlay:not(.open),
+      .share-overlay-backdrop[inert]
+    ),
+  body .pi-btw-window[hidden] {
+    opacity: 0;
+    translate: 0 var(--overlay-offset, 8px);
+    pointer-events: none;
+  }
+
+  @starting-style {
+    #spa-root
+      :is(
+        .hub-dialog[open],
+        .image-modal[open],
+        .modal-overlay.visible,
+        .home-menu:not([hidden]),
+        .home-menu-backdrop:not([hidden]),
+        .command-menu-popover.open,
+        .mobile-command-panel.open,
+        .mobile-command-backdrop.open,
+        .pi-chat-model-popup,
+        .pi-chat-thinking-popup:not([inert]),
+        .pi-chat-slash-popup,
+        .pi-chat-context-popover,
+        .command-palette-overlay.open,
+        .share-overlay-backdrop:not([inert])
+      ),
+    body .pi-btw-window:not([hidden]) {
+      opacity: 0;
+      translate: 0 var(--overlay-offset, 8px);
+    }
+  }
+
+  #spa-root .modal-overlay > .modal {
+    transform: none;
+    translate: 0 var(--overlay-offset, 14px);
+    transition: translate var(--motion-panel) var(--motion-ease);
+  }
+  #spa-root .modal-overlay.visible > .modal {
+    translate: 0 0;
+    transform: none;
+  }
+  @starting-style {
+    #spa-root .modal-overlay.visible > .modal {
+      translate: 0 var(--overlay-offset, 14px);
+    }
+  }
+
+  #spa-root :is(.hub-dialog, .image-modal)::backdrop {
+    opacity: 1;
+    transition:
+      opacity var(--motion-menu) ease-out,
+      display var(--motion-panel) allow-discrete,
+      overlay var(--motion-panel) allow-discrete;
+  }
+  #spa-root :is(.hub-dialog, .image-modal):not([open])::backdrop {
+    opacity: 0;
+    pointer-events: none;
+  }
+  @starting-style {
+    #spa-root :is(.hub-dialog, .image-modal)[open]::backdrop {
+      opacity: 0;
+    }
+  }
+
+  #spa-root
+    :is(
+      details.composer-add,
+      details.computer-permission,
+      details.home-project-menu,
+      details.activity-disclosure
+    )::details-content {
+    opacity: 0;
+    transition:
+      opacity var(--motion-menu) ease-out,
+      content-visibility var(--motion-menu) allow-discrete;
+  }
+  #spa-root
+    :is(
+      details.composer-add,
+      details.computer-permission,
+      details.home-project-menu,
+      details.activity-disclosure
+    )[open]::details-content {
+    opacity: 1;
+  }
+  #spa-root details:not([open]) :is(.composer-add-menu, .computer-panel, .home-project-popover) {
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 600px) {
+  #spa-root :is(.home-menu, .hub-dialog, .pi-chat-model-popup) {
+    --overlay-offset: 16px;
+  }
+}
+
+:root.pi-keyboard-open #spa-root :is(.pi-chat-model-popup, .hub-dialog, .pi-chat-thinking-popup) {
+  --overlay-offset: 0px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-control: 0ms;
+  }
+  #spa-root
+    :is(
+      .modal-overlay,
+      .modal-overlay > .modal,
+      .command-menu-popover,
+      .mobile-command-panel,
+      .mobile-command-backdrop,
+      .right-sidebar,
+      .right-sidebar-backdrop
+    ) {
+    transition-duration: 0ms !important;
+  }
+}
+
+@keyframes pi-route-forward {
+  from {
+    opacity: 0.62;
+    translate: 14px 0;
+  }
+}
+@keyframes pi-route-back {
+  from {
+    opacity: 0.62;
+    translate: -14px 0;
+  }
+}
+@keyframes workspace-reveal {
+  from {
+    opacity: 0;
+  }
+}

@@ -88,6 +88,7 @@
   id="share-overlay"
   class="share-overlay-backdrop"
   style:display={open ? '' : 'none'}
+  inert={!open}
   bind:this={overlayEl}
 >
   <div id="share-dialog" class="share-dialog" class:error={isError}>

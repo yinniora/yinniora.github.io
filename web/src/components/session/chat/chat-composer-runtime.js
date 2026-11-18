@@ -112,9 +112,8 @@ export function runChatComposer({
     setCurrentModelForThinking: (model) => {
       currentModelForThinking = model;
       toolbar.selectedModel = model;
-      toolbar.canAdjustThinking = Boolean(
-        model?.reasoning && supportedThinkingLevels(model).length > 1,
-      );
+      toolbar.canAdjustThinking = Boolean(model && supportedThinkingLevels(model).length > 1);
+      _thinkingSelectorApi?.refresh?.();
     },
     setWorkerModelUpdate: (handler) => {
       onWorkerModelUpdate = handler;

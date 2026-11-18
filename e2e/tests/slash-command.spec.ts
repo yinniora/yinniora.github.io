@@ -80,18 +80,21 @@ test.describe("slash-command palette (stubbed pi)", () => {
     await expect(page.locator("#pi-chat-slash-popup")).toBeHidden();
   });
 
-  test("clicking a command inserts it and closes the palette", async ({
+  test("opening skills from the toolbar preserves the draft and inserts a selected command", async ({
     page,
     sessionsDir,
   }, testInfo) => {
     const textarea = await openSessionWithChat(page, sessionsDir, testInfo);
 
-    await textarea.fill("/");
+    await textarea.fill("draft");
+    await page.locator(".composer-add summary").click();
+    await page.getByRole("button", { name: "Skills", exact: true }).click();
     await expect(page.locator(".slash-item")).toHaveCount(2);
+    await expect(textarea).toHaveValue("draft");
 
     await page.locator('.slash-item[data-insert="workon"]').click();
 
-    await expect(textarea).toHaveValue("/workon ");
+    await expect(textarea).toHaveValue("/workon draft");
     await expect(page.locator("#pi-chat-slash-popup")).toBeHidden();
   });
 });

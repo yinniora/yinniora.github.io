@@ -146,21 +146,28 @@ func (s *Server) handleWorkerStatus(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("id")
 
 	status := workers.WorkerStatus{State: workers.WorkerStateIdle}
-	if s.computeRunningStatus(sessionID) {
+	running := s.computeRunningStatus(sessionID)
+	if running {
 		status.State = workers.WorkerStateRunning
-	} else if s.chatSender != nil {
+	}
+	if s.chatSender != nil {
 		// Do not create/prewarm workers from status polling. A browser can poll
 		// many visible sessions at once; if one pi RPC switch_session hangs, eager
 		// prewarming accumulates stuck `pi --mode rpc` processes and starves real
 		// chat requests. Only report state for an already-created worker here.
-		stateCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer cancel()
-		if state, err := s.chatSender.GetState(stateCtx, sessionID); err == nil {
-			status.Model = state.Model
-			status.ModelName = state.ModelName
-			status.ModelProvider = state.ModelProvider
-			status.ThinkingLevel = state.ThinkingLevel
+		state := s.chatSender.Status(sessionID)
+		if !running {
+			stateCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if fresh, err := s.chatSender.GetState(stateCtx, sessionID); err == nil {
+				state = fresh
+			}
 		}
+		status.Model = state.Model
+		status.ModelName = state.ModelName
+		status.ModelProvider = state.ModelProvider
+		status.ThinkingLevel = state.ThinkingLevel
+		status.ThinkingLevels = state.ThinkingLevels
 	}
 	writeJSON(w, 0, status)
 }
@@ -239,7 +246,15 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, 0, map[string]any{"ok": true})
+	result := map[string]any{"ok": true}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if state, err := s.chatSender.GetState(ctx, resolved.Session.ID); err == nil &&
+		state.ModelProvider == body.Provider && state.Model == body.ModelID {
+		result["thinkingLevel"] = state.ThinkingLevel
+		result["thinkingLevels"] = state.ThinkingLevels
+	}
+	writeJSON(w, 0, result)
 }
 
 func (s *Server) handleSetThinkingLevel(w http.ResponseWriter, r *http.Request) {

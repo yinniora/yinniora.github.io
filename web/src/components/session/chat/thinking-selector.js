@@ -26,7 +26,6 @@ export function renderThinkingLevelList({
 export function setupThinkingLevelSelector({
   documentImpl = document,
   scope,
-  windowImpl = window,
   sessionId,
   entries = [],
   getCurrentModel = () => null,
@@ -45,29 +44,30 @@ export function setupThinkingLevelSelector({
   let cycleQueue = Promise.resolve();
   let queuedCycles = 0;
   let confirmedThinkingLevel = getKnownThinkingLevel() || '';
+  let renderedList;
 
   function renderThinkingList(selectedLevel) {
-    thinkingList.innerHTML = renderThinkingLevelList({
+    const list = renderThinkingLevelList({
       selectedLevel,
       currentModel: getCurrentModel(),
     });
+    if (list !== renderedList) {
+      thinkingList.innerHTML = list;
+      renderedList = list;
+    }
   }
 
   function openThinkingPopup() {
+    thinkingPopup.inert = false;
     thinkingPopup.style.display = 'flex';
     thinkingLabelBtn.setAttribute('aria-expanded', 'true');
     renderThinkingList(getKnownThinkingLevel());
-    const rect = thinkingLabelBtn.getBoundingClientRect();
-    const minW = 156;
-    let left = rect.right - minW;
-    if (left < 4) left = 4;
-    if (left + minW > windowImpl.innerWidth - 4) left = windowImpl.innerWidth - minW - 4;
-    thinkingPopup.style.bottom = windowImpl.innerHeight - rect.top + 4 + 'px';
-    thinkingPopup.style.left = left + 'px';
-    thinkingPopup.style.right = '';
   }
 
   function closeThinkingPopup() {
+    if (thinkingPopup.contains(documentImpl.activeElement))
+      thinkingLabelBtn.focus({ preventScroll: true });
+    thinkingPopup.inert = true;
     thinkingPopup.style.display = 'none';
     thinkingLabelBtn.setAttribute('aria-expanded', 'false');
   }
@@ -113,10 +113,17 @@ export function setupThinkingLevelSelector({
       if (
         thinkingPopup.style.display !== 'none' &&
         !thinkingPopup.contains(e.target) &&
-        e.target !== thinkingLabelBtn
+        !thinkingLabelBtn.contains(e.target)
       ) {
         closeThinkingPopup();
       }
+    },
+    { signal: scope },
+  );
+  documentImpl.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key === 'Escape' && thinkingPopup.style.display !== 'none') closeThinkingPopup();
     },
     { signal: scope },
   );
@@ -175,5 +182,10 @@ export function setupThinkingLevelSelector({
     open: openThinkingPopup,
     close: closeThinkingPopup,
     cycle: cycleThinkingLevel,
+    refresh: () => {
+      if (thinkingPopup.style.display === 'none') return;
+      if (supportedThinkingLevels(getCurrentModel()).length <= 1) closeThinkingPopup();
+      else renderThinkingList(getKnownThinkingLevel());
+    },
   };
 }

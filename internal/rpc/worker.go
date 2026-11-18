@@ -22,6 +22,7 @@ import (
 type piRPCWorker struct {
 	mu                   sync.Mutex
 	writeMu              sync.Mutex
+	modelMu              sync.Mutex
 	sessionPath          string
 	startedAt            time.Time
 	cmd                  *exec.Cmd
@@ -32,6 +33,8 @@ type piRPCWorker struct {
 	currentModel         string
 	currentProvider      string
 	currentThinkingLevel string
+	thinkingLevels       []string
+	thinkingLevelsLoaded bool
 	stderrBuf            *strings.Builder
 	commands             []workers.SlashCommand
 	commandsCached       bool
@@ -188,63 +191,48 @@ func (w *piRPCWorker) Prompt(ctx context.Context, chat chat.Request) error {
 }
 
 func (w *piRPCWorker) SetModel(ctx context.Context, provider, modelID string) error {
+	w.modelMu.Lock()
+	defer w.modelMu.Unlock()
 	w.touch()
-	id := w.nextID()
-	ch := make(chan response, 1)
-	w.mu.Lock()
-	w.pending[id] = ch
-	w.mu.Unlock()
-
-	cmd := map[string]any{
-		"id":       id,
+	data, err := w.request(ctx, map[string]any{
+		"id":       w.nextID(),
 		"type":     "set_model",
 		"provider": provider,
 		"modelId":  modelID,
-	}
-	w.writeMu.Lock()
-	err := WriteCommand(w.stdin, cmd)
-	w.writeMu.Unlock()
+	})
 	if err != nil {
-		w.removePending(id)
 		return err
 	}
-
-	select {
-	case res := <-ch:
-		if !res.Success {
-			if res.Error != "" {
-				return errors.New(res.Error)
-			}
-			return fmt.Errorf("rpc set_model rejected")
-		}
-		var m model
-		if err := json.Unmarshal(res.Data, &m); err != nil {
-			// Some responses wrap the model in a "model" field
-			var wrapper struct {
-				Model model `json:"model"`
-			}
-			if err2 := json.Unmarshal(res.Data, &wrapper); err2 == nil && wrapper.Model.ID != "" {
-				m = wrapper.Model
-			}
-		}
-		if m.ID == "" {
-			return fmt.Errorf("set_model returned empty model id")
-		}
-		if m.Provider != provider || m.ID != modelID {
-			return fmt.Errorf("set_model returned unexpected model: %s/%s (wanted %s/%s)", m.Provider, m.ID, provider, modelID)
-		}
-		w.mu.Lock()
-		w.currentModel = m.ID
-		w.currentProvider = m.Provider
-		w.status = workers.WorkerStatus{State: workers.WorkerStateIdle, Model: m.ID, ModelName: m.Name, ModelProvider: m.Provider}
-		w.mu.Unlock()
-		// Refresh thinking level after model switch
-		go w.refreshThinkingLevel()
-		return nil
-	case <-ctx.Done():
-		w.removePending(id)
-		return ctx.Err()
+	var result struct {
+		model
+		Wrapped model `json:"model"`
 	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return err
+	}
+	m := result.model
+	if m.ID == "" {
+		m = result.Wrapped
+	}
+	if m.ID == "" {
+		return errors.New("set_model returned empty model id")
+	}
+	if m.Provider != provider || m.ID != modelID {
+		return fmt.Errorf("set_model returned unexpected model: %s/%s (wanted %s/%s)", m.Provider, m.ID, provider, modelID)
+	}
+	w.mu.Lock()
+	w.thinkingLevels = nil
+	w.thinkingLevelsLoaded = false
+	w.currentThinkingLevel = ""
+	w.currentModel = m.ID
+	w.currentProvider = m.Provider
+	w.status.ModelName = m.Name
+	if w.status.State != workers.WorkerStateRunning {
+		w.status.State = workers.WorkerStateIdle
+		w.status.Error = ""
+	}
+	w.mu.Unlock()
+	return nil
 }
 
 func (w *piRPCWorker) SetThinkingLevel(ctx context.Context, level string) error {
@@ -265,49 +253,55 @@ func (w *piRPCWorker) Abort(ctx context.Context) error {
 }
 
 func (w *piRPCWorker) GetState(ctx context.Context) (workers.WorkerStatus, error) {
-	id := w.nextID()
-	ch := make(chan response, 1)
-	w.mu.Lock()
-	w.pending[id] = ch
-	w.mu.Unlock()
-
-	w.writeMu.Lock()
-	err := WriteCommand(w.stdin, BuildGetStateCommand(id))
-	w.writeMu.Unlock()
+	w.modelMu.Lock()
+	defer w.modelMu.Unlock()
+	data, err := w.request(ctx, BuildGetStateCommand(w.nextID()))
 	if err != nil {
-		w.removePending(id)
 		return workers.WorkerStatus{}, err
 	}
+	var state struct {
+		ThinkingLevel string `json:"thinkingLevel"`
+		Model         model  `json:"model"`
+	}
+	if err := json.Unmarshal(data, &state); err != nil {
+		return workers.WorkerStatus{}, err
+	}
+	w.mu.Lock()
+	w.currentThinkingLevel = state.ThinkingLevel
+	if state.Model.ID != "" {
+		if state.Model.ID != w.currentModel || state.Model.Provider != w.currentProvider {
+			w.thinkingLevels = nil
+			w.thinkingLevelsLoaded = false
+		}
+		w.currentModel = state.Model.ID
+		w.currentProvider = state.Model.Provider
+		w.status.ModelName = state.Model.Name
+	}
+	currentID, currentProvider := w.currentModel, w.currentProvider
+	loadLevels := currentID != "" && !w.thinkingLevelsLoaded
+	w.mu.Unlock()
+	if loadLevels {
+		w.loadThinkingLevels(ctx, currentProvider, currentID)
+	}
+	return w.Status(), nil
+}
 
-	select {
-	case res := <-ch:
-		if !res.Success {
-			if res.Error != "" {
-				return workers.WorkerStatus{}, errors.New(res.Error)
-			}
-			return workers.WorkerStatus{}, fmt.Errorf("rpc get_state rejected")
-		}
-		var state struct {
-			ThinkingLevel string `json:"thinkingLevel"`
-			Model         model  `json:"model"`
-		}
-		_ = json.Unmarshal(res.Data, &state)
-		w.mu.Lock()
-		w.currentThinkingLevel = state.ThinkingLevel
-		if state.Model.ID != "" {
-			w.currentModel = state.Model.ID
-			w.currentProvider = state.Model.Provider
-			w.status.Model = state.Model.ID
-			w.status.ModelName = state.Model.Name
-			w.status.ModelProvider = state.Model.Provider
-		}
-		s := w.status
-		s.ThinkingLevel = state.ThinkingLevel
-		w.mu.Unlock()
-		return s, nil
-	case <-ctx.Done():
-		w.removePending(id)
-		return workers.WorkerStatus{}, ctx.Err()
+func (w *piRPCWorker) loadThinkingLevels(ctx context.Context, provider, id string) {
+	data, err := w.request(ctx, map[string]any{"id": w.nextID(), "type": "get_available_thinking_levels"})
+	if ctx.Err() != nil {
+		return
+	}
+	var result struct {
+		Levels []string `json:"levels"`
+	}
+	if err == nil {
+		_ = json.Unmarshal(data, &result)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.currentProvider == provider && w.currentModel == id {
+		w.thinkingLevels = result.Levels
+		w.thinkingLevelsLoaded = true
 	}
 }
 
@@ -364,12 +358,6 @@ func (w *piRPCWorker) GetCommands(ctx context.Context) ([]workers.SlashCommand, 
 	}
 }
 
-func (w *piRPCWorker) refreshThinkingLevel() {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	_, _ = w.GetState(ctx)
-}
-
 const streamActivityWindow = 2 * time.Second
 
 func (w *piRPCWorker) Status() workers.WorkerStatus {
@@ -379,6 +367,7 @@ func (w *piRPCWorker) Status() workers.WorkerStatus {
 	s.Model = w.currentModel
 	s.ModelProvider = w.currentProvider
 	s.ThinkingLevel = w.currentThinkingLevel
+	s.ThinkingLevels = w.thinkingLevels
 	if s.State == workers.WorkerStateIdle && w.hasRecentStreamActivityLocked(time.Now()) {
 		s.State = workers.WorkerStateRunning
 	}
@@ -404,9 +393,17 @@ func (w *piRPCWorker) switchSession(ctx context.Context) error {
 }
 
 func (w *piRPCWorker) sendAndAwait(ctx context.Context, cmd map[string]any) error {
+	_, err := w.request(ctx, cmd)
+	return err
+}
+
+func (w *piRPCWorker) request(ctx context.Context, cmd map[string]any) (json.RawMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	id, _ := cmd["id"].(string)
 	if id == "" {
-		return errors.New("rpc command missing id")
+		return nil, errors.New("rpc command missing id")
 	}
 	ch := make(chan response, 1)
 	w.mu.Lock()
@@ -418,21 +415,21 @@ func (w *piRPCWorker) sendAndAwait(ctx context.Context, cmd map[string]any) erro
 	w.writeMu.Unlock()
 	if err != nil {
 		w.removePending(id)
-		return err
+		return nil, err
 	}
 
 	select {
 	case res := <-ch:
 		if !res.Success {
 			if res.Error != "" {
-				return errors.New(res.Error)
+				return nil, errors.New(res.Error)
 			}
-			return fmt.Errorf("rpc %s rejected", res.Command)
+			return nil, fmt.Errorf("rpc %s rejected", res.Command)
 		}
-		return nil
+		return res.Data, nil
 	case <-ctx.Done():
 		w.removePending(id)
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 }
 

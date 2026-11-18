@@ -9,13 +9,15 @@
   --font-size-ui: 14px;
   --font-content-size: 15px;
   --line-height: 1.65;
-  --danger-fg: #ffb2b9;
-  --danger-surface: #38262d;
-  --danger-hover: #50313a;
-  --danger-border: #ba6676;
-  --danger-solid: #b02439;
-  --danger-solid-hover: #c0263e;
+  --danger-fg: #ffdbdf;
+  --danger-surface: #512b38;
+  --danger-hover: #673642;
+  --danger-border: #e58c9a;
+  --danger-solid: #ad2340;
+  --danger-solid-hover: #bd2946;
   --danger-on-solid: #fff;
+  --workspace-edge: color-mix(in srgb, var(--text) 27%, var(--surface));
+  --workspace-secondary: color-mix(in srgb, var(--text) 84%, var(--surface));
 }
 
 :root[data-theme='light'] {
@@ -24,6 +26,8 @@
   --danger-surface: #fff1f3;
   --danger-hover: #ffe2e7;
   --danger-border: #b74a5a;
+  --workspace-edge: #c8c8cf;
+  --workspace-secondary: #52525b;
   --body-bg: #fff;
   --chrome-bg: #f7f7f8;
   --surface: #fff;
@@ -48,6 +52,16 @@
 
 #spa-root {
   --danger: var(--danger-fg);
+}
+
+:root[data-theme='nord'] #spa-root,
+:root[data-theme='nord'] .pi-btw-window {
+  --surface: #363e4d;
+  --surface-2: #424c5e;
+  --text: #f0f3fa;
+  --text-soft: #cad4e4;
+  --input-bg: #3d4657;
+  --dim: #566176;
 }
 
 :root[data-theme='dark'] {
@@ -2006,68 +2020,24 @@ body .pi-btw-input {
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  :root:not(.pi-keyboard-open)
-    #spa-root[data-route-motion='forward']
-    :is(
-      .mobile-home-content,
-      .personal-home-main,
-      .settings-pane,
-      .settings-page-mobile-list .settings-sidebar,
-      .schedules-page,
-      #messages-list,
-      .session-loading
-    ) {
-    animation: pi-route-forward 170ms ease-out;
-  }
-  :root:not(.pi-keyboard-open)
-    #spa-root[data-route-motion='back']
-    :is(
-      .mobile-home-content,
-      .personal-home-main,
-      .settings-pane,
-      .settings-page-mobile-list .settings-sidebar,
-      .schedules-page,
-      #messages-list,
-      .session-loading
-    ) {
-    animation: pi-route-back 170ms ease-out;
-  }
-}
-
-@keyframes pi-route-forward {
-  from {
-    opacity: 0.82;
-    transform: translateX(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-@keyframes pi-route-back {
-  from {
-    opacity: 0.82;
-    transform: translateX(-12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
 #spa-root button:is(.danger-button, .danger-confirm) {
   border: 1px solid var(--danger-border);
+  font-weight: 650;
+}
+#spa-root button.danger-button {
   color: var(--danger-fg);
   background: var(--danger-surface);
 }
-#spa-root .danger-button:enabled:is(:hover, :focus-visible, :active) {
+#spa-root button.danger-button:enabled:is(:hover, :focus-visible, :active) {
   background: var(--danger-hover);
 }
-#spa-root .danger-confirm {
+#spa-root button.danger-confirm {
   color: var(--danger-on-solid);
   background: var(--danger-solid);
 }
-#spa-root .danger-confirm:enabled:is(:hover, :focus-visible, :active) {
+#spa-root button.danger-confirm:enabled:is(:hover, :focus-visible, :active) {
   background: var(--danger-solid-hover);
+}
+#spa-root button:is(.danger-button, .danger-confirm):focus-visible {
+  outline-color: var(--danger-border);
 }

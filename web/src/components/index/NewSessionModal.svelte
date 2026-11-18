@@ -30,6 +30,7 @@
   id="modalOverlay"
   class:visible={open}
   class:open
+  inert={!open}
   role="presentation"
   onclick={(e) => {
     if (e.currentTarget === e.target) onClose();

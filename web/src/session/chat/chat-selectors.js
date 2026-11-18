@@ -51,6 +51,8 @@ export function detectCurrentModel(entries) {
 
 export function supportedThinkingLevels(model, levels = THINKING_LEVELS) {
   if (!model) return levels.filter((level) => level !== 'max');
+  if (Array.isArray(model.thinkingLevels) && model.thinkingLevels.length)
+    return model.thinkingLevels.filter((level) => levels.includes(level));
   if (!model.reasoning) return ['off'];
   const map = model.thinkingLevelMap || {};
   return levels.filter((level) => {

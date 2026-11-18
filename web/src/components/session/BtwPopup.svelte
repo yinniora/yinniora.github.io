@@ -411,6 +411,7 @@
   aria-label="btw"
   bind:this={winEl}
   hidden={!open}
+  inert={!open}
 >
   <div class="pi-btw-header" bind:this={headerEl}>
     <span class="pi-btw-title"

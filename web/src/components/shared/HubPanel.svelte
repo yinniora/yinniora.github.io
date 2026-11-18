@@ -45,9 +45,26 @@
 
   function close() {
     fileRequest += 1;
-    view = '';
     dialog?.close();
-    previousFocus?.focus?.();
+    previousFocus?.focus?.({ preventScroll: true });
+  }
+
+  async function revealDeleteConfirmation(action, itemId = id) {
+    fileDeleteConfirm = action === 'files';
+    purgeId = action === 'purge' ? itemId : '';
+    await tick();
+    const confirm = dialog?.querySelector('button.danger-confirm');
+    if (!dialog?.open || !confirm) return;
+    const distance =
+      confirm.getBoundingClientRect().bottom - dialog.getBoundingClientRect().bottom + 16;
+    if (distance > 0) {
+      dialog.scrollBy?.({
+        top: distance,
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          ? 'instant'
+          : 'smooth',
+      });
+    }
   }
 
   async function loadCleanupFiles() {
@@ -272,7 +289,7 @@
           class="hub-action hub-danger danger-button"
           disabled={busy || cleanupLoading}
           onclick={() => {
-            if (cleanupEnabled && selectedFiles.size) fileDeleteConfirm = true;
+            if (cleanupEnabled && selectedFiles.size) revealDeleteConfirmation('files');
             else run('delete');
           }}>{@html icon(Trash2)}{t('hub.delete')}</button
         >{/if}
@@ -295,7 +312,8 @@
         <button
           class="hub-action hub-danger hub-purge-direct danger-button"
           disabled={busy || cleanupLoading}
-          onclick={() => (purgeId = id)}>{@html icon(Trash2)}{t('hub.purge')}</button
+          onclick={() => revealDeleteConfirmation('purge')}
+          >{@html icon(Trash2)}{t('hub.purge')}</button
         >
       {/if}
     {:else if view === 'trash'}
@@ -325,7 +343,7 @@
               <button
                 class="hub-danger danger-button"
                 disabled={busy}
-                onclick={() => (purgeId = item.id)}>{t('hub.purge')}</button
+                onclick={() => revealDeleteConfirmation('purge', item.id)}>{t('hub.purge')}</button
               >
             {/if}
           </div>

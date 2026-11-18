@@ -114,10 +114,19 @@
   }
   function close() {
     open = false;
-    src = null;
     pointers.clear();
     pinch = null;
     containerEl?.close?.();
+    const exit = containerEl
+      ?.getAnimations?.()
+      .find((animation) => animation.transitionProperty === 'opacity');
+    if (exit) {
+      exit.finished
+        .catch(() => {})
+        .then(() => {
+          if (!open) src = null;
+        });
+    } else src = null;
     previousFocus?.focus?.({ preventScroll: true });
   }
 

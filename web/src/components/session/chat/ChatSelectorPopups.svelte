@@ -27,14 +27,6 @@
   />
   <div id="pi-chat-model-list" class="pi-chat-model-list"></div>
 </div>
-<div id="pi-chat-thinking-popup" class="pi-chat-thinking-popup" style="display: none">
-  <div
-    id="pi-chat-thinking-list"
-    class="pi-chat-thinking-list"
-    role="group"
-    aria-label={t('composer.switchEffort')}
-  ></div>
-</div>
 <div id="pi-chat-slash-popup" class="pi-chat-slash-popup" style="display: none">
   <div id="pi-chat-slash-list" class="pi-chat-slash-list"></div>
 </div>

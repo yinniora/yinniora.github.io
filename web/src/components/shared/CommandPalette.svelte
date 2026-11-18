@@ -336,6 +336,7 @@
   class="command-palette-overlay"
   id="sessionPalette"
   class:open
+  inert={!open}
   aria-hidden={open ? 'false' : 'true'}
   bind:this={overlayEl}
   role="presentation"

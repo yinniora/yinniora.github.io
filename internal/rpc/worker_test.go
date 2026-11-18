@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -235,6 +236,38 @@ func TestGetCommandsParsesResponseAndCaches(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("cache hit wrote to stdin: %q", buf.String())
+	}
+}
+
+func TestGetStateUsesPiThinkingLevelsForEachModel(t *testing.T) {
+	var sent bytes.Buffer
+	w := &piRPCWorker{stdin: nopWriteCloser{&sent}, pending: make(map[string]chan response)}
+	checkState := func(stateID, model, probeID string, levels []string) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		done := make(chan workers.WorkerStatus, 1)
+		go func() {
+			state, _ := w.GetState(ctx)
+			done <- state
+		}()
+		waitForPending(t, w, stateID)
+		w.handleRPCLine(`{"type":"response","id":"` + stateID + `","success":true,"data":{"thinkingLevel":"off","model":{"id":"` + model + `","provider":"fixture"}}}`)
+		if probeID != "" {
+			waitForPending(t, w, probeID)
+			list := `["` + strings.Join(levels, `","`) + `"]`
+			w.handleRPCLine(`{"type":"response","id":"` + probeID + `","success":true,"data":{"levels":` + list + `}}`)
+		}
+		state := <-done
+		if state.Model != model || state.ModelProvider != "fixture" || !slices.Equal(state.ThinkingLevels, levels) {
+			t.Fatalf("state = %+v, want model %s with levels %v", state, model, levels)
+		}
+	}
+	checkState("req-1", "adjustable", "req-2", []string{"off", "low", "max"})
+	checkState("req-3", "adjustable", "", []string{"off", "low", "max"})
+	checkState("req-4", "fixed", "req-5", []string{"off"})
+	if count := strings.Count(sent.String(), `"type":"get_available_thinking_levels"`); count != 2 {
+		t.Fatalf("probed levels %d times, want one query per model", count)
 	}
 }
 

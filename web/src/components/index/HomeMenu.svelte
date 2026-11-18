@@ -25,9 +25,13 @@
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icons -->
-{#if open}
-  <div class="home-menu-backdrop" role="presentation" onclick={onClose}></div>
-{/if}
+<div
+  class="home-menu-backdrop"
+  hidden={!open}
+  inert={!open}
+  role="presentation"
+  onclick={onClose}
+></div>
 <div
   id="web-menu"
   class="home-menu"
@@ -35,6 +39,7 @@
   tabindex="-1"
   aria-labelledby="web-menu-btn"
   hidden={!open}
+  inert={!open}
   onclick={(e) => e.stopPropagation()}
   onkeydown={(e) => {
     if (e.key === 'Escape') onClose();

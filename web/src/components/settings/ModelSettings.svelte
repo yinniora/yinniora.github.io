@@ -3,6 +3,7 @@
   import { getJSON, postJSON } from '../../shared/api.js';
   import { t } from '../../shared/i18n.js';
   import { supportedThinkingLevels } from '../../session/chat/chat-selectors.js';
+  import { icon, Trash2 } from '../../shared/icons.js';
   let profiles = $state([]),
     revision = $state(''),
     activeID = $state('');
@@ -122,6 +123,7 @@
   onMount(load);
 </script>
 
+<!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icons -->
 <section class="model-settings">
   <div class="model-heading">
     <div>
@@ -212,7 +214,8 @@
               type="button"
               class="danger-button"
               disabled={busy}
-              onclick={() => removeKey(active)}>{t('models.remove')} {t('models.key')}</button
+              onclick={() => removeKey(active)}
+              >{@html icon(Trash2, { size: 16 })}{t('models.remove')} {t('models.key')}</button
             >
           </div>
         </div>
@@ -314,7 +317,8 @@
                 name: model.name || model.id,
                 label: profile.label,
               })}
-              onclick={() => remove(profile, model)}>{t('models.remove')}</button
+              onclick={() => remove(profile, model)}
+              >{@html icon(Trash2, { size: 16 })}{t('models.remove')}</button
             >
           </div>
         {/each}
@@ -529,6 +533,14 @@
   .model-applied-row > div {
     flex: 1;
     min-width: 0;
+  }
+  .danger-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    gap: 6px;
+    min-height: 40px;
   }
   .model-applied-group h4 {
     margin: 16px 0 4px;

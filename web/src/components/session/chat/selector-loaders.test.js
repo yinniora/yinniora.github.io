@@ -100,7 +100,6 @@ describe('chat selector loaders', () => {
     const thinkingOpts = setupThinkingLevelSelector.mock.calls[0][0];
     expect(thinkingOpts).toMatchObject({
       documentImpl: dom.window.document,
-      windowImpl: dom.window,
       sessionId: 'url-session',
       entries,
       chatApi,

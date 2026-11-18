@@ -1212,6 +1212,15 @@ test("composer switches effort on model change and sends a file using the attach
   const { entries } = buildSession({ cwd: realWorkingDir() });
   const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "composer"), entries);
   await page.addInitScript(() => {
+    const realHeight = window.innerHeight;
+    const viewport = Object.assign(new EventTarget(), { height: realHeight, scale: 1, offsetTop: 0 });
+    Object.defineProperty(window, "visualViewport", { value: viewport, configurable: true });
+    Object.assign(window, {
+      setKeyboardVisible(visible: boolean) {
+        viewport.height = visible ? 415 : window.innerHeight;
+        viewport.dispatchEvent(new Event("resize"));
+      },
+    });
     const fetchOriginal = window.fetch.bind(window);
     let active: { provider: string; modelId: string } | undefined;
     window.fetch = async (input, init) => {
@@ -1224,7 +1233,9 @@ test("composer switches effort on model change and sends a file using the attach
           ] });
         case "/api/set-model":
           active = JSON.parse(String(init?.body));
-          return Response.json({ ok: true });
+          return Response.json(active?.provider === "catalog" && active?.modelId === "parameter-model"
+            ? { ok: true, thinkingLevel: "off", thinkingLevels: ["off", "low", "max"] }
+            : { ok: true });
         case "/api/worker-status":
           return Response.json(active
             ? { state: "idle", modelProvider: active.provider, model: active.modelId, thinkingLevel: "off" }
@@ -1245,11 +1256,37 @@ test("composer switches effort on model change and sends a file using the attach
   await expect(effort.locator("span")).toBeVisible();
   await expect(effort).toHaveCSS("height", "40px");
   await expect(page.locator("#pi-chat-model-label")).toHaveText("Pro key · parameter-model");
-  await effort.click();
-  await expect(page.locator("#pi-chat-thinking-list button")).toHaveCount(4);
+  const mobile = await isMobileLayout(page);
+  const message = page.locator("#pi-chat-message");
+  const keyboard = (visible: boolean) => page.evaluate((value) => {
+    (window as Window & { setKeyboardVisible?: (visible: boolean) => void }).setKeyboardVisible?.(value);
+  }, visible);
+  if (mobile) {
+    await message.focus();
+    await keyboard(true);
+    await expect(page.locator("html")).toHaveClass(/pi-keyboard-open/);
+    await effort.dispatchEvent("click");
+  } else await effort.click();
+  await expect(page.locator("#pi-chat-thinking-list button")).toHaveCount(3);
+  await expect(page.locator("#pi-chat-thinking-list button[data-level=high]")).toHaveCount(0);
   await expect(page.locator("#pi-chat-thinking-list button[data-level=off]")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#pi-chat-thinking-list button[data-level=max]")).toBeVisible();
+  const popup = page.locator("#pi-chat-thinking-popup");
+  const menuGap = () => popup.evaluate((element) => {
+    const anchor = element.parentElement!.querySelector("button")!.getBoundingClientRect();
+    return Math.round(anchor.top - element.getBoundingClientRect().bottom);
+  });
+  await expect.poll(menuGap).toBe(6);
+  if (mobile) {
+    const initial = (await popup.boundingBox())!.y;
+    await message.blur();
+    await keyboard(false);
+    await expect(page.locator("html")).not.toHaveClass(/pi-keyboard-open/);
+    await expect.poll(async () => (await popup.boundingBox())!.y > initial + 120).toBe(true);
+    await expect.poll(menuGap).toBe(6);
+  }
   await effort.click();
+  await expect(popup).toHaveAttribute("inert", "");
   await page.locator("#pi-chat-model-label").click();
   await page.locator('.model-item[data-provider="other-key"][data-model-id="parameter-model"]').click();
   await effort.click();

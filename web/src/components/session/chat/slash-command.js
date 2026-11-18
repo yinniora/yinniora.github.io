@@ -95,6 +95,7 @@ export function setupSlashCommands({
   const textarea = documentImpl.getElementById('pi-chat-message');
   const popup = documentImpl.getElementById('pi-chat-slash-popup');
   const list = documentImpl.getElementById('pi-chat-slash-list');
+  const commandsButton = documentImpl.getElementById('pi-chat-commands-btn');
   if (!textarea || !popup || !list) return { handleKeydown: () => false };
 
   let allCommands = [];
@@ -216,6 +217,19 @@ export function setupSlashCommands({
 
   textarea.addEventListener('input', refresh);
 
+  commandsButton?.addEventListener(
+    'click',
+    () => {
+      if (isOpen()) {
+        close();
+        return;
+      }
+      trigger = parseSlashTrigger(textarea.value, 0) || { query: '', start: 0, end: 0 };
+      open();
+    },
+    { signal: scope },
+  );
+
   list.addEventListener('click', (event) => {
     const item = event.target.closest('.slash-item');
     if (!item) return;
@@ -225,7 +239,13 @@ export function setupSlashCommands({
   documentImpl.addEventListener(
     'click',
     (event) => {
-      if (isOpen() && !popup.contains(event.target) && event.target !== textarea) close();
+      if (
+        isOpen() &&
+        !popup.contains(event.target) &&
+        !commandsButton?.contains(event.target) &&
+        event.target !== textarea
+      )
+        close();
     },
     { signal: scope },
   );

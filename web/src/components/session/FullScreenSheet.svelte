@@ -2,6 +2,8 @@
   // A sheet belongs to the current view and does not add a route.
   import { icon, X } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
+  import { fade, fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
 
   let {
     open = $bindable(false),
@@ -27,6 +29,24 @@
   let mobile = $state(false);
   let backdropEl = $state(null);
   let panelEl = $state(null);
+
+  function backdropMotion(node) {
+    return fade(node, { duration: motionDuration(node, 180) });
+  }
+
+  function panelMotion(node) {
+    return fly(node, {
+      duration: motionDuration(node, 240),
+      y: document.documentElement.classList.contains('pi-keyboard-open') ? 0 : mobile ? 22 : 12,
+      opacity: 0.7,
+      easing: cubicOut,
+    });
+  }
+
+  function motionDuration(node, duration) {
+    if (!node.animate || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return 0;
+    return duration;
+  }
 
   function onBackdrop(e) {
     if (closeOnBackdrop && e.target === backdropEl) open = false;
@@ -106,6 +126,7 @@
     class="pi-sheet-backdrop open {backdropClass}"
     class:pi-sheet-mobile={mobile}
     bind:this={backdropEl}
+    transition:backdropMotion
   >
     <div
       class="pi-sheet-panel open {panelClass}"
@@ -115,6 +136,7 @@
       aria-modal="true"
       aria-label={title}
       tabindex="-1"
+      transition:panelMotion
     >
       <h2 class="sr-only">{title}</h2>
       <div class="pi-sheet-header">

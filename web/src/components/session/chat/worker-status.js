@@ -57,7 +57,7 @@ export function setupWorkerStatusPolling({
       updateContextUsage();
       const onWorkerModelUpdate = getWorkerModelUpdate?.();
       if (data.modelProvider && data.model && onWorkerModelUpdate) {
-        onWorkerModelUpdate(data.modelProvider, data.model);
+        onWorkerModelUpdate(data.modelProvider, data.model, data.thinkingLevels);
       }
     } catch {
       if (!scope.signal.aborted) setStatus('status unavailable', 'error');

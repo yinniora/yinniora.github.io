@@ -1,5 +1,13 @@
 <script>
-  import { icon, Camera, ChevronDown, Gauge, Paperclip, Plus } from '../../../shared/icons.js';
+  import {
+    icon,
+    Camera,
+    ChevronDown,
+    Gauge,
+    Paperclip,
+    Plus,
+    Terminal,
+  } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
   import { supportedThinkingLevels } from '../../../session/chat/chat-selectors.js';
   import { ChatToolbarState } from './chat-toolbar-state.svelte.js';
@@ -56,6 +64,13 @@
           <button type="button" onclick={() => chooseAttachment('pi-chat-camera')}
             >{@html icon(Camera, { size: 16 })}{t('composer.takePhoto')}</button
           >
+          <button
+            type="button"
+            id="pi-chat-commands-btn"
+            aria-controls="pi-chat-slash-popup"
+            onclick={() => (attachMenu.open = false)}
+            >{@html icon(Terminal, { size: 16 })}{t('plugins.skills')}</button
+          >
         </div>
       </details>
     {/if}
@@ -74,20 +89,29 @@
     {#if chatAvailable && sessionId}
       <ComputerPermission {sessionId} model={toolbar.selectedModel} running={toolbar.isRunning} />
     {/if}
-    <button
-      type="button"
-      id="pi-chat-thinking-label"
-      class="pi-chat-thinking-label"
-      style:display={chatAvailable && toolbar.canAdjustThinking ? '' : 'none'}
-      title={effortTitle}
-      aria-label={effortTitle}
-      aria-controls="pi-chat-thinking-popup"
-      aria-expanded="false"
-      disabled={!chatAvailable}
-      >{@html icon(Gauge, { size: 20, strokeWidth: 2.4 })}
-      <span>{effortLabel || t('composer.switchEffort')}</span>
-      {@html icon(ChevronDown, { size: 13 })}</button
-    >
+    <div class="thinking-control" hidden={!chatAvailable || !toolbar.canAdjustThinking}>
+      <button
+        type="button"
+        id="pi-chat-thinking-label"
+        class="pi-chat-thinking-label"
+        title={effortTitle}
+        aria-label={effortTitle}
+        aria-controls="pi-chat-thinking-popup"
+        aria-expanded="false"
+        disabled={!chatAvailable}
+        >{@html icon(Gauge, { size: 20, strokeWidth: 2.4 })}
+        <span>{effortLabel || t('composer.switchEffort')}</span>
+        {@html icon(ChevronDown, { size: 13 })}</button
+      >
+      <div id="pi-chat-thinking-popup" class="pi-chat-thinking-popup" style="display: none" inert>
+        <div
+          id="pi-chat-thinking-list"
+          class="pi-chat-thinking-list"
+          role="group"
+          aria-label={t('composer.switchEffort')}
+        ></div>
+      </div>
+    </div>
     <button
       type="button"
       id="pi-chat-cancel"
@@ -139,7 +163,26 @@
   .pi-chat-thinking-label:is(:hover, :focus-visible) {
     background: color-mix(in srgb, var(--text) 22%, var(--input-bg));
   }
-  .pi-chat-toolbar:has(:global(details[open])) {
+  .thinking-control {
+    position: relative;
+  }
+  .thinking-control[hidden] {
+    display: none;
+  }
+  .thinking-control .pi-chat-thinking-popup {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+    max-height: min(320px, max(84px, calc(var(--pi-visual-height, 100dvh) - 150px)));
+    overscroll-behavior: contain;
+  }
+  .pi-chat-thinking-label :global(svg:last-child) {
+    transition: rotate var(--motion-control, 140ms) ease;
+  }
+  .pi-chat-thinking-label:global([aria-expanded='true']) :global(svg:last-child) {
+    rotate: 180deg;
+  }
+  .pi-chat-toolbar {
     overflow: visible;
   }
   .pi-chat-toolbar-left:has(.composer-add[open]) {
