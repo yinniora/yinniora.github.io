@@ -433,14 +433,14 @@ test("mobile workspace collapses projects, returns home and fits the keyboard vi
   });
 });
 
-test("installed app edge swipes keep views and controls usable without browser history entries", async ({
+test("installed app taps work after reload, swipes, and closing a sheet", async ({
   page,
   sessionsDir,
 }, testInfo) => {
   const { entries } = buildSession({ cwd: realWorkingDir() });
   const id = writeSession(
     sessionsDir,
-    uniqueSessionName(testInfo, "edge-swipes"),
+    uniqueSessionName(testInfo, "standalone-taps"),
     entries,
   );
   await collapseScratchpad(page);
@@ -456,45 +456,43 @@ test("installed app edge swipes keep views and controls usable without browser h
   const session = page.locator(`a[data-session-id="${id}"]`);
   const composer = page.locator("#pi-chat-message");
   const home = page.locator(".mobile-home");
-  const swipe = (from: "left" | "right", cancel = false) =>
-    page.evaluate(
-      ({ from, cancel }) => {
-        const start = from === "left" ? 8 : innerWidth - 8;
-        const x = start + (from === "left" ? 105 : -105);
-        const touch = { clientX: start, clientY: 150, identifier: 1 };
-        function fire(
-          type: string,
-          touches: unknown[],
-          changedTouches: unknown[] = [],
-        ) {
-          const event = new Event(type, { bubbles: true, cancelable: true });
-          Object.defineProperties(event, {
-            touches: { value: touches },
-            changedTouches: { value: changedTouches },
-          });
-          document.querySelector("#spa-root")!.dispatchEvent(event);
-        }
-        fire("touchstart", [touch]);
-        fire("touchmove", [{ ...touch, clientX: x }]);
-        if (cancel) fire("touchcancel", []);
-        fire("touchend", [], [{ ...touch, clientX: x }]);
-      },
-      { from, cancel },
-    );
+  const swipe = (from: "left" | "right") =>
+    page.evaluate((from) => {
+      const start = from === "left" ? 8 : innerWidth - 8;
+      const x = start + (from === "left" ? 105 : -105);
+      const touch = { clientX: start, clientY: 150, identifier: 1 };
+      function fire(
+        type: string,
+        touches: unknown[],
+        changedTouches: unknown[] = [],
+      ) {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperties(event, {
+          touches: { value: touches },
+          changedTouches: { value: changedTouches },
+        });
+        return document.querySelector("#spa-root")!.dispatchEvent(event);
+      }
+      return [
+        fire("touchstart", [touch]),
+        fire("touchmove", [{ ...touch, clientX: x }]),
+        fire("touchend", [], [{ ...touch, clientX: x }]),
+      ];
+    }, from);
 
   await session.tap();
   await expect(composer).toBeVisible();
-  await swipe("right");
-  await expect(composer).toBeVisible();
-  await swipe("left", true);
-  await expect(composer).toBeVisible();
+  await page.reload();
+  await composer.tap();
+  await expect(composer).toBeFocused();
   for (let i = 0; i < 5; i += 1) {
-    await swipe("left");
+    expect(await swipe("left")).toEqual([true, true, true]);
+    expect(await swipe("right")).toEqual([true, true, true]);
+    await page.locator(".session-header-back").tap();
     await expect(home).toBeVisible();
-    await swipe("left");
-    await expect(home).toBeVisible();
-    await swipe("right");
-    await expect(composer).toBeVisible();
+    await session.tap();
+    await composer.tap();
+    await expect(composer).toBeFocused();
   }
   await page.evaluate(() =>
     window.dispatchEvent(new CustomEvent("pi:devices")),
@@ -510,8 +508,11 @@ test("installed app edge swipes keep views and controls usable without browser h
   await composer.fill("still editable");
   await page.locator(".session-header-back").tap();
   await expect(home).toBeVisible();
-  await swipe("right");
-  await expect(composer).toBeVisible();
+  await page.locator("#web-menu-btn").tap();
+  await page.locator('[role="menuitem"][href="/settings"]').tap();
+  await expect(page.locator(".settings-page")).toBeVisible();
+  await page.locator(".session-header-back").tap();
+  await expect(home).toBeVisible();
   expect(await page.evaluate(() => history.length)).toBe(initialLength);
 });
 
@@ -737,7 +738,7 @@ test("all phone routes keep the outer page fixed and disable page zoom", async (
       await page
         .locator("#spa-root")
         .evaluate((el) => getComputedStyle(el).position),
-    ).toBe("fixed");
+    ).toBe("relative");
     await page.touchscreen.tap(8, 80);
     await page.touchscreen.tap(8, 80);
     expect(await page.evaluate(() => window.visualViewport?.scale || 1)).toBe(

@@ -172,16 +172,16 @@ model picker, sheets and BTW window use one height. A browser resize takes
 precedence. When the keyboard overlays an editor, the visual viewport height is
 the fallback. Focus-scroll offsets never translate the app shell.
 Editable controls use at least 16px text. Model selection and BTW opening do
-not automatically focus a text field on mobile; page zoom is blocked by viewport metadata, touch-action and non-passive mobile
-gesture guards. Only image-viewer controls scale an image, never the page. All
-phone routes scroll inside a bounded root; the outer document cannot pan or
-overscroll horizontally. The unpaired standalone entry installs the same guards
-before mounting the connection screen. Scroll remains inside the transcript, model results or sheet body.
+not automatically focus a text field on mobile. Viewport metadata, CSS touch
+behavior and WebKit zoom events lock page zoom while single-finger touch
+events keep their native behavior. The mobile shell stays in document flow
+with a bounded inner scroller. The unpaired connection panel is removed when
+the workspace mounts.
 
-The installed app uses a bounded in-memory route stack for Home, Back and edge
-swipes. The current address is mirrored for reload and deep links. Browser tabs
-retain normal browser history. Sheets are view state, unmount on close, and
-never push or traverse history. Navigation clears the old view's input focus.
+Installed apps navigate with visible Home and Back controls and replace the
+current address for reloads and deep links. Browser tabs retain normal
+browser history. Sheets unmount on close and never traverse history.
+Navigation clears the old view's input focus.
 
 `ImageModal` handles transcript/Markdown images and gallery images/SVGs in a
 native modal with an explicit close button, blank/letterbox dismissal, zoom and reset controls.

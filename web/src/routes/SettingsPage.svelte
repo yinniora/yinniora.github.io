@@ -81,9 +81,7 @@
     if (typeof e.button === 'number' && e.button !== 0) return;
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    navigate(typeof window.history.state?.back === 'string' ? window.history.state.back : '/', {
-      back: true,
-    });
+    navigate(typeof window.history.state?.back === 'string' ? window.history.state.back : '/');
   }
 
   function flashSaved() {

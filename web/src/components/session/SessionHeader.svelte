@@ -108,10 +108,7 @@
 
 <div class="session-header-bar">
   <div class="session-header-left">
-    <a
-      href="/"
-      class="session-header-back"
-      onclick={(event) => handleNavClick(event, '/', { back: true })}
+    <a href="/" class="session-header-back" onclick={(event) => handleNavClick(event, '/')}
       ><span aria-hidden="true">{@html icon(ArrowLeft, { size: 20 })}</span><span
         >{t('mobile.home')}</span
       ></a

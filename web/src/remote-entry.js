@@ -2,7 +2,7 @@ import { t, LOCALE_KEY, resetI18n } from './shared/i18n.js';
 import { prepareStartupSettings } from './shared/startup-settings.js';
 import { applyRemoteSettings } from './shared/settings-live.js';
 import { RemoteClient } from './remote/client.js';
-import { mount } from 'svelte';
+import { mount, unmount } from 'svelte';
 import RemoteConnect from './components/shared/RemoteConnect.svelte';
 import { readRemoteConfig, saveRemoteConfig, parsePairingLink } from './remote/config.js';
 import { remoteEventSource } from './remote/event-source.js';
@@ -49,7 +49,7 @@ async function start() {
   }
   host.replaceChildren();
   const repairOnly = new URLSearchParams(location.search).has('pairing');
-  mount(RemoteConnect, {
+  const connectView = mount(RemoteConnect, {
     target: host,
     props: {
       initialConfig: config,
@@ -68,6 +68,8 @@ async function start() {
         try {
           await client.connect();
           await launchWorkspace(client);
+          await unmount(connectView);
+          host.remove();
         } catch (error) {
           error.diagnostics ||= {
             ...client.diagnostics,
@@ -216,7 +218,6 @@ async function launchWorkspace(client) {
   client.setSyncing(false);
   const { appReady } = await import('./main.js');
   if (!(await appReady)) throw new Error(t('remote.startFailed'));
-  document.getElementById('remote-status').hidden = true;
 }
 
 start().catch(() => {

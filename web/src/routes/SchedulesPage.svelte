@@ -347,7 +347,7 @@
       class="session-header-back"
       onclick={(e) => {
         e.preventDefault();
-        navigate(backHref, { back: true });
+        navigate(backHref);
       }}><span>←</span> {backHref === '/' ? t('session.back') : t('common.back')}</a
     >
   </div>

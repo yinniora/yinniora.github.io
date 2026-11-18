@@ -72,25 +72,14 @@ export function lockPageZoom({ windowImpl = window, documentImpl = document } = 
   const preventGesture = (event) => {
     if (mobile() && event.cancelable) event.preventDefault();
   };
-  const preventPinch = (event) => {
-    if (event.touches?.length > 1) preventGesture(event);
-  };
-  const preventDoubleTap = (event) => {
-    if (!event.target?.closest?.('input, textarea, [contenteditable="true"]'))
-      preventGesture(event);
-  };
   const options = { passive: false };
+  // WebKit exposes zoom gestures separately. Ordinary touches and taps never
+  // go through a document-level cancelable handler.
   for (const name of ['gesturestart', 'gesturechange', 'gestureend'])
     documentImpl.addEventListener(name, preventGesture, options);
-  for (const name of ['touchstart', 'touchmove'])
-    documentImpl.addEventListener(name, preventPinch, options);
-  documentImpl.addEventListener('dblclick', preventDoubleTap, options);
   const dispose = () => {
     for (const name of ['gesturestart', 'gesturechange', 'gestureend'])
-      documentImpl.removeEventListener(name, preventGesture);
-    for (const name of ['touchstart', 'touchmove'])
-      documentImpl.removeEventListener(name, preventPinch);
-    documentImpl.removeEventListener('dblclick', preventDoubleTap);
+      documentImpl.removeEventListener(name, preventGesture, options);
     zoomLocks.delete(documentImpl);
   };
   zoomLocks.set(documentImpl, dispose);

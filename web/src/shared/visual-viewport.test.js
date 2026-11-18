@@ -53,14 +53,14 @@ it('resizes the whole visible area for a keyboard and ignores page pinch zoom', 
   expect(document.documentElement.style.getPropertyValue('--pi-visual-height')).toBe('');
 });
 
-it('blocks phone pinch and double-tap page zoom while keeping one-finger scrolling and text editing', async () => {
+it('blocks native zoom gestures without intercepting taps or scrolling', async () => {
   const { lockPageZoom } = await import('./visual-viewport.js');
   const win = { matchMedia: vi.fn(() => ({ matches: true })) };
   const dispose = lockPageZoom({ windowImpl: win, documentImpl: document });
   const pinch = new Event('touchmove', { cancelable: true });
   Object.defineProperty(pinch, 'touches', { value: [{}, {}] });
   document.dispatchEvent(pinch);
-  expect(pinch.defaultPrevented).toBe(true);
+  expect(pinch.defaultPrevented).toBe(false);
   const scroll = new Event('touchmove', { cancelable: true });
   Object.defineProperty(scroll, 'touches', { value: [{}] });
   document.dispatchEvent(scroll);
@@ -70,7 +70,7 @@ it('blocks phone pinch and double-tap page zoom while keeping one-finger scrolli
   expect(gesture.defaultPrevented).toBe(true);
   const doubleTap = new MouseEvent('dblclick', { cancelable: true, bubbles: true });
   document.body.dispatchEvent(doubleTap);
-  expect(doubleTap.defaultPrevented).toBe(true);
+  expect(doubleTap.defaultPrevented).toBe(false);
   const input = document.createElement('input');
   document.body.append(input);
   const edit = new MouseEvent('dblclick', { cancelable: true, bubbles: true });

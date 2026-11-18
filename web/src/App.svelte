@@ -10,7 +10,7 @@
   import NotFoundPage from './routes/NotFoundPage.svelte';
   import VersionController from './components/shared/VersionController.svelte';
   import { trackVisualViewport } from './shared/visual-viewport.js';
-  import { handleNavClick, setupInstalledNavigation } from './shared/navigation.js';
+  import { handleNavClick } from './shared/navigation.js';
   import { t } from './shared/i18n.js';
 
   let {
@@ -34,7 +34,6 @@
 
   onMount(() => {
     const stopViewport = trackVisualViewport();
-    const stopNavigation = setupInstalledNavigation();
     const remoteEvents = createAppEvents({
       event: 'remote-config',
       onEvent: (config) => window.__PI_REMOTE_CLIENT__?.updateConfiguration(config),
@@ -59,7 +58,6 @@
     window.addEventListener('pageshow', restorePath);
     return () => {
       stopViewport();
-      stopNavigation();
       remoteEvents.cleanup();
       window.removeEventListener('popstate', syncPath);
       window.removeEventListener('pi:locationchange', syncPath);
@@ -81,7 +79,7 @@
             >{t('common.retry')}</button
           >
           <p>
-            <a href="/" onclick={(event) => handleNavClick(event, '/', { back: true })}
+            <a href="/" onclick={(event) => handleNavClick(event, '/')}
               >{t('session.backToSessions')}</a
             >
           </p>

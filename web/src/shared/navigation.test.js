@@ -25,6 +25,15 @@ describe('navigate', () => {
     expect(windowImpl.history.pushState).toHaveBeenCalledWith({}, '', '/session?id=abc');
   });
 
+  it('replaces the active address for explicit navigation in installed apps', () => {
+    const windowImpl = makeWindow();
+    windowImpl.navigator = { standalone: true };
+    windowImpl.history.replaceState = vi.fn();
+    navigate('/settings', { windowImpl, state: { back: '/' } });
+    expect(windowImpl.history.replaceState).toHaveBeenCalledWith({ back: '/' }, '', '/settings');
+    expect(windowImpl.history.pushState).not.toHaveBeenCalled();
+  });
+
   it('ignores empty urls', () => {
     const windowImpl = makeWindow();
     navigate('', { windowImpl });
