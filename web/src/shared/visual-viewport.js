@@ -29,6 +29,7 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
   let restingHeight = windowImpl.innerHeight;
   let width = windowImpl.innerWidth;
   let revealedEditor = null;
+  let revealedPane = null;
   let revealedAtHeight = 0;
   const update = () => {
     frame = 0;
@@ -50,7 +51,12 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
     style.setProperty('--pi-visual-height', `${height}px`);
     documentImpl.documentElement.classList.toggle('pi-keyboard-open', Boolean(keyboardOpen));
 
-    const settingsPage = keyboardOpen && editor.closest('.settings-page-mobile-pane');
+    const panel =
+      keyboardOpen &&
+      width <= 900 &&
+      editor.closest(
+        '.settings-page-mobile-pane, .modal, .pi-sheet-body, .hub-dialog, .pi-chat-model-popup, .command-palette, .pi-btw-body',
+      );
     const stalePan =
       installedIOS &&
       viewport &&
@@ -62,8 +68,8 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
       installedIOS &&
       viewport &&
       keyboardOpen &&
-      (settingsPage || editor.closest('#pi-chat-composer, .pi-btw-window')) &&
-      ((root?.scrollTop || 0) > 1 || viewport.offsetTop > (settingsPage ? 1 : 48));
+      (panel || editor.closest('#pi-chat-composer, .pi-btw-window, .personal-start-box')) &&
+      ((root?.scrollTop || 0) > 1 || viewport.offsetTop > (panel ? 1 : 48));
     if (!stalePan && !keyboardPan) {
       resetAtHeight = null;
     } else if (resetAtHeight === null || Math.abs(height - resetAtHeight) >= 8) {
@@ -74,19 +80,25 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
       windowImpl.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     }
 
-    if (!settingsPage) {
+    if (!panel) {
       revealedEditor = null;
-    } else if (revealedEditor !== editor || Math.abs(height - revealedAtHeight) >= 8) {
+      revealedPane = null;
+    } else if (
+      revealedEditor !== editor ||
+      revealedPane !== panel ||
+      Math.abs(height - revealedAtHeight) >= 8
+    ) {
       revealedEditor = editor;
+      revealedPane = panel;
       revealedAtHeight = height;
       const field = editor.getBoundingClientRect();
-      const page = settingsPage.getBoundingClientRect();
+      const page = panel.getBoundingClientRect();
       const top = page.top + 12;
       const bottom = Math.min(height, page.bottom) - 12;
       if (field.bottom > bottom && field.height <= bottom - top) {
-        settingsPage.scrollTop += field.bottom - bottom;
+        panel.scrollTop += field.bottom - bottom;
       } else if (field.top < top || field.top >= bottom) {
-        settingsPage.scrollTop += field.top - top;
+        panel.scrollTop += field.top - top;
       }
     }
   };

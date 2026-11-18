@@ -2,6 +2,8 @@
   import ChatComposer from './ChatComposer.svelte';
   import LiveReload from './LiveReload.svelte';
   import CommandMenu from './CommandMenu.svelte';
+  import PiSessionTools from './PiSessionTools.svelte';
+  import PiExtensionDialogs from './PiExtensionDialogs.svelte';
   import RightSidebar from './RightSidebar.svelte';
   import SessionHeader from './SessionHeader.svelte';
   import SessionInfoHeader from './SessionInfoHeader.svelte';
@@ -60,6 +62,13 @@
   let projectsBusy = $state(false);
   let projectsError = $state('');
   let projectsRevision = $state(0);
+  let piToolsOpen = $state(false);
+  let piToolsMode = $state('session');
+
+  function openPiTools(mode) {
+    piToolsMode = mode;
+    piToolsOpen = true;
+  }
 
   async function refreshProjectsList() {
     projectsError = '';
@@ -228,7 +237,11 @@
 
 <SessionHeader {title} {cwd} {sessionId} {sessionUUID} />
 
-<CommandMenu {sessionId} {runningSessionIds} />
+<CommandMenu {sessionId} {runningSessionIds} {chatAvailable} onPiTools={openPiTools} />
+{#if chatAvailable}
+  <PiSessionTools {sessionId} bind:open={piToolsOpen} mode={piToolsMode} />
+  <PiExtensionDialogs {sessionId} />
+{/if}
 
 <!-- Live reload (SSE) mounts before <ChatComposer> so its optimistic
      "message sent" listener is attached before the user can send. -->

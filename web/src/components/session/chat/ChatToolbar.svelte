@@ -119,7 +119,7 @@
       style:display={toolbar.isRunning ? '' : 'none'}
       title={t('composer.cancelRunning')}
       aria-label={t('composer.cancelRunning')}
-      disabled={toolbar.statusText === 'cancelling' || !chatAvailable}
+      disabled={toolbar.statusText === 'cancelling' || toolbar.compacting || !chatAvailable}
       >{t('composer.cancel')}</button
     >
     <button

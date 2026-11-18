@@ -18,13 +18,16 @@ const (
 )
 
 type WorkerStatus struct {
-	State          State    `json:"state"`
-	Error          string   `json:"error,omitempty"`
-	Model          string   `json:"model,omitempty"`
-	ModelName      string   `json:"modelName,omitempty"`
-	ModelProvider  string   `json:"modelProvider,omitempty"`
-	ThinkingLevel  string   `json:"thinkingLevel,omitempty"`
-	ThinkingLevels []string `json:"thinkingLevels,omitempty"`
+	State          State        `json:"state"`
+	Error          string       `json:"error,omitempty"`
+	Model          string       `json:"model,omitempty"`
+	ModelName      string       `json:"modelName,omitempty"`
+	ModelProvider  string       `json:"modelProvider,omitempty"`
+	ThinkingLevel  string       `json:"thinkingLevel,omitempty"`
+	ThinkingLevels []string     `json:"thinkingLevels,omitempty"`
+	Compacting     bool         `json:"compacting,omitempty"`
+	HandledPrompt  string       `json:"handledPrompt,omitempty"`
+	ExtensionUI    *ExtensionUI `json:"extensionUI,omitempty"`
 }
 
 // SlashCommand is a slash-invokable command exposed by a pi worker via the

@@ -33,3 +33,30 @@ func TestProjectFolderPickerScope(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateProjectFolderIsScopedAndDoesNotOverwrite(t *testing.T) {
+	home, outside := t.TempDir(), t.TempDir()
+	parent := filepath.Join(home, "Projects")
+	if err := os.Mkdir(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	newFolder, err := createProjectFolder(home, parent, "Example project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(newFolder.Path); err != nil || !info.IsDir() {
+		t.Fatalf("expected a new directory, got %v (%v)", info, err)
+	}
+	if _, err := createProjectFolder(home, parent, "Example project"); !os.IsExist(err) {
+		t.Fatalf("duplicate creation should fail, got %v", err)
+	}
+	if _, err := createProjectFolder(home, outside, "outside"); err == nil {
+		t.Fatal("accepted a parent outside the account home")
+	}
+	link := filepath.Join(home, "outside")
+	if err := os.Symlink(outside, link); err == nil {
+		if _, err := createProjectFolder(home, link, "outside"); err == nil {
+			t.Fatal("followed a symbolic link outside the account home")
+		}
+	}
+}

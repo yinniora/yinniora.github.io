@@ -1,15 +1,20 @@
 <script>
   import { onDestroy } from 'svelte';
   import { t } from '../../shared/i18n.js';
-  import { getJSON } from '../../shared/api.js';
-  import { icon, Folder, FolderOpen, ArrowUp, X } from '../../shared/icons.js';
+  import { getJSON, postJSON } from '../../shared/api.js';
+  import { icon, Folder, FolderOpen, FolderPlus, ArrowUp, X } from '../../shared/icons.js';
   let { value = '', disabled = false, onSelect = () => {} } = $props();
   let open = $state(false),
     busy = $state(false),
     error = $state(''),
     listing = $state(null),
-    query = $state('');
+    query = $state(''),
+    naming = $state(false),
+    creating = $state(false),
+    name = $state(''),
+    createError = $state('');
   let version = 0;
+  const nameField = $props.id();
   const folders = $derived(
     (listing?.folders || []).filter((item) =>
       item.name.toLowerCase().includes(query.trim().toLowerCase()),
@@ -21,6 +26,8 @@
     busy = true;
     error = '';
     query = '';
+    naming = false;
+    createError = '';
     try {
       const data = await getJSON(
         '/api/project-folders' + (path ? '?path=' + encodeURIComponent(path) : ''),
@@ -36,6 +43,36 @@
     version++;
     open = false;
     busy = false;
+    naming = false;
+    creating = false;
+  }
+  async function createFolder(event) {
+    event.preventDefault();
+    if (!listing || !name.trim() || creating || disabled) return;
+    const request = ++version;
+    creating = true;
+    createError = '';
+    try {
+      const folder = await postJSON('/api/project-folders', {
+        parent: listing.path,
+        name: name.trim(),
+      });
+      if (request !== version) return;
+      onSelect(folder.path);
+      close();
+    } catch (failure) {
+      if (request === version) {
+        createError = t(
+          failure.message === 'folder already exists'
+            ? 'folders.exists'
+            : failure.message === 'invalid folder name'
+              ? 'folders.invalidName'
+              : 'folders.createFailed',
+        );
+      }
+    } finally {
+      if (request === version) creating = false;
+    }
   }
   onDestroy(close);
 </script>
@@ -50,10 +87,12 @@
   {:else}
     <section class="mac-folder-browser" aria-label={t('folders.browse')}>
       <div class="mac-folder-toolbar">
-        <button type="button" disabled={busy} onclick={() => browse()}>{t('folders.home')}</button>
+        <button type="button" disabled={busy || creating} onclick={() => browse()}
+          >{t('folders.home')}</button
+        >
         <button
           type="button"
-          disabled={busy || !listing?.parent}
+          disabled={busy || creating || !listing?.parent}
           onclick={() => browse(listing.parent)}
           >{@html icon(ArrowUp, { size: 14 })}{t('folders.parent')}</button
         >
@@ -65,29 +104,61 @@
       {#if error}<p class="mac-folder-error" role="alert">{error}</p>{/if}
       {#if busy}<p role="status">{t('folders.loading')}</p>
       {:else if !error && listing}
-        <input
-          type="search"
-          aria-label={t('folders.search')}
-          placeholder={t('folders.search')}
-          bind:value={query}
-        />
-        <div class="mac-folder-list">
-          {#each folders as folder (folder.path)}<button
+        {#if naming}
+          <form class="mac-folder-create" onsubmit={createFolder}>
+            <label for={nameField}>{t('folders.name')}</label>
+            <input
+              id={nameField}
+              bind:value={name}
+              maxlength="255"
+              autocomplete="off"
+              disabled={creating}
+            />
+            {#if createError}<p class="mac-folder-error" role="alert">{createError}</p>{/if}
+            <div class="mac-folder-actions">
+              <button type="button" disabled={creating} onclick={() => (naming = false)}
+                >{t('common.cancel')}</button
+              >
+              <button type="submit" disabled={creating || !name.trim()}>{t('common.create')}</button
+              >
+            </div>
+          </form>
+        {:else}
+          <input
+            type="search"
+            aria-label={t('folders.search')}
+            placeholder={t('folders.search')}
+            bind:value={query}
+          />
+          <div class="mac-folder-list">
+            {#each folders as folder (folder.path)}<button
+                type="button"
+                onclick={() => browse(folder.path)}
+                >{@html icon(Folder, { size: 15 })}<span>{folder.name}</span></button
+              >{:else}<p>{t('folders.empty')}</p>{/each}
+          </div>
+          {#if listing.truncated}<p class="mac-folder-hint">{t('folders.truncated')}</p>{/if}
+          <div class="mac-folder-actions">
+            <button
               type="button"
-              onclick={() => browse(folder.path)}
-              >{@html icon(Folder, { size: 15 })}<span>{folder.name}</span></button
-            >{:else}<p>{t('folders.empty')}</p>{/each}
-        </div>
-        {#if listing.truncated}<p class="mac-folder-hint">{t('folders.truncated')}</p>{/if}
-        <button
-          class="mac-folder-select"
-          type="button"
-          {disabled}
-          onclick={() => {
-            onSelect(listing.path);
-            close();
-          }}>{t('folders.choose')}</button
-        >
+              {disabled}
+              onclick={() => {
+                name = '';
+                createError = '';
+                naming = true;
+              }}>{@html icon(FolderPlus, { size: 16 })}{t('folders.new')}</button
+            >
+            <button
+              class="mac-folder-select"
+              type="button"
+              {disabled}
+              onclick={() => {
+                onSelect(listing.path);
+                close();
+              }}>{t('folders.choose')}</button
+            >
+          </div>
+        {/if}
       {/if}
     </section>
   {/if}
@@ -173,10 +244,23 @@
     background: var(--hover);
   }
   .mac-folder-select {
-    width: 100%;
     justify-content: center;
     background: var(--text);
     color: var(--body-bg);
+  }
+  .mac-folder-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .mac-folder-actions button {
+    flex: 1 1 auto;
+    min-height: 42px;
+    justify-content: center;
+  }
+  .mac-folder-create label {
+    display: block;
+    margin-bottom: 6px;
   }
   .mac-folder-error {
     color: var(--danger);

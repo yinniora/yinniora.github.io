@@ -11,6 +11,8 @@ export function setupWorkerStatusPolling({
   getKnownThinkingLevel = () => '',
   setKnownThinkingLevel = () => {},
   getWorkerModelUpdate = () => null,
+  setCompacting = () => {},
+  setExtensionUI = () => {},
   setIntervalImpl = windowImpl.setInterval?.bind(windowImpl),
   clearIntervalImpl = windowImpl.clearInterval?.bind(windowImpl),
   CustomEventImpl = windowImpl.CustomEvent,
@@ -19,6 +21,7 @@ export function setupWorkerStatusPolling({
   let inflight = false;
   let pending = false;
   let lastWorkerState = null;
+  let lastHandledPrompt = '';
   const scope = new AbortController();
 
   async function refresh() {
@@ -36,21 +39,28 @@ export function setupWorkerStatusPolling({
       if (!response?.ok) return;
       const data = await response.json();
       if (scope.signal.aborted) return;
+      setExtensionUI(data.extensionUI);
       const apiModelLabel = data.model
         ? data.model + (data.modelProvider ? ' @ ' + data.modelProvider : '')
         : '';
       if (apiModelLabel) setKnownModelLabel(apiModelLabel);
       if (data.thinkingLevel) setKnownThinkingLevel(data.thinkingLevel);
+      setCompacting(Boolean(data.compacting));
       if (data.state === 'running') setStatus('running', 'running');
       if (data.state === 'idle') setStatus('idle', '');
       if (data.state === 'error') setStatus(data.error || 'worker error', 'error');
-      if (lastWorkerState === 'running' && data.state === 'idle') {
+      if (
+        data.state === 'idle' &&
+        (lastWorkerState === 'running' ||
+          (data.handledPrompt && lastHandledPrompt !== data.handledPrompt))
+      ) {
         try {
           windowImpl.dispatchEvent(new CustomEventImpl('pi-worker-done'));
         } catch {
           // Some tests/environments may not support constructing events.
         }
       }
+      lastHandledPrompt = data.handledPrompt || '';
       if (data.state) lastWorkerState = data.state;
       setModelLabel(getKnownModelLabel());
       setThinkingLabel(getKnownThinkingLevel());

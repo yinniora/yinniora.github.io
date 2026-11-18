@@ -334,6 +334,17 @@ the current model or switching models. Status polling and model selection
 reuse that capability data. Older Pi versions omit the list and the client
 uses the model catalog. A status poll never starts a worker.
 
+`/api/pi-session` invokes native statistics, manual compaction and HTML export
+for the authorized session. HTML is generated in a restricted temporary
+directory and sent as a download. The worker exposes explicit compaction
+state to avoid concurrent prompts. `prompt` acknowledgments with `handled`
+release a command-only run without waiting for a model turn.
+Generic extension dialogs have a per-worker expiry, validate replies against
+the specific pending prompt, and travel over existing authenticated session
+routes. Reserved computer approval prompts keep their separate policy.
+`/api/project-folders` uses an account-home filesystem root for both listing
+and creating a single child folder.
+
 ## HTTP Handler Map
 
 | Route | Method | Handler | Description |

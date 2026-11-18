@@ -41,14 +41,18 @@
     loadForkEntries,
   } from '../../session/session-menu-actions.js';
 
-  let { sessionId = '', runningSessionIds = null } = $props();
-
-  // Close animations must outlast the matching CSS transitions before the panel
-  // is display:none'd (see command-menu styles).
+  let {
+    sessionId = '',
+    runningSessionIds = null,
+    onPiTools = () => {},
+    chatAvailable = true,
+  } = $props();
 
   // Primary actions shared by the desktop popover and mobile panel. kbd hints
   // render on desktop only.
   const primaryItems = [
+    { action: 'pi-commands', icon: Terminal, label: 'piCommands.title', requiresChat: true },
+    { action: 'pi-session', icon: ChartColumn, label: 'piSession.title', requiresChat: true },
     { action: 'list-sessions', icon: Search, label: 'menu.searchSessions', kbd: '⌘K' },
     { action: 'manage', icon: Pencil, label: 'hub.session' },
     { action: 'export-markdown', icon: Download, label: 'hub.export' },
@@ -122,6 +126,11 @@
 
     function handleAction(action) {
       switch (action) {
+        case 'pi-commands':
+        case 'pi-session':
+          closeMenu();
+          onPiTools(action === 'pi-commands' ? 'commands' : 'session');
+          break;
         case 'share':
           clickHidden('share-btn');
           closeMenu();
@@ -259,9 +268,11 @@
 {#snippet menuBody(itemClass, sectionClass, desktop)}
   <div class={sectionClass}>
     {#each primaryItems as item (item.action)}
-      <button class={itemClass} type="button" data-action={item.action}
-        >{@render label(item)}{#if desktop && item.kbd}<kbd>{item.kbd}</kbd>{/if}</button
-      >
+      {#if chatAvailable || !item.requiresChat}
+        <button class={itemClass} type="button" data-action={item.action}
+          >{@render label(item)}{#if desktop && item.kbd}<kbd>{item.kbd}</kbd>{/if}</button
+        >
+      {/if}
     {/each}
   </div>
   <div class={sectionClass}>

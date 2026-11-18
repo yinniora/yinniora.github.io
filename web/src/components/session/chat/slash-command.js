@@ -7,20 +7,20 @@
 // trigger is deliberately anchored to position 0. A slash mid-message, such as
 // in a file path, never opens the palette.
 
-const SOURCE_ORDER = ['prompt', 'skill'];
+import { t } from '../../../shared/i18n.js';
+
+const SOURCE_ORDER = ['extension', 'prompt', 'skill'];
 const SOURCE_LABELS = {
-  prompt: 'Prompts',
-  skill: 'Skills',
+  extension: 'piCommands.extensions',
+  prompt: 'piCommands.prompts',
+  skill: 'plugins.skills',
 };
 
-// Only prompt templates and skills expand into a normal agent turn over the
-// headless RPC worker. Extension commands drive pi's TUI via
-// extension_ui_request events and never emit agent_end, so sending one leaves
-// the session stuck "running" forever. They are excluded from the palette.
-const PALETTE_SOURCES = new Set(['prompt', 'skill']);
-
 export function isPaletteCommand(cmd) {
-  return !!cmd && PALETTE_SOURCES.has(cmd.source);
+  if (!cmd) return false;
+  if (cmd.source === 'extension')
+    return !!cmd.name && cmd.name !== 'btw' && cmd.name !== 'yugo-computer-guard-ready';
+  return cmd.source === 'prompt' || cmd.source === 'skill';
 }
 
 export function parseSlashTrigger(text, caret) {
@@ -50,7 +50,7 @@ export function groupCommands(commands) {
     if (buckets.has(source)) {
       groups.push({
         source,
-        label: SOURCE_LABELS[source],
+        label: t(SOURCE_LABELS[source]),
         items: buckets.get(source),
       });
       buckets.delete(source);
@@ -66,9 +66,10 @@ export function renderCommandList(
   commands,
   { query = '', escapeHtml = String, loading = false } = {},
 ) {
-  if (loading) return '<div class="slash-empty">Loading commands...</div>';
+  if (loading) return `<div class="slash-empty">${escapeHtml(t('piCommands.loading'))}</div>`;
   const filtered = filterCommands(commands, query);
-  if (filtered.length === 0) return '<div class="slash-empty">No commands match</div>';
+  if (filtered.length === 0)
+    return `<div class="slash-empty">${escapeHtml(t('piCommands.empty'))}</div>`;
 
   let html = '';
   groupCommands(filtered).forEach((group) => {
@@ -171,7 +172,7 @@ export function setupSlashCommands({
     else open();
   }
 
-  function insert(name) {
+  function insert(name, focus = true) {
     if (!trigger) return;
     const value = textarea.value;
     const replacement = `/${name} `;
@@ -179,7 +180,7 @@ export function setupSlashCommands({
     const caret = trigger.start + replacement.length;
     textarea.selectionStart = textarea.selectionEnd = caret;
     close();
-    textarea.focus();
+    if (focus) textarea.focus();
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
@@ -216,6 +217,16 @@ export function setupSlashCommands({
   }
 
   textarea.addEventListener('input', refresh);
+  documentImpl.defaultView?.addEventListener(
+    'pi:insert-command',
+    (event) => {
+      const { sessionId: target, command } = event.detail || {};
+      if (target !== sessionId || typeof command !== 'string' || !/^[^\s/]+$/.test(command)) return;
+      trigger = parseSlashTrigger(textarea.value, 0) || { start: 0, end: 0 };
+      insert(command, false);
+    },
+    { signal: scope },
+  );
 
   commandsButton?.addEventListener(
     'click',

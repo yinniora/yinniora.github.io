@@ -195,14 +195,24 @@ Read state is kept in the current browser.
 model picker, sheets and BTW window use one height. While the keyboard is
 visible, the app fits the smaller valid window or visual viewport height. The
 outer document and the composer use the same height throughout the transition.
-Mobile settings scroll in their own pane and reveal the focused field inside
-the visible keyboard boundary, with standalone iOS page pan corrected once.
+Mobile settings and editable overlays reveal focused fields in their own
+scroll container, with standalone iOS document pan corrected once. The
+project and new-session sheets share the keyboard-adjusted viewport and
+use opaque chrome while editing.
 The reasoning menu is positioned relative to its toolbar button, so viewport
 changes move the menu, toolbar and composer together.
 The selected Pi worker supplies the available reasoning levels. Before a worker
 exists, or with an older Pi version, the composer uses model catalog metadata.
-The add menu also opens the command picker for skills and prompt templates
-loaded by the current Pi session.
+The session menu offers Pi Commands and Session Tools. The searchable
+command picker inserts loaded extension commands, prompt templates and
+skills into the draft. Session Tools displays native Pi statistics, starts
+manual context compaction and downloads the native HTML export.
+The existing worker poll carries the current session's pending Pi extension
+dialogs and notifications. Native keyboard-aware sheets handle confirmation,
+selection and text input. The computer approval guard still uses its
+dedicated controls.
+The Mac folder picker can create one child in the browsed folder and fills
+its path for project registration or new-session creation.
 Editable controls use at least 16px text. Model selection and BTW opening do
 not automatically focus a text field on mobile. Viewport metadata, CSS touch
 behavior and WebKit zoom events lock page zoom while single-finger touch

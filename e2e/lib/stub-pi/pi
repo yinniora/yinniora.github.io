@@ -19,8 +19,7 @@ let thinkingLevel = "medium";
 let idSeq = 0;
 
 // Deterministic slash-command set for the get_commands rpc. Includes one of
-// each source so the palette spec can assert that extension commands are
-// filtered out while prompt + skill commands are surfaced.
+// each source. The native-tools fixture adds one interactive extension.
 const COMMANDS = [
   { name: "btw", description: "Open a side-chat popover", source: "extension" },
   { name: "workon", description: "Start working on a task", source: "prompt" },
@@ -93,10 +92,14 @@ function writeTurn(userText, reply) {
 }
 
 function handlePrompt(cmd) {
+  const raw = typeof cmd.message === "string" ? cmd.message : JSON.stringify(cmd.message ?? "");
+  if (/^\/fixture-picker(?:\s|$)/.test(raw)) {
+    extensionPrompt = cmd.id;
+    send({ type: "extension_ui_request", id: "fixture-choice", method: "select", title: "Pick a fixture option", options: ["Alpha", "Beta"] });
+    return;
+  }
   // Ack the prompt command first so POST /api/chat returns promptly.
   respond(cmd.id, "prompt", {});
-
-  const raw = typeof cmd.message === "string" ? cmd.message : JSON.stringify(cmd.message ?? "");
   const { text: userText, delay } = parseDelay(raw);
   const reply = `Stub reply: ${userText}`;
 
@@ -133,6 +136,8 @@ function handlePrompt(cmd) {
   }, 30);
 }
 
+let extensionPrompt = "";
+
 function handle(cmd) {
   switch (cmd.type) {
     case "switch_session":
@@ -140,7 +145,7 @@ function handle(cmd) {
       respond(cmd.id, "switch_session", {});
       break;
     case "get_state":
-      respond(cmd.id, "get_state", { thinkingLevel, model });
+      respond(cmd.id, "get_state", { thinkingLevel, model, sessionFile: sessionPath });
       break;
     case "set_model":
       model = { id: cmd.modelId, name: cmd.modelId, provider: cmd.provider };
@@ -155,7 +160,29 @@ function handle(cmd) {
       send({ type: "agent_end" });
       break;
     case "get_commands":
-      respond(cmd.id, "get_commands", { commands: COMMANDS });
+      respond(cmd.id, "get_commands", { commands: sessionPath.includes("native-tools")
+        ? [...COMMANDS, { name: "fixture-picker", description: "Open a fixture extension dialog", source: "extension" }]
+        : COMMANDS });
+      break;
+    case "get_session_stats":
+      respond(cmd.id, "get_session_stats", { totalMessages: 12, toolCalls: 4, tokens: { total: 1000, cacheRead: 250 } });
+      break;
+    case "compact":
+      respond(cmd.id, "compact", { tokensBefore: 1000 });
+      break;
+    case "export_html":
+      fs.writeFileSync(cmd.outputPath, "<!doctype html><title>Fixture conversation</title>");
+      respond(cmd.id, "export_html", { path: cmd.outputPath });
+      break;
+    case "extension_ui_response":
+      if (cmd.id === "fixture-choice" && cmd.value === "Beta") {
+        send({ type: "extension_ui_request", id: "fixture-text", method: "input", title: "Write a fixture response", placeholder: "Response text" });
+      } else if (extensionPrompt) {
+        if (cmd.id === "fixture-text" && cmd.value === "Fixture answer")
+          send({ type: "extension_ui_request", id: "fixture-notice", method: "notify", message: "Extension response received" });
+        respond(extensionPrompt, "prompt", { disposition: "handled" });
+        extensionPrompt = "";
+      }
       break;
     case "prompt":
       handlePrompt(cmd);

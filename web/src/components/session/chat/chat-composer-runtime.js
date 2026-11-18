@@ -154,6 +154,7 @@ export function runChatComposer({
       textarea,
       sendButton,
       getAttachments: () => attachments,
+      isBlocked: () => toolbar.compacting,
     });
     const updateSendEnabled = sendState.updateSendEnabled;
 
@@ -281,6 +282,12 @@ export function runChatComposer({
       getKnownThinkingLevel: toolbar.getKnownThinkingLevel,
       setKnownThinkingLevel: toolbar.setKnownThinkingLevel,
       getWorkerModelUpdate: () => onWorkerModelUpdate,
+      setCompacting: (value) => {
+        toolbar.compacting = value;
+        updateSendEnabled();
+      },
+      setExtensionUI: (ui) =>
+        window.dispatchEvent(new CustomEvent('pi:extension-ui', { detail: { sessionId, ui } })),
       setIntervalImpl: setInterval,
       CustomEventImpl: CustomEvent,
     });

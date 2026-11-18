@@ -39,6 +39,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusConflict, resolved.Session.ChatDisabledReason)
 		return
 	}
+	if s.chatSender != nil && s.chatSender.Status(resolved.Session.ID).Compacting {
+		writeJSONError(w, 409, "session is busy")
+		return
+	}
 	chatReq, err := chat.ParseRequest(r, chat.DefaultMaxImageBytes, chat.DefaultMaxRequestBytes)
 	if err != nil {
 		switch {
@@ -168,6 +172,14 @@ func (s *Server) handleWorkerStatus(w http.ResponseWriter, r *http.Request) {
 		status.ModelProvider = state.ModelProvider
 		status.ThinkingLevel = state.ThinkingLevel
 		status.ThinkingLevels = state.ThinkingLevels
+		status.Compacting = state.Compacting
+		status.HandledPrompt = state.HandledPrompt
+	}
+	if pi, ok := s.chatSender.(extensionUIHandler); ok {
+		ui := pi.ExtensionUI(sessionID)
+		if len(ui.Dialogs)+len(ui.Notices) > 0 {
+			status.ExtensionUI = &ui
+		}
 	}
 	writeJSON(w, 0, status)
 }

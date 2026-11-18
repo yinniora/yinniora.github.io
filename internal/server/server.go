@@ -381,6 +381,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/models", s.auth.Wrap(s.visibleSession(s.handleAvailableModels)))
 	mux.HandleFunc("/api/worker-status", s.auth.Wrap(s.visibleSession(s.handleWorkerStatus)))
 	mux.HandleFunc("/api/commands", s.auth.Wrap(s.visibleSession(s.handleCommands)))
+	mux.HandleFunc("/api/pi-session", s.auth.Wrap(s.visibleSession(s.handlePiSession)))
+	mux.HandleFunc("/api/extension-ui", s.auth.Wrap(s.visibleSession(s.handleExtensionUI)))
 	mux.HandleFunc("/share", s.auth.Wrap(s.visibleSession(s.handleShare)))
 	mux.HandleFunc("/events", s.auth.Wrap(s.visibleSession(s.handleEvents)))
 	mux.HandleFunc("/api/new-session", s.auth.Wrap(s.visibleSession(s.handleNewSession)))

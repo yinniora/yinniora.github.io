@@ -9,7 +9,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,6 +46,12 @@ type piRPCWorker struct {
 	streamPreview        *streamPreviewAccumulator
 	computerMode         func() string
 	computerRequests     map[string]workers.ComputerRequest
+	compacting           bool
+	agentRevision        uint64
+	handledPrompt        string
+	extensionDialogs     map[string]*pendingExtensionDialog
+	extensionNotices     []workers.ExtensionNotice
+	extensionClosed      bool
 }
 
 func (w *piRPCWorker) touch() {
@@ -168,8 +176,12 @@ func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink, guard
 	// Best-effort: refresh model/thinking-level from pi so a respawned worker
 	// doesn't show stale defaults after the in-memory cache was lost on reap.
 	stateCtx, stateCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	_, _ = worker.GetState(stateCtx)
+	_, stateErr := worker.GetState(stateCtx)
 	stateCancel()
+	if errors.Is(stateErr, errWorkerSessionChanged) {
+		_ = worker.Close()
+		return nil, stateErr
+	}
 	worker.touch()
 	return worker, nil
 }
@@ -177,15 +189,39 @@ func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink, guard
 func (w *piRPCWorker) Prompt(ctx context.Context, chat chat.Request) error {
 	w.touch()
 	w.mu.Lock()
+	if w.compacting {
+		w.mu.Unlock()
+		return workers.ErrPiSessionBusy
+	}
 	streaming := w.status.State == workers.WorkerStateRunning
-	w.status = workers.WorkerStatus{State: workers.WorkerStateRunning}
+	revision := w.agentRevision
+	w.status.State = workers.WorkerStateRunning
+	w.status.Error = ""
 	w.mu.Unlock()
 	id := w.nextID()
-	if err := w.sendAndAwait(ctx, BuildPromptCommand(id, chat, streaming)); err != nil {
+	data, err := w.request(ctx, BuildPromptCommand(id, chat, streaming))
+	if err != nil {
 		w.mu.Lock()
-		w.status = workers.WorkerStatus{State: workers.WorkerStateError, Error: err.Error()}
+		if w.agentRevision == revision && !streaming {
+			w.status.State = workers.WorkerStateError
+			w.status.Error = err.Error()
+		}
 		w.mu.Unlock()
 		return err
+	}
+	var ack struct{ Disposition string }
+	if json.Unmarshal(data, &ack) == nil && ack.Disposition == "handled" {
+		stateCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		if _, err := w.GetState(stateCtx); errors.Is(err, errWorkerSessionChanged) {
+			return err
+		}
+		w.mu.Lock()
+		if !streaming && w.agentRevision == revision {
+			w.status.State = workers.WorkerStateIdle
+		}
+		w.handledPrompt = strconv.FormatInt(w.startedAt.UnixNano(), 10) + "-" + id
+		w.mu.Unlock()
 	}
 	return nil
 }
@@ -193,6 +229,9 @@ func (w *piRPCWorker) Prompt(ctx context.Context, chat chat.Request) error {
 func (w *piRPCWorker) SetModel(ctx context.Context, provider, modelID string) error {
 	w.modelMu.Lock()
 	defer w.modelMu.Unlock()
+	if w.Status().Compacting {
+		return workers.ErrPiSessionBusy
+	}
 	w.touch()
 	data, err := w.request(ctx, map[string]any{
 		"id":       w.nextID(),
@@ -236,6 +275,11 @@ func (w *piRPCWorker) SetModel(ctx context.Context, provider, modelID string) er
 }
 
 func (w *piRPCWorker) SetThinkingLevel(ctx context.Context, level string) error {
+	w.modelMu.Lock()
+	defer w.modelMu.Unlock()
+	if w.Status().Compacting {
+		return workers.ErrPiSessionBusy
+	}
 	w.touch()
 	return w.sendAndAwait(ctx, BuildSetThinkingLevelCommand(w.nextID(), level))
 }
@@ -262,9 +306,15 @@ func (w *piRPCWorker) GetState(ctx context.Context) (workers.WorkerStatus, error
 	var state struct {
 		ThinkingLevel string `json:"thinkingLevel"`
 		Model         model  `json:"model"`
+		SessionFile   string `json:"sessionFile"`
 	}
 	if err := json.Unmarshal(data, &state); err != nil {
 		return workers.WorkerStatus{}, err
+	}
+	if w.sessionPath != "" && state.SessionFile != "" && !sameSessionFile(w.sessionPath, state.SessionFile) {
+		w.setError(errWorkerSessionChanged)
+		_ = w.Close()
+		return workers.WorkerStatus{}, errWorkerSessionChanged
 	}
 	w.mu.Lock()
 	w.currentThinkingLevel = state.ThinkingLevel
@@ -368,6 +418,11 @@ func (w *piRPCWorker) Status() workers.WorkerStatus {
 	s.ModelProvider = w.currentProvider
 	s.ThinkingLevel = w.currentThinkingLevel
 	s.ThinkingLevels = w.thinkingLevels
+	s.HandledPrompt = w.handledPrompt
+	if w.compacting {
+		s.Compacting = true
+		s.State = workers.WorkerStateRunning
+	}
 	if s.State == workers.WorkerStateIdle && w.hasRecentStreamActivityLocked(time.Now()) {
 		s.State = workers.WorkerStateRunning
 	}
@@ -375,6 +430,13 @@ func (w *piRPCWorker) Status() workers.WorkerStatus {
 }
 
 func (w *piRPCWorker) Close() error {
+	w.mu.Lock()
+	w.extensionClosed = true
+	for _, pending := range w.extensionDialogs {
+		pending.timer.Stop()
+	}
+	clear(w.extensionDialogs)
+	w.mu.Unlock()
 	if w.stdin != nil {
 		_ = w.stdin.Close()
 	}
@@ -389,7 +451,26 @@ func (w *piRPCWorker) nextID() string {
 }
 
 func (w *piRPCWorker) switchSession(ctx context.Context) error {
-	return w.sendAndAwait(ctx, buildSwitchSessionCommand(w.nextID(), w.sessionPath))
+	data, err := w.request(ctx, buildSwitchSessionCommand(w.nextID(), w.sessionPath))
+	if err != nil {
+		return err
+	}
+	var result struct{ Cancelled bool }
+	if json.Unmarshal(data, &result) == nil && result.Cancelled {
+		return errors.New("Pi extension cancelled loading the conversation")
+	}
+	return nil
+}
+
+var errWorkerSessionChanged = errors.New("Pi worker switched away from the current conversation")
+
+func sameSessionFile(expected, actual string) bool {
+	if filepath.Clean(expected) == filepath.Clean(actual) {
+		return true
+	}
+	want, wantErr := os.Stat(expected)
+	got, gotErr := os.Stat(actual)
+	return wantErr == nil && gotErr == nil && os.SameFile(want, got)
 }
 
 func (w *piRPCWorker) sendAndAwait(ctx context.Context, cmd map[string]any) error {
@@ -466,9 +547,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 	}
 	switch meta.Type {
 	case "extension_ui_request":
-		if w.computerMode != nil {
-			w.handleComputerApproval(line)
-		}
+		w.handleExtensionUI(line)
 	case "response":
 		var res response
 		if err := json.Unmarshal([]byte(line), &res); err != nil {
@@ -497,9 +576,16 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 	case "message_end", "turn_end":
 		w.noteStreamActivity()
 		w.completeStreamPreview()
+	case "agent_start":
+		w.mu.Lock()
+		w.agentRevision++
+		w.status.State = workers.WorkerStateRunning
+		w.status.Error = ""
+		w.mu.Unlock()
 	case "agent_end":
 		w.completeStreamPreview()
 		w.mu.Lock()
+		w.agentRevision++
 		w.status = workers.WorkerStatus{State: workers.WorkerStateIdle}
 		clear(w.computerRequests)
 		w.mu.Unlock()
