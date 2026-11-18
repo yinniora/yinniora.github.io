@@ -91,6 +91,8 @@ export function setupModelSelector({
       .then((data) => {
         if (!Array.isArray(data?.models)) return;
         allModels = data.models;
+        if (selectedModel)
+          setSelected(findModel(allModels, selectedModel.provider, selectedModel.id) || null);
         renderPopupList(popupSearch?.value || '');
       })
       .catch(() => {});

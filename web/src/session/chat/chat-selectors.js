@@ -1,4 +1,4 @@
-export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 export function isScopedModel(model) {
   return !!(model?.isScoped || model?.scoped || model?.scope);
@@ -50,13 +50,13 @@ export function detectCurrentModel(entries) {
 }
 
 export function supportedThinkingLevels(model, levels = THINKING_LEVELS) {
-  if (!model) return levels;
+  if (!model) return levels.filter((level) => level !== 'max');
   if (!model.reasoning) return ['off'];
   const map = model.thinkingLevelMap || {};
   return levels.filter((level) => {
     const mapped = map[level];
     if (mapped === null) return false;
-    if (level === 'xhigh') return mapped !== undefined;
+    if (level === 'xhigh' || level === 'max') return mapped !== undefined;
     return true;
   });
 }

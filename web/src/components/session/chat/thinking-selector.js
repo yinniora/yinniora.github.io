@@ -13,13 +13,10 @@ export function renderThinkingLevelList({
 } = {}) {
   const supported = supportedThinkingLevels(currentModel, levels);
   let html = '';
-  levels.forEach((level) => {
+  supported.forEach((level) => {
     const active = level === selectedLevel ? ' selected' : '';
-    const disabled = supported.includes(level)
-      ? ''
-      : ` disabled aria-description="${escapeHtml(t('thinking.unsupported'), { documentImpl: null })}"`;
     const label = escapeHtml(t('thinking.' + level));
-    html += `<button type="button" class="thinking-level-item thinking-${level}${active}" data-level="${level}"${disabled}>${label}</button>`;
+    html += `<button type="button" class="thinking-level-item thinking-${level}${active}" data-level="${level}">${label}</button>`;
   });
   return html;
 }

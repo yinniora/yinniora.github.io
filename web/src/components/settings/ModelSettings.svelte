@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { getJSON, postJSON } from '../../shared/api.js';
   import { t } from '../../shared/i18n.js';
+  import { supportedThinkingLevels } from '../../session/chat/chat-selectors.js';
   let profiles = $state([]),
     revision = $state(''),
     activeID = $state('');
@@ -67,9 +68,11 @@
       error = t(
         failure.message?.includes('changed')
           ? 'models.changed'
-          : /HTTP (401|403)/.test(failure.message || '')
-            ? 'models.authFailed'
-            : 'models.operationFailed',
+          : failure.message === 'model effort is unconfirmed'
+            ? 'models.effortUnconfirmed'
+            : /HTTP (401|403)/.test(failure.message || '')
+              ? 'models.authFailed'
+              : 'models.operationFailed',
       );
       return null;
     } finally {
@@ -108,6 +111,12 @@
   async function remove(profile, model) {
     if (await action({ action: 'remove-model', id: profile.id, modelId: model.id }))
       status = t('models.removed');
+  }
+  async function verifyEffort(profile, model) {
+    if (busy || !window.confirm(t('models.effortConfirm', { model: model.name || model.id })))
+      return;
+    if (await action({ action: 'verify-effort', id: profile.id, modelId: model.id }))
+      status = t('models.effortVerified');
   }
   async function removeKey(profile) {
     const title = t('models.removeNamed', { label: profile.label, name: t('models.key') });
@@ -301,7 +310,15 @@
             <div>
               <strong>{model.name || model.id}</strong>
               {#if model.name && model.name !== model.id}<small>{model.id}</small>{/if}
+              {#if supportedThinkingLevels(model).length > 1}<small>
+                  {t('models.effortAvailable')}
+                </small>{/if}
             </div>
+            {#if model.canVerifyEffort}
+              <button type="button" disabled={busy} onclick={() => verifyEffort(profile, model)}
+                >{t('models.effortVerify')}</button
+              >
+            {/if}
             <button
               type="button"
               disabled={busy}
@@ -554,6 +571,9 @@
     .model-catalog,
     .model-applied {
       padding: 12px;
+    }
+    .model-applied-row button {
+      padding-inline: 8px;
     }
   }
 </style>

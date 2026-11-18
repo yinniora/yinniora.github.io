@@ -45,3 +45,21 @@ func TestDetectMixedModelCatalog(t *testing.T) {
 		t.Fatalf("wrong Responses configuration: %+v", models[4])
 	}
 }
+
+func TestEffortFromNativeGeminiAndAdvertisedResponseLevels(t *testing.T) {
+	gemini := map[string]any{}
+	describeCatalogModel(gemini, map[string]any{"thinking": true}, "gemini-3-pro-preview", apiGemini, "https://example.invalid/v1beta")
+	levels, _ := gemini["thinkingLevelMap"].(map[string]any)
+	if gemini["reasoning"] != true || levels["low"] != "low" || levels["high"] != "high" || levels["medium"] != nil || levels["off"] != nil {
+		t.Fatalf("wrong Gemini levels: %+v", gemini)
+	}
+
+	responses := map[string]any{}
+	describeCatalogModel(responses, map[string]any{
+		"supported_reasoning_efforts": []any{"none", "medium", "max"},
+	}, "reasoning-model", apiResponses, "https://example.invalid/v1")
+	levels, _ = responses["thinkingLevelMap"].(map[string]any)
+	if responses["reasoning"] != true || levels["max"] != "max" || levels["off"] != "none" || levels["low"] != nil {
+		t.Fatalf("wrong Responses levels: %+v", responses)
+	}
+}

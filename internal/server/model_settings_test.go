@@ -245,3 +245,57 @@ func TestDiscoveryProtocolHeadersAndPagination(t *testing.T) {
 		})
 	}
 }
+
+func TestVerifyEffortIsScopedToKeyAndModel(t *testing.T) {
+	s := newTestServer(t)
+	calls := 0
+	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil ||
+			r.URL.Path != "/v1/chat/completions" || payload["model"] != "same-model" ||
+			payload["max_tokens"] != float64(128) {
+			t.Errorf("unexpected effort probe: %s %+v", r.URL.Path, payload)
+			http.Error(w, "unexpected request", 500)
+			return
+		}
+		if r.Header.Get("Authorization") == "Bearer test-validates" &&
+			payload["reasoning_effort"] == "yugo-invalid-effort" {
+			http.Error(w, `{"error":{"message":"invalid reasoning_effort"}}`, 400)
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"1"}}]}`))
+	}))
+	defer service.Close()
+	providers := map[string]any{}
+	for _, key := range []string{"validates", "ignores"} {
+		providers[key] = map[string]any{
+			"api": apiChat, "baseUrl": service.URL, "apiKey": "test-" + key,
+			"models": []any{map[string]any{"id": "same-model", "reasoning": false}},
+		}
+	}
+	if err := writeModelConfig(s.agentDir, map[string]any{"providers": providers}); err != nil {
+		t.Fatal(err)
+	}
+	_, before, _ := modelSettingsCall(t, s, nil)
+	code, after, raw := modelSettingsCall(t, s, map[string]any{
+		"action": "verify-effort", "id": "validates", "modelId": "same-model", "revision": before["revision"],
+	})
+	if code != 200 || strings.Contains(raw, "test-validates") || calls != 3 {
+		t.Fatalf("valid model verification failed: HTTP %d, %d calls", code, calls)
+	}
+	code, _, _ = modelSettingsCall(t, s, map[string]any{
+		"action": "verify-effort", "id": "ignores", "modelId": "same-model", "revision": after["revision"],
+	})
+	if code != 422 || calls != 4 {
+		t.Fatalf("endpoint ignored the test field: HTTP %d, %d calls", code, calls)
+	}
+	models, err := s.appliedModels(nil)
+	if err != nil || len(models) != 2 || models[0]["reasoning"] != false || models[1]["reasoning"] != true {
+		t.Fatalf("wrong profile was enabled: %+v %v", models, err)
+	}
+	levels, _ := models[1]["thinkingLevelMap"].(map[string]any)
+	if levels["low"] != "low" || levels["high"] != "high" || levels["medium"] != nil {
+		t.Fatalf("wrong levels were enabled: %+v", levels)
+	}
+}

@@ -168,7 +168,11 @@ func (s *Server) modelProfiles(providers map[string]any) []modelProfile {
 		}
 		row := modelProfile{ID: id, Label: label, BaseURL: publicBase, API: api, HasKey: key != "", Applied: []map[string]any{}, Available: []map[string]any{}}
 		for _, m := range configuredModels(p) {
-			row.Applied = append(row.Applied, publicModel(m, id, label))
+			visible := publicModel(m, id, label)
+			if key != "" && modelEffortCheckable(p, m) {
+				visible["canVerifyEffort"] = true
+			}
+			row.Applied = append(row.Applied, visible)
 		}
 		row.Available = append(row.Available, row.Applied...)
 		if catalog, ok := s.modelCatalogs[id]; ok && catalog.Signature == profileSignature(p, key) {
@@ -644,6 +648,47 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			present[id] = true
 		}
 		p["models"] = existing
+	case "verify-effort":
+		check := [2]string{request.ID, request.ModelID}
+		if _, running := s.modelEffortChecks[check]; running {
+			writeJSONError(w, 409, "an effort check is already running")
+			return
+		}
+		var model map[string]any
+		for _, candidate := range configuredModels(p) {
+			if candidate["id"] == request.ModelID {
+				model = candidate
+				break
+			}
+		}
+		if model == nil || !modelEffortCheckable(p, model) {
+			writeJSONError(w, 400, "the selected model cannot be checked")
+			return
+		}
+		if s.modelEffortChecks == nil {
+			s.modelEffortChecks = map[[2]string]struct{}{}
+		}
+		s.modelEffortChecks[check] = struct{}{}
+		key := s.modelProfileKey(request.ID, p)
+		ctx, cancel := context.WithTimeout(r.Context(), 22*time.Second)
+		s.modelConfigMu.Unlock()
+		levels, compat, verifyErr := verifyModelEffort(ctx, p, model, key)
+		cancel()
+		s.modelConfigMu.Lock()
+		delete(s.modelEffortChecks, check)
+		if verifyErr != nil {
+			writeJSONError(w, 422, verifyErr.Error())
+			return
+		}
+		if s.modelProfileKey(request.ID, p) != key {
+			writeJSONError(w, 409, "model credentials changed; reload and try again")
+			return
+		}
+		model["reasoning"] = true
+		model["thinkingLevelMap"] = levels
+		if len(compat) > 0 {
+			model["compat"] = compat
+		}
 	case "remove-model":
 		if p == nil || request.ModelID == "" {
 			writeJSONError(w, 404, "model not found")
@@ -694,7 +739,7 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		// The process-wide Pi model enumeration can still return this profile.
 		s.removedModelProviders[request.ID] = struct{}{}
 	}
-	if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok && request.Action == "remove-key" {
+	if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok && (request.Action == "remove-key" || request.Action == "verify-effort") {
 		manager.ResourcesChanged()
 	} else if manager, ok := s.chatSender.(interface{ ModelsChanged() }); ok {
 		manager.ModelsChanged()

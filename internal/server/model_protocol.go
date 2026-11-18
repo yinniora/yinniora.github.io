@@ -48,17 +48,32 @@ func (s *Server) detectModelProtocol(ctx context.Context, base, key string) (*ur
 }
 
 var fixedThinkingAlias = regexp.MustCompile(`(?i)(?:-(?:thinking|nothinking|high|medium|low|xhigh|max)(?:-(?:high|medium|low|xhigh|max|[0-9]+))?|@(?:thinking|effort):[^@]+)$`)
-var adaptiveClaude = regexp.MustCompile(`^claude-(?:opus-(?:4-[678]|5(?:-5)?)|sonnet-(?:4-6|5(?:-5)?)|haiku-5-5)(?:-[0-9]{8})?$`)
+var adaptiveClaude = regexp.MustCompile(`^claude-(?:opus-(?:4-[678]|5(?:-5)?)|sonnet-(?:4-6|5(?:-5)?)|haiku-5-5|(?:fable|mythos)-5(?:-[12])?)(?:-[0-9]{8})?$`)
 
 func catalogStrings(value any) map[string]bool {
 	items, _ := value.([]any)
 	out := make(map[string]bool, len(items))
 	for _, item := range items {
 		if s, ok := item.(string); ok {
-			out[strings.ToLower(s)] = true
+			out[strings.ToLower(strings.TrimSpace(s))] = true
 		}
 	}
 	return out
+}
+
+func declaredEffortLevels(levels map[string]bool) map[string]any {
+	result := map[string]any{"off": nil, "minimal": nil, "low": nil, "medium": nil, "high": nil, "xhigh": nil, "max": nil}
+	for level := range result {
+		if level != "off" && levels[level] {
+			result[level] = level
+		}
+	}
+	if levels["none"] {
+		result["off"] = "none"
+	} else if levels["off"] {
+		result["off"] = "off"
+	}
+	return result
 }
 
 func describeCatalogModel(model, raw map[string]any, id, api, base string) {
@@ -100,7 +115,9 @@ func describeCatalogModel(model, raw map[string]any, id, api, base string) {
 	if providerURL != nil {
 		host = providerURL.Hostname()
 	}
-	if api == apiAnthropic && adaptiveClaude.MatchString(id) && (host == "api.anthropic.com" || params["output_config"] || params["effort"]) {
+	levels := catalogStrings(raw["supported_reasoning_efforts"])
+	if api == apiAnthropic && ((host == "api.anthropic.com" && adaptiveClaude.MatchString(id)) ||
+		params["output_config.effort"] || (adaptiveClaude.MatchString(id) && (params["output_config"] || params["effort"]))) {
 		model["reasoning"] = true
 		model["compat"] = map[string]any{"forceAdaptiveThinking": true}
 		levels := map[string]any{"minimal": nil}
@@ -108,31 +125,40 @@ func describeCatalogModel(model, raw map[string]any, id, api, base string) {
 			levels["off"] = nil
 			levels["xhigh"] = "xhigh"
 		}
+		if id == "claude-opus-5-5" || strings.HasPrefix(id, "claude-fable-5") || strings.HasPrefix(id, "claude-mythos-5") {
+			levels["max"] = "max"
+		}
 		model["thinkingLevelMap"] = levels
-	} else if api == apiResponses && (params["reasoning"] || params["reasoning_effort"]) {
+	} else if api == apiResponses && (params["reasoning"] || params["reasoning.effort"] || params["reasoning_effort"] || len(levels) > 0) {
 		model["reasoning"] = true
 	} else if api == apiChat {
 		switch {
-		case params["reasoning"] && host == "openrouter.ai":
+		case params["reasoning.effort"] || (params["reasoning"] && host == "openrouter.ai"):
 			model["reasoning"] = true
 			model["compat"] = map[string]any{"thinkingFormat": "openrouter"}
-		case params["reasoning_effort"]:
+		case params["reasoning_effort"] || len(levels) > 0:
 			model["reasoning"] = true
 			model["compat"] = map[string]any{"supportsReasoningEffort": true}
 		}
-	}
-	if model["reasoning"] == true {
-		if levels := catalogStrings(raw["supported_reasoning_efforts"]); len(levels) > 0 {
-			thinkingLevels := map[string]any{"off": nil, "minimal": nil, "low": nil, "medium": nil, "high": nil, "xhigh": nil}
-			for level := range thinkingLevels {
-				if levels[level] {
-					thinkingLevels[level] = level
-				}
+	} else if api == apiGemini && (raw["thinking"] == true || params["thinkingconfig.thinkinglevel"]) {
+		model["reasoning"] = true
+		if len(levels) == 0 {
+			levels = map[string]bool{"low": true, "medium": true, "high": true}
+			lower := strings.ToLower(id)
+			switch {
+			case strings.HasPrefix(lower, "gemini-3-pro"):
+				delete(levels, "medium")
+			case strings.HasPrefix(lower, "gemini-3.1-flash-lite-image"):
+				levels = map[string]bool{"minimal": true, "high": true}
+			case strings.HasPrefix(lower, "gemini-3-flash"), strings.HasPrefix(lower, "gemini-3.5-flash"), strings.HasPrefix(lower, "gemini-3.6-flash"):
+				levels["minimal"] = true
 			}
-			if levels["none"] {
-				thinkingLevels["off"] = "none"
-			}
-			model["thinkingLevelMap"] = thinkingLevels
+			levels["off"] = strings.HasPrefix(lower, "gemini-2.5-flash")
 		}
+		delete(levels, "xhigh")
+		delete(levels, "max")
+	}
+	if model["reasoning"] == true && len(levels) > 0 {
+		model["thinkingLevelMap"] = declaredEffortLevels(levels)
 	}
 }

@@ -1,6 +1,7 @@
 <script>
   import { icon, Camera, Paperclip, Plus } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
+  import { supportedThinkingLevels } from '../../../session/chat/chat-selectors.js';
   import { ChatToolbarState } from './chat-toolbar-state.svelte.js';
   import ContextUsage from './ContextUsage.svelte';
   import ComputerPermission from './ComputerPermission.svelte';
@@ -20,6 +21,11 @@
 
   const statusText = $derived(
     toolbar.statusText || (chatAvailable ? t('composer.idle') : t('composer.unavailable')),
+  );
+  const effortLabel = $derived(
+    supportedThinkingLevels(toolbar.selectedModel).includes(toolbar.thinkingLevel)
+      ? t('thinking.' + toolbar.thinkingLevel)
+      : t('composer.switchEffort'),
   );
 </script>
 
@@ -70,10 +76,7 @@
       style:display={chatAvailable && toolbar.canAdjustThinking ? '' : 'none'}
       title={t('composer.switchEffort')}
       aria-label={t('composer.switchEffort')}
-      disabled={!chatAvailable}
-      >{t(
-        toolbar.thinkingLevel ? 'thinking.' + toolbar.thinkingLevel : 'composer.switchEffort',
-      )}</button
+      disabled={!chatAvailable}>{effortLabel}</button
     >
     <button
       type="button"
