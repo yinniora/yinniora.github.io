@@ -10,6 +10,137 @@ import {
   assistantTextEntry,
 } from "../lib/sessions";
 
+test("leaving a running conversation isolates its completion from the next conversation", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const { entries } = buildSession({ cwd: realWorkingDir() });
+  const id = writeSession(
+    sessionsDir,
+    uniqueSessionName(testInfo, "running"),
+    entries,
+  );
+  let originalPolls = 0;
+  let finishOriginal!: () => void;
+  const completion = new Promise<void>((resolve) => (finishOriginal = resolve));
+  await page.exposeFunction("navigationWorker", async (session: string) => {
+    if (session !== id) return { state: "idle" };
+    if (++originalPolls === 1) return { state: "running" };
+    await completion;
+    return { state: "idle" };
+  });
+  await page.addInitScript((oldId) => {
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = new URL(String(input), location.href);
+      if (url.pathname === "/api/worker-status") {
+        const worker = (window as any).navigationWorker;
+        const session = url.searchParams.get("id");
+        const status = await worker(session);
+        if (session === oldId && status.state === "idle") {
+          document.documentElement.dataset.oldPoll = init?.signal?.aborted
+            ? "aborted"
+            : "active";
+        }
+        return Response.json(status);
+      }
+      return original(input, init);
+    };
+    window.addEventListener("pi-worker-done", () => {
+      document.documentElement.dataset.workerDone = "true";
+    });
+  }, id);
+  await collapseScratchpad(page);
+  try {
+    await page.goto("/session?id=" + encodeURIComponent(id));
+    test.skip(!(await isMobileLayout(page)), "mobile layout");
+    await expect(page.locator("#pi-chat-status")).toHaveClass(/\brunning\b/);
+    await expect.poll(() => originalPolls).toBe(2);
+
+    await page.locator(".session-header-back").click();
+    await page
+      .getByRole("button", { name: "New conversation", exact: true })
+      .click();
+    await expect(page.locator("#pi-chat-composer")).toBeVisible();
+    const newId = new URL(page.url()).searchParams.get("id");
+    expect(newId).toBeTruthy();
+    expect(newId).not.toBe(id);
+    finishOriginal();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-old-poll",
+      "aborted",
+    );
+    expect(
+      await page.locator("html").getAttribute("data-worker-done"),
+    ).toBeNull();
+    expect(originalPolls).toBe(2);
+
+    await page.goBack();
+    await expect(page.locator(".mobile-home")).toBeVisible();
+    await page.locator(`.session-card[data-session-id="${id}"]`).click();
+    await expect(page.locator("#messages")).toContainText("Initial reply.");
+    await expect(page.locator("#pi-chat-composer")).toBeVisible();
+  } finally {
+    finishOriginal();
+  }
+});
+
+test("a stalled session stays navigable and can be retried in place", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const { entries } = buildSession({ cwd: realWorkingDir() });
+  const id = writeSession(
+    sessionsDir,
+    uniqueSessionName(testInfo, "load-recovery"),
+    entries,
+  );
+  const session = page.locator(`.session-card[data-session-id="${id}"]`);
+  let recovered = false;
+  let release!: () => void;
+  const stalled = new Promise<void>((resolve) => (release = resolve));
+  await page.exposeFunction("navigationStall", async () => {
+    if (recovered) return false;
+    await stalled;
+    return true;
+  });
+  await page.addInitScript((sessionId) => {
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = new URL(String(input), location.href);
+      if (
+        url.pathname === "/api/session" &&
+        url.searchParams.get("id") === sessionId &&
+        (await (window as any).navigationStall())
+      ) {
+        return Response.json({}, { status: 503 });
+      }
+      return original(input, init);
+    };
+  }, id);
+  try {
+    await page.goto("/");
+    test.skip(!(await isMobileLayout(page)), "mobile layout");
+    await session.click();
+    const back = page.getByRole("link", { name: "Back to sessions" });
+    await expect(
+      page.getByText("Loading session…", { exact: true }),
+    ).toBeVisible();
+    await expect(back).toBeVisible();
+    release();
+    await expect(
+      page.getByText("Failed to load session", { exact: true }),
+    ).toBeVisible();
+    recovered = true;
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(page.locator("#messages")).toContainText("Initial reply.");
+    await page.goBack();
+    await expect(page.locator(".mobile-home")).toBeVisible();
+  } finally {
+    release();
+  }
+});
+
 test("model settings refresh labeled keys and explicitly apply and remove multiple models", async ({
   page,
 }, testInfo) => {
@@ -62,9 +193,7 @@ test("model settings refresh labeled keys and explicitly apply and remove multip
     await expect(
       page.locator(".model-applied-row").filter({ hasText: label }),
     ).toHaveCount(2);
-    let payload = await (
-      await page.request.get("/api/models")
-    ).json();
+    let payload = await (await page.request.get("/api/models")).json();
     expect(
       payload.models.filter((m: any) => m.providerLabel === label),
     ).toHaveLength(2);

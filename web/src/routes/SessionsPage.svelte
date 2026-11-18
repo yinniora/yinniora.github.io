@@ -74,6 +74,7 @@
   let projectToDelete = $state(null);
   let homePrompt = $state('');
   let homeError = $state('');
+  let active = false;
 
   async function startPrompt() {
     const message = homePrompt.trim();
@@ -89,6 +90,7 @@
       }
       const session = await defaultCreateSession(path);
       if (!session.id) throw new Error(session.error || t('index.failedCreateSession'));
+      if (!active) return;
       const body = new FormData();
       body.append('message', message);
       const response = await fetch(`/api/chat?id=${encodeURIComponent(session.id)}`, {
@@ -98,7 +100,7 @@
       if (!response.ok) {
         sessionStorage.setItem(`pi-personal:draft:${session.id}`, message);
       }
-      navigate(`/session?id=${encodeURIComponent(session.id)}`);
+      if (active) navigate(`/session?id=${encodeURIComponent(session.id)}`);
     } catch (error) {
       homeError = error.message || t('index.networkError');
     } finally {
@@ -217,7 +219,7 @@
     try {
       const response = await defaultCreateSession(path);
       if (response.ok && response.id) {
-        navigate('/session?id=' + encodeURIComponent(response.id));
+        if (active && newSessionOpen) navigate('/session?id=' + encodeURIComponent(response.id));
         return;
       }
       newSessionError = response.error || t('index.failedCreateSession');
@@ -299,7 +301,7 @@
     try {
       const response = await defaultCreateSession(path, ordinary ? { ordinary: true } : {});
       if (!response.id) throw new Error(response.error || t('index.failedCreateSession'));
-      navigate('/session?id=' + encodeURIComponent(response.id));
+      if (active) navigate('/session?id=' + encodeURIComponent(response.id));
     } catch (error) {
       homeError = error.message || t('index.networkError');
     } finally {
@@ -317,6 +319,7 @@
   }
 
   onMount(() => {
+    active = true;
     const media = window.matchMedia?.('(max-width: 900px)');
     const resize = () => {
       mobile = !!media?.matches;
@@ -396,6 +399,7 @@
     window.addEventListener('pi:hub-updated', hubUpdated);
 
     return () => {
+      active = false;
       media?.removeEventListener('change', resize);
       window.removeEventListener('pi:hub-updated', hubUpdated);
       document.title = previousTitle;

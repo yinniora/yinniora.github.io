@@ -20,7 +20,7 @@
     renderChatPreviewState,
     renderPendingChatState,
   } from '../../session/live/chat-preview.js';
-  import { getSessionIdFromLocation, handleSessionReload } from '../../session/live/live-events.js';
+  import { handleSessionReload } from '../../session/live/live-events.js';
   import { setupSessionLiveConnection } from '../../session/live/live-connection.js';
   import { createFollowScrollController } from '../../session/live/live-follow.js';
   import { updateStatsDom } from '../../session/live/live-stats.js';
@@ -28,7 +28,10 @@
   import { getSessionRuntime } from '../../session/session-runtime-context.js';
   import { setSessionTitle } from '../../session/session-title.svelte.js';
 
+  let { sessionId } = $props();
+
   onMount(() => {
+    const scope = new AbortController();
     const documentImpl = document;
     const windowImpl = window;
     const runtime = getSessionRuntime();
@@ -40,7 +43,7 @@
     const requestAnimationFrame = windowImpl.requestAnimationFrame.bind(windowImpl);
     const setTimeout = windowImpl.setTimeout.bind(windowImpl);
 
-    const cleanups = [];
+    const cleanups = [() => scope.abort()];
     const on = (host, type, handler, opts) => {
       host.addEventListener(type, handler, opts);
       cleanups.push(() => host.removeEventListener(type, handler, opts));
@@ -65,6 +68,7 @@
     }
     function highlightNewEntries(newIds) {
       requestAnimationFrame(() => {
+        if (scope.signal.aborted) return;
         newIds.forEach((id) => {
           const el = documentImpl.getElementById('entry-' + id);
           if (el) highlightNewEntry(el);
@@ -114,8 +118,6 @@
       setSessionTitle(name);
     }
 
-    const sessId = getSessionIdFromLocation({ locationImpl: windowImpl.location });
-
     // ── Streaming chat preview ─────────────────────────────────────────────────
     const CHAT_PREVIEW_STATE = { chatPreviewEl: null, pendingUserEl: null };
 
@@ -155,8 +157,9 @@
     // ── Reload (fetch /api/session → reconcile the model) ──────────────────────
     function triggerReload() {
       return handleSessionReload({
-        sessionId: sessId,
+        sessionId,
         fetchImpl,
+        signal: scope.signal,
         entryState: LIVE_ENTRY_STATE,
         clearChatPreview,
         // Reactive mode: the Svelte model owns #messages, so no DOM patchers.
@@ -172,7 +175,7 @@
         },
         onNewEntries: highlightNewEntries,
       }).catch((err) => {
-        console.error('Live update failed:', err);
+        if (!scope.signal.aborted) console.error('Live update failed:', err);
       });
     }
 
@@ -186,7 +189,7 @@
     const liveConnection = setupSessionLiveConnection({
       documentImpl,
       windowImpl,
-      sessionId: sessId,
+      sessionId,
       onReload: triggerReload,
       onChatPreview: renderChatPreview,
       onAnnotations: (list) => sessionRuntime.annotations?.setAnnotations(list),

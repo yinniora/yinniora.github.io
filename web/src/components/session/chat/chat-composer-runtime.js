@@ -65,6 +65,7 @@ export function runChatComposer({
   const URLSearchParams = URLSearchParamsImpl;
   const CustomEvent = CustomEventImpl;
   const setInterval = setIntervalImpl;
+  const cleanups = [];
   let onWorkerModelUpdate = null;
   let currentModelForThinking = null;
   let positionPopover = () => {};
@@ -132,11 +133,12 @@ export function runChatComposer({
       expandButton,
     } = getComposerElements({ documentImpl: document, form });
 
-    const { update: updateComposerHeightVar } = setupComposerHeightVar({
+    const { update: updateComposerHeightVar, dispose: disposeHeight } = setupComposerHeightVar({
       documentImpl: document,
       windowImpl: window,
       form,
     });
+    cleanups.push(disposeHeight);
 
     // Expand/collapse the composer for larger typing area. State persists
     // per-session in localStorage.
@@ -172,6 +174,7 @@ export function runChatComposer({
       updateComposerHeight: updateComposerHeightVar,
     });
     const autoResizeTextarea = textareaControls.autoResize;
+    cleanups.push(textareaControls.dispose);
 
     setupComposerExpansion({
       sessionId,
@@ -202,12 +205,12 @@ export function runChatComposer({
       CustomEventImpl: CustomEvent,
     });
 
-    setupAskQuestionHandlers({
+    const askQuestion = setupAskQuestionHandlers({
       documentImpl: document,
       sendChatMessage: submission.sendChatMessage,
     });
 
-    setupSteerQueue({
+    const steerQueue = setupSteerQueue({
       windowImpl: window,
       store: queueStore,
       queueButton,
@@ -219,6 +222,7 @@ export function runChatComposer({
       queueApi,
       getLiveEntries,
     });
+    cleanups.push(askQuestion.dispose, steerQueue.dispose, attachments.dispose);
 
     const workerStatus = setupWorkerStatusPolling({
       windowImpl: window,
@@ -237,6 +241,7 @@ export function runChatComposer({
       CustomEventImpl: CustomEvent,
     });
     submission.setRefreshWorkerStatus(workerStatus.refresh);
+    cleanups.push(workerStatus.dispose);
 
     // Phones open on the transcript; the user opens the keyboard by tapping.
     if (
@@ -253,6 +258,7 @@ export function runChatComposer({
       updateContextUsage,
     });
     positionPopover = contextPopover.position;
+    cleanups.push(contextPopover.dispose);
 
     return true;
   }
@@ -279,4 +285,8 @@ export function runChatComposer({
   }
 
   navigateInitialChatLeaf({ entries, leafId, urlTargetId, byId, navigateTo });
+  return () => {
+    document.removeEventListener('DOMContentLoaded', initPiChatControls);
+    for (const dispose of cleanups) dispose?.();
+  };
 }

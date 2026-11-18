@@ -10,8 +10,9 @@ export function sendChat(sessionId, body, { fetchImpl = fetch } = {}) {
   return fetchImpl(chatUrl('/api/chat', sessionId), { method: 'POST', body });
 }
 
-export function getWorkerStatus(sessionId, { fetchImpl = fetch } = {}) {
-  return fetchImpl(chatUrl('/api/worker-status', sessionId));
+export function getWorkerStatus(sessionId, { fetchImpl = fetch, signal } = {}) {
+  const url = chatUrl('/api/worker-status', sessionId);
+  return signal ? fetchImpl(url, { signal }) : fetchImpl(url);
 }
 
 export function listModels({ fetchImpl = fetch } = {}) {

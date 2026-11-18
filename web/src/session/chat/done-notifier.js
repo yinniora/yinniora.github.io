@@ -247,6 +247,10 @@ export function setupAppBadgeClearing({ documentImpl = document, windowImpl = wi
   clear();
   documentImpl.addEventListener('visibilitychange', clear);
   windowImpl.addEventListener('focus', clear);
+  return () => {
+    documentImpl.removeEventListener('visibilitychange', clear);
+    windowImpl.removeEventListener('focus', clear);
+  };
 }
 
 export async function fetchAvailableSounds({ fetchImpl = fetch } = {}) {

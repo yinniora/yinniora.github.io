@@ -17,7 +17,10 @@
   import { resetSessionModals } from '../session/session-modals.svelte.js';
   import { resetSessionRuntime } from '../session/session-runtime.js';
   import { resetSessionRuntimeContext } from '../session/session-runtime-context.js';
+  import { handleNavClick } from '../shared/navigation.js';
   import { t } from '../shared/i18n.js';
+
+  let { onRetry = () => window.location.reload() } = $props();
 
   // The reactive session model (docs/dev/svelte-migration-plan.md): created once
   // and provided via context so descendant components read from it. Hydrated
@@ -47,6 +50,8 @@
 
   onMount(() => {
     const previousTitle = document.title;
+    const locationSearch = window.location.search;
+    const request = new AbortController();
     let active = true;
     let disposeRuntime = null;
     const disposeBodyClasses = applySessionPageBodyClasses({ documentImpl: document });
@@ -61,14 +66,20 @@
     const loadingTimer = setTimeout(() => {
       if (active && loading) showLoading = true;
     }, 200);
+    const timeout = setTimeout(() => {
+      request.abort();
+      error = t('session.loadFailed');
+      loading = false;
+    }, 25000);
 
     (async () => {
       try {
         const state = await loadSessionPageState({
-          locationSearch: window.location.search,
+          locationSearch,
           fetchImpl: window.fetch.bind(window),
+          signal: request.signal,
         });
-        if (!active) return;
+        if (request.signal.aborted) return;
         sessionId = state.sessionId;
         sessionUUID = state.sessionUUID;
         title = state.title;
@@ -82,12 +93,13 @@
         hydrateSessionModel({
           sessionModel,
           payloadBase64,
-          locationSearch: window.location.search,
+          locationSearch,
           windowImpl: window,
         });
         createLiveSessionRuntime({ sessionModel, contentRuntime, documentImpl: document });
         loading = false;
         clearTimeout(loadingTimer);
+        clearTimeout(timeout);
         await tick();
         if (!active) return;
         // Svelte does not interpolate mustache tags inside a <script> raw-text
@@ -102,15 +114,20 @@
         applyLazyHighlighting(document);
       } catch (err) {
         if (!active) return;
-        error = err?.message || 'Failed to load session';
+        error = request.signal.aborted
+          ? t('session.loadFailed')
+          : err?.message || t('session.loadFailed');
         loading = false;
         clearTimeout(loadingTimer);
+        clearTimeout(timeout);
       }
     })();
 
     return () => {
       active = false;
+      request.abort();
       clearTimeout(loadingTimer);
+      clearTimeout(timeout);
       disposeRuntime?.();
       resetSessionModals();
       resetSessionRuntime();
@@ -126,12 +143,16 @@
     <div class="session-loading" role="status" aria-live="polite">
       <span class="session-loading-spinner" aria-hidden="true"></span>
       <span class="session-loading-text">{t('session.loading')}</span>
+      <a href="/" onclick={(event) => handleNavClick(event, '/')}>{t('session.backToSessions')}</a>
     </div>
   {/if}
 {:else if error}
-  <div class="session-loading session-loading--error">
+  <div class="session-loading session-loading--error" role="alert">
     <h1>{error}</h1>
-    <p><a href="/">{t('session.backToSessions')}</a></p>
+    <button type="button" class="btn-secondary" onclick={onRetry}>{t('common.retry')}</button>
+    <p>
+      <a href="/" onclick={(event) => handleNavClick(event, '/')}>{t('session.backToSessions')}</a>
+    </p>
   </div>
 {:else}
   <SessionShell

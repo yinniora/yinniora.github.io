@@ -22,6 +22,10 @@ export function remoteEventSource(client) {
           headers: { Accept: 'text/event-stream' },
           signal: this.abort.signal,
         });
+        if (this.closed) {
+          await response.body?.cancel();
+          return;
+        }
         if (!response.ok) throw new Error('SSE unavailable');
         this.readyState = 1;
         this.dispatchEvent(new Event('open'));
@@ -30,10 +34,10 @@ export function remoteEventSource(client) {
         let buffer = '';
         while (!this.closed) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done || this.closed) break;
           buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
           let separator;
-          while ((separator = buffer.indexOf('\n\n')) !== -1) {
+          while (!this.closed && (separator = buffer.indexOf('\n\n')) !== -1) {
             const block = buffer.slice(0, separator);
             buffer = buffer.slice(separator + 2);
             let type = 'message';

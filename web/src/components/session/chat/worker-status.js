@@ -12,14 +12,17 @@ export function setupWorkerStatusPolling({
   setKnownThinkingLevel = () => {},
   getWorkerModelUpdate = () => null,
   setIntervalImpl = windowImpl.setInterval?.bind(windowImpl),
+  clearIntervalImpl = windowImpl.clearInterval?.bind(windowImpl),
   CustomEventImpl = windowImpl.CustomEvent,
   intervalMs = 1500,
 } = {}) {
   let inflight = false;
   let pending = false;
   let lastWorkerState = null;
+  const scope = new AbortController();
 
   async function refresh() {
+    if (scope.signal.aborted) return;
     if (inflight) {
       // Queue exactly one follow-up so an in-flight response cannot swallow a
       // newer state change, such as the assistant finishing while we poll stale
@@ -29,9 +32,10 @@ export function setupWorkerStatusPolling({
     }
     inflight = true;
     try {
-      const response = await chatApi?.getWorkerStatus?.(sessionId);
+      const response = await chatApi?.getWorkerStatus?.(sessionId, { signal: scope.signal });
       if (!response?.ok) return;
       const data = await response.json();
+      if (scope.signal.aborted) return;
       const apiModelLabel = data.model
         ? data.model + (data.modelProvider ? ' @ ' + data.modelProvider : '')
         : '';
@@ -56,7 +60,7 @@ export function setupWorkerStatusPolling({
         onWorkerModelUpdate(data.modelProvider, data.model);
       }
     } catch {
-      setStatus('status unavailable', 'error');
+      if (!scope.signal.aborted) setStatus('status unavailable', 'error');
     } finally {
       inflight = false;
       if (pending) {
@@ -66,7 +70,7 @@ export function setupWorkerStatusPolling({
     }
   }
 
-  if (setIntervalImpl) setIntervalImpl(refresh, intervalMs);
+  const timer = setIntervalImpl?.(refresh, intervalMs);
   void refresh();
   updateContextUsage();
 
@@ -79,6 +83,8 @@ export function setupWorkerStatusPolling({
   return {
     refresh,
     dispose: () => {
+      scope.abort();
+      if (timer != null) clearIntervalImpl?.(timer);
       windowImpl.removeEventListener?.('pi-session-reload', onSessionReload);
     },
   };

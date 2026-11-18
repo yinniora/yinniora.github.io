@@ -119,6 +119,7 @@ export function buildSessionPageState({
 export async function loadSessionPageState({
   locationSearch = '',
   fetchImpl = fetch,
+  signal,
   btoaImpl,
   TextEncoderImpl,
   documentImpl,
@@ -153,9 +154,11 @@ export async function loadSessionPageState({
       data = null;
     }
   }
+  signal?.throwIfAborted();
   if (!data) {
     const resp = await fetchImpl(`/api/session?id=${encodeURIComponent(sessionId)}&paginate=1`, {
       headers: { Accept: 'application/json' },
+      ...(signal ? { signal } : {}),
     });
     if (!resp.ok)
       throw new Error(resp.status === 404 ? t('session.notFound') : t('session.loadFailed'));

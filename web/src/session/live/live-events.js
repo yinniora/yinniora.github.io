@@ -1,7 +1,3 @@
-export function getSessionIdFromLocation({ locationImpl = location } = {}) {
-  return locationImpl.search.split('id=')[1]?.split('&')[0] || '';
-}
-
 export function createSessionEventSource(sessionId, { EventSourceImpl = EventSource } = {}) {
   return new EventSourceImpl('/events?id=' + encodeURIComponent(sessionId));
 }
@@ -9,6 +5,7 @@ export function createSessionEventSource(sessionId, { EventSourceImpl = EventSou
 export async function handleSessionReload({
   sessionId,
   fetchImpl = fetch,
+  signal,
   entryState,
   clearChatPreview = () => {},
   appendEntry,
@@ -24,8 +21,12 @@ export async function handleSessionReload({
   onReloaded = () => {},
   onNewEntries = null,
 } = {}) {
-  const response = await fetchImpl('/api/session?id=' + encodeURIComponent(sessionId));
+  const url = '/api/session?id=' + encodeURIComponent(sessionId);
+  if (signal?.aborted) return;
+  const response = await (signal ? fetchImpl(url, { signal }) : fetchImpl(url));
+  if (!response.ok || signal?.aborted) return;
   const data = await response.json();
+  if (signal?.aborted) return;
   const entries = data.entries || [];
   onReloaded({ ...data, entries });
   if (typeof data.name === 'string' && data.name.trim()) {
@@ -103,16 +104,17 @@ export function wireSessionEvents({
   onError = () => {},
   windowImpl = typeof window !== 'undefined' ? window : null,
   CustomEventImpl = typeof CustomEvent !== 'undefined' ? CustomEvent : null,
+  isActive = () => true,
 } = {}) {
   const dispatchReloadedEvent = () => {
-    if (!windowImpl || !CustomEventImpl) return;
+    if (!isActive() || !windowImpl || !CustomEventImpl) return;
     try {
       windowImpl.dispatchEvent(new CustomEventImpl('pi-session-reload'));
     } catch (_) {}
   };
 
   eventSource.onmessage = (event) => {
-    if (event.data !== 'reload') return;
+    if (!isActive() || event.data !== 'reload') return;
     // `onReload` returns a Promise once handleSessionReload starts; await it so
     // the broadcast fires *after* the model has the new entries. Otherwise
     // listeners that read the model on this event (e.g. steer-queue reconciling
@@ -126,6 +128,7 @@ export function wireSessionEvents({
     }
   };
   eventSource.addEventListener('chat-preview', (event) => {
+    if (!isActive()) return;
     try {
       const payload = JSON.parse(event.data);
       onChatPreview(payload);
@@ -148,6 +151,7 @@ export function wireSessionEvents({
   });
   if (onAnnotations) {
     eventSource.addEventListener('annotations', (event) => {
+      if (!isActive()) return;
       try {
         const data = JSON.parse(event.data);
         onAnnotations(Array.isArray(data.annotations) ? data.annotations : []);
@@ -160,7 +164,7 @@ export function wireSessionEvents({
   // changes — autonomous drainer, another tab, etc. ChatComposer listens for
   // pi-queue-event on the window and refetches /api/chat/queue.
   eventSource.addEventListener('queue', () => {
-    if (windowImpl && CustomEventImpl) {
+    if (isActive() && windowImpl && CustomEventImpl) {
       try {
         windowImpl.dispatchEvent(new CustomEventImpl('pi-queue-event'));
       } catch (_) {}

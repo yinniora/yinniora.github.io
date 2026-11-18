@@ -10,6 +10,8 @@
   import NotFoundPage from './routes/NotFoundPage.svelte';
   import VersionController from './components/shared/VersionController.svelte';
   import { trackVisualViewport } from './shared/visual-viewport.js';
+  import { handleNavClick } from './shared/navigation.js';
+  import { t } from './shared/i18n.js';
 
   let {
     path: initialPath = typeof window !== 'undefined' ? window.location.pathname : '/',
@@ -27,6 +29,8 @@
   // ?id= only at mount. Within-session navigation never changes the URL, so this
   // stays stable while reading a session.
   const sessionId = $derived(new URLSearchParams(search).get('id') || '');
+  let sessionAttempt = $state(0);
+  const retrySession = () => (sessionAttempt += 1);
 
   // Make in-app history navigation swap views without a full reload. popstate
   // covers back/forward; pushState/replaceState don't emit a native event, so
@@ -64,11 +68,16 @@
     const originalReplace = wrap('replaceState');
     window.addEventListener('popstate', syncPath);
     window.addEventListener('pi:locationchange', syncPath);
+    const restorePath = (event) => {
+      if (event.persisted) syncPath();
+    };
+    window.addEventListener('pageshow', restorePath);
     return () => {
       stopViewport();
       remoteEvents.cleanup();
       window.removeEventListener('popstate', syncPath);
       window.removeEventListener('pi:locationchange', syncPath);
+      window.removeEventListener('pageshow', restorePath);
       if (history.pushState?.__piOriginal === originalPush) history.pushState = originalPush;
       if (history.replaceState?.__piOriginal === originalReplace)
         history.replaceState = originalReplace;
@@ -79,8 +88,23 @@
 {#if path === '/'}
   <SessionsPage />
 {:else if path === '/session'}
-  {#key sessionId}
-    <SessionPage />
+  {#key `${sessionId}:${sessionAttempt}`}
+    <svelte:boundary>
+      <SessionPage onRetry={retrySession} />
+      {#snippet failed()}
+        <div class="session-loading session-loading--error" role="alert">
+          <h1>{t('session.loadFailed')}</h1>
+          <button type="button" class="btn-secondary" onclick={retrySession}
+            >{t('common.retry')}</button
+          >
+          <p>
+            <a href="/" onclick={(event) => handleNavClick(event, '/')}
+              >{t('session.backToSessions')}</a
+            >
+          </p>
+        </div>
+      {/snippet}
+    </svelte:boundary>
   {/key}
 {:else if path === '/settings'}
   <SettingsPage />

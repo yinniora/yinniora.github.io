@@ -285,6 +285,7 @@ export class RemoteClient extends EventTarget {
         }
         for (const [id, request] of this.pending) {
           if (request.channel !== channel) continue;
+          request.removeAbortListener();
           request.reject(new Error(t('remote.disconnected')));
           request.controller?.error(new Error(t('remote.disconnected')));
           this.pending.delete(id);
@@ -442,13 +443,16 @@ export class RemoteClient extends EventTarget {
             },
             pull: () => this.send({ type: 'window', id: message.id, size: 16384 }).catch(() => {}),
             cancel: () => {
+              request.removeAbortListener();
               this.send({ type: 'cancel', id: message.id }).catch(() => {});
               this.pending.delete(message.id);
+              this.emitStatus();
             },
           });
       request.resolve(new Response(stream, { status: message.status, headers }));
     } else if (message.type === 'data') request.controller?.enqueue(base64ToBytes(message.data));
     else if (message.type === 'end') {
+      request.removeAbortListener();
       request.controller?.close();
       this.pending.delete(message.id);
       this.emitStatus();
@@ -456,13 +460,27 @@ export class RemoteClient extends EventTarget {
   }
 
   async fetch(path, options = {}) {
-    await this.connect();
     const request = new Request(new URL(path, location.origin), options);
+    request.signal.throwIfAborted();
+    await this.connect();
+    request.signal.throwIfAborted();
     const body = ['GET', 'HEAD'].includes(request.method)
       ? new Uint8Array()
       : new Uint8Array(await request.arrayBuffer());
     if (body.length > 36 * 1024 * 1024) throw new Error(t('remote.tooLarge'));
+    request.signal.throwIfAborted();
     const id = crypto.randomUUID();
+    const abort = () => {
+      const pending = this.pending.get(id);
+      if (!pending) return;
+      const error = request.signal.reason;
+      this.pending.delete(id);
+      pending.reject(error);
+      pending.controller?.error(error);
+      this.send({ type: 'cancel', id }).catch(() => {});
+      this.emitStatus();
+    };
+    const removeAbortListener = () => request.signal.removeEventListener('abort', abort);
     const response = new Promise((resolve, reject) =>
       this.pending.set(id, {
         resolve,
@@ -470,23 +488,15 @@ export class RemoteClient extends EventTarget {
         method: request.method,
         channel: this.channel,
         loading: new URL(request.url).pathname !== '/events',
+        removeAbortListener,
       }),
     );
-    this.emitStatus();
-    const abort = () => {
-      this.send({ type: 'cancel', id }).catch(() => {});
-      const pending = this.pending.get(id);
-      pending?.reject(new DOMException('Aborted', 'AbortError'));
-      pending?.controller?.error(new DOMException('Aborted', 'AbortError'));
-      this.pending.delete(id);
-      this.emitStatus();
-    };
+    // A cancellation can arrive while a packet is still being sent.
+    response.catch(() => {});
     request.signal.addEventListener('abort', abort, { once: true });
-    if (request.signal.aborted) {
-      abort();
-      return response;
-    }
+    this.emitStatus();
     try {
+      request.signal.throwIfAborted();
       await this.send({
         type: 'request',
         id,
@@ -495,14 +505,18 @@ export class RemoteClient extends EventTarget {
         headers: Object.fromEntries([...request.headers].map(([key, value]) => [key, [value]])),
         size: body.length,
       });
-      for (let offset = 0; offset < body.length; offset += 16384)
+      for (let offset = 0; offset < body.length; offset += 16384) {
+        request.signal.throwIfAborted();
         await this.send({
           type: 'body',
           id,
           data: bytesToBase64(body.subarray(offset, offset + 16384)),
         });
+      }
+      request.signal.throwIfAborted();
       await this.send({ type: 'body-end', id });
     } catch (error) {
+      removeAbortListener();
       this.pending.get(id)?.reject(error);
       this.pending.delete(id);
       this.emitStatus();

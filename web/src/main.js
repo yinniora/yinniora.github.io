@@ -17,6 +17,7 @@ export function mountApp({ target = defaultTarget(), props = {} } = {}) {
 }
 
 const appTarget = typeof document !== 'undefined' ? defaultTarget() : null;
+export let appReady = Promise.resolve(null);
 if (appTarget && !appTarget.dataset.piWebSvelteMounted) {
   try {
     if (!localStorage.getItem('pi-personal:layout-v1')) {
@@ -28,5 +29,5 @@ if (appTarget && !appTarget.dataset.piWebSvelteMounted) {
     /* Storage may be disabled in private browsing. */
   }
   appTarget.dataset.piWebSvelteMounted = 'true';
-  prepareStartupSettings().finally(() => mountApp({ target: appTarget }));
+  appReady = prepareStartupSettings().then(() => mountApp({ target: appTarget }));
 }

@@ -58,7 +58,7 @@
     const runtime = getSessionRuntime();
     const model = runtime.model;
     globalThis.__PI_TEST_CHAT_COMPOSER_HOOK__?.();
-    runChatComposer({
+    const disposeComposer = runChatComposer({
       documentImpl: document,
       windowImpl: target,
       locationImpl: target.location,
@@ -101,7 +101,10 @@
     }
     const onQueueEvent = () => queueStore.refresh?.();
     target.addEventListener('pi-queue-event', onQueueEvent);
-    return () => target.removeEventListener('pi-queue-event', onQueueEvent);
+    return () => {
+      disposeComposer();
+      target.removeEventListener('pi-queue-event', onQueueEvent);
+    };
   });
 </script>
 

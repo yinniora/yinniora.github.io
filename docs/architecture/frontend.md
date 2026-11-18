@@ -95,6 +95,10 @@ The session route listens to `/events?id=<sessionId>` via `web/src/session/live/
 
 The index route listens to `/events?id=__all__` for `new-session`, `status-snapshot`, and `status-delta`.
 
+Leaving a session stops its worker-status poll and aborts pending transcript
+reloads. A session load has a deadline and keeps a way back to the index.
+If it fails, retry remounts only that session at the current URL.
+
 ## Shared Frontend Modules
 
 - `web/src/shared/api.js` — JSON fetch helpers

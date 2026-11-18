@@ -17,16 +17,16 @@ export function prefetchSession(id, { fetchImpl = fetch } = {}) {
   }
   const promise = fetchImpl(`/api/session?id=${encodeURIComponent(id)}&paginate=1`, {
     headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(15000),
   })
     .then((resp) => {
       if (!resp.ok) {
-        inflight.delete(id);
         throw new Error(resp.status === 404 ? 'not found' : 'load failed');
       }
       return resp.json();
     })
     .catch((err) => {
-      inflight.delete(id);
+      if (inflight.get(id) === promise) inflight.delete(id);
       throw err;
     });
   // Swallow uncaught-rejection warnings: consumeSessionPrefetch handlers add a

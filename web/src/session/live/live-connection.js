@@ -26,8 +26,10 @@ export function setupSessionLiveConnection({
   let reconnectAttempt = 0;
 
   function closeEventSource() {
+    const previous = eventSource;
+    eventSource = null;
     try {
-      if (eventSource) eventSource.close();
+      previous?.close();
     } catch (_) {}
   }
 
@@ -40,15 +42,18 @@ export function setupSessionLiveConnection({
   function connect() {
     clearReconnectTimer();
     closeEventSource();
-    eventSource = createEventSource(sessionId, { EventSourceImpl: windowImpl.EventSource });
+    const source = createEventSource(sessionId, { EventSourceImpl: windowImpl.EventSource });
+    eventSource = source;
     wireEvents({
-      eventSource,
+      eventSource: source,
+      isActive: () => eventSource === source,
       onReload,
       onChatPreview,
       onAnnotations,
       onError: (error) => {
+        if (eventSource !== source) return;
         onError(error);
-        if (!eventSource || eventSource.readyState !== EVENT_SOURCE_CLOSED) return;
+        if (source.readyState !== EVENT_SOURCE_CLOSED) return;
         scheduleReconnect();
       },
       windowImpl,

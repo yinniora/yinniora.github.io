@@ -1,14 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  createSessionEventSource,
-  getSessionIdFromLocation,
-  handleSessionReload,
-  wireSessionEvents,
-} from './live-events.js';
+import { createSessionEventSource, handleSessionReload, wireSessionEvents } from './live-events.js';
 
 describe('live events', () => {
-  it('gets session id and creates event source', () => {
-    expect(getSessionIdFromLocation({ locationImpl: { search: '?id=a%20b&x=1' } })).toBe('a%20b');
+  it('creates an event source for the session id', () => {
     const EventSourceImpl = vi.fn();
     createSessionEventSource('a b', { EventSourceImpl });
     expect(EventSourceImpl).toHaveBeenCalledWith('/events?id=a%20b');

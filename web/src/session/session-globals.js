@@ -29,7 +29,7 @@ export function setupSessionGlobals({ windowImpl, documentImpl }) {
 
   // Done-notifier (desktop notification + app badge when a worker finishes).
   doneNotifier.setupDoneNotifyToggle({ documentImpl, windowImpl: target });
-  doneNotifier.setupAppBadgeClearing({ documentImpl, windowImpl: target });
+  cleanups.push(doneNotifier.setupAppBadgeClearing({ documentImpl, windowImpl: target }));
   on(target, 'pi-worker-done', () => {
     doneNotifier.notifyDone({ documentImpl, windowImpl: target });
   });

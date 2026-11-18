@@ -79,6 +79,35 @@ describe('setupWorkerStatusPolling', () => {
     expect(events).toEqual(['pi-worker-done']);
   });
 
+  it('stops polling and ignores a late completion after leaving the session', async () => {
+    const windowImpl = new EventTarget();
+    const done = vi.fn();
+    windowImpl.addEventListener('pi-worker-done', done);
+    let complete;
+    const getWorkerStatus = vi
+      .fn()
+      .mockResolvedValueOnce(response({ state: 'running' }))
+      .mockImplementationOnce(() => new Promise((resolve) => (complete = resolve)));
+    const clearIntervalImpl = vi.fn();
+    const controller = setupWorkerStatusPolling({
+      windowImpl,
+      chatApi: { getWorkerStatus },
+      setIntervalImpl: () => 7,
+      clearIntervalImpl,
+      CustomEventImpl: Event,
+    });
+    await tick();
+    const refresh = controller.refresh();
+    controller.dispose();
+    expect(getWorkerStatus.mock.calls[1][1].signal.aborted).toBe(true);
+    complete(response({ state: 'idle' }));
+    await refresh;
+    windowImpl.dispatchEvent(new Event('pi-session-reload'));
+    expect(done).not.toHaveBeenCalled();
+    expect(clearIntervalImpl).toHaveBeenCalledWith(7);
+    expect(getWorkerStatus).toHaveBeenCalledTimes(2);
+  });
+
   it('refreshes immediately on session reload', async () => {
     const windowImpl = new EventTarget();
     const getWorkerStatus = vi.fn(() => Promise.resolve(response({ state: 'idle' })));

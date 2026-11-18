@@ -189,11 +189,16 @@ func (b *httpBridge) start(message packet) {
 	ctx, cancel := context.WithCancel(b.ctx)
 	reader, writer := io.Pipe()
 	b.mu.Lock()
-	if b.requests[message.ID] != nil || len(b.requests) >= 24 {
+	duplicate := b.requests[message.ID] != nil
+	if duplicate || len(b.requests) >= 24 {
 		b.mu.Unlock()
 		cancel()
 		_ = reader.Close()
 		_ = writer.Close()
+		if !duplicate {
+			_ = b.writer.send(packet{Type: "response", ID: message.ID, Status: http.StatusServiceUnavailable})
+			_ = b.writer.send(packet{Type: "end", ID: message.ID})
+		}
 		return
 	}
 	flow := &responseFlow{credit: 64 * 1024, wake: make(chan struct{}, 1)}

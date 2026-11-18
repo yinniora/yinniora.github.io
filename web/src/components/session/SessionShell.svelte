@@ -225,7 +225,7 @@
 
 <!-- Live reload (SSE) mounts before <ChatComposer> so its optimistic
      "message sent" listener is attached before the user can send. -->
-<LiveReload />
+<LiveReload {sessionId} />
 
 <div id="sidebar-overlay"></div>
 <div id="app">

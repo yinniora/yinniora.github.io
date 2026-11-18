@@ -1,5 +1,5 @@
 import { t, LOCALE_KEY, resetI18n } from './shared/i18n.js';
-import { hydrateSettings } from './shared/settings-store.js';
+import { prepareStartupSettings } from './shared/startup-settings.js';
 import { applyRemoteSettings } from './shared/settings-live.js';
 import { RemoteClient } from './remote/client.js';
 import { mount } from 'svelte';
@@ -198,7 +198,7 @@ async function launchWorkspace(client) {
     });
   client.setSyncing(true);
   try {
-    const response = await client.fetch('/api/devices');
+    const response = await client.fetch('/api/devices', { signal: AbortSignal.timeout(5000) });
     const data = await response.json();
     if (data.connection?.fingerprint === client.config.fingerprint) {
       client.updateConfiguration(data.connection);
@@ -206,7 +206,7 @@ async function launchWorkspace(client) {
   } catch {
     /* Existing pinned transport remains usable while settings sync is unavailable. */
   }
-  const settings = await hydrateSettings({ fetchImpl: window.fetch });
+  const settings = await prepareStartupSettings({ fetchImpl: window.fetch });
   if (settings)
     applyRemoteSettings(
       { settings },
@@ -214,8 +214,9 @@ async function launchWorkspace(client) {
     );
   resetI18n();
   client.setSyncing(false);
+  const { appReady } = await import('./main.js');
+  if (!(await appReady)) throw new Error(t('remote.startFailed'));
   document.getElementById('remote-status').hidden = true;
-  await import('./main.js');
 }
 
 start().catch(() => {
