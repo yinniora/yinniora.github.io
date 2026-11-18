@@ -206,6 +206,15 @@
 #spa-root .assistant-text {
   line-height: 1.8;
 }
+#spa-root .user-message:has(+ .message-copy-row) {
+  margin-bottom: 0;
+}
+#spa-root .message-copy-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 2px 12px 0;
+  color: var(--text-soft);
+}
 #spa-root .message-timestamp {
   display: none;
 }

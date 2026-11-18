@@ -80,6 +80,11 @@ model, which can wrap below them. The footer follows the output cards associated
 with that reply. Older replies can use a preceding model change from the
 displayed path. The copy action writes the reply's Markdown text and skips
 internal thinking and tool blocks.
+User messages with text have a copy control below the bubble. Errors show a
+collapsed detail card. Consecutive rejections for the same model in a turn
+share one visible card, while Pi web workers cancel automatic retry backoff.
+The card can open the conversation's model picker or resend the original
+prompt, including images, without modifying the current draft.
 
 ## Static / Share Export
 
@@ -175,6 +180,8 @@ a right swipe from the left part of the transcript also returns Home. The
 gesture is scoped to the transcript and leaves vertical scroll, interactive
 controls and horizontally scrollable code with their native handling. Desktop
 keeps the existing sidebar and home composer.
+In mobile settings, a right swipe leaves the current subsection or returns
+from the settings list along the same route as the header back control.
 Session cards show a completion dot after a finished assistant reply. The dot
 survives reloads and clears when the conversation is viewed in the foreground.
 Read state is kept in the current browser.
@@ -223,7 +230,8 @@ a different future official commit shows a new reminder.
 
 Settings → Models is shared by desktop and mobile. `ModelSettings` groups keys
 by user labels, refreshes one provider at a time, allows searching and selecting
-multiple models, then explicitly applies them. Applied models have independent
+multiple models, then explicitly applies them. The applied list groups models by
+the saved API key label. Applied models have independent
 remove controls and optional new-model context/output, image and thinking settings.
 Key entry uses a password field, is cleared after save, and never uses browser
 storage. The conversation picker refreshes on opening and displays provider labels.

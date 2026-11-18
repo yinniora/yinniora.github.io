@@ -25,6 +25,8 @@ import { setupChatSubmission } from './chat-submit.js';
 import { setupSteerQueue } from './steer-queue.js';
 import { QueueStore } from './queue-store.svelte.js';
 import { createChatSelectorLoaders } from './selector-loaders.js';
+import { t } from '../../../shared/i18n.js';
+import { showToast } from '../../../shared/toast.js';
 
 export function runChatComposer({
   documentImpl = document,
@@ -206,6 +208,39 @@ export function runChatComposer({
       FormDataImpl: FormData,
       CustomEventImpl: CustomEvent,
     });
+
+    form.addEventListener(
+      'pi:retry-prompt',
+      ({ detail }) => {
+        if (toolbar.isRunning || _modelSelectorApi?.isChangingModel?.()) {
+          showToast(t('activity.running'));
+          return;
+        }
+        const blocks = Array.isArray(detail) ? detail : [];
+        const text =
+          typeof detail === 'string'
+            ? detail
+            : blocks
+                .filter((block) => block.type === 'text')
+                .map((block) => block.text)
+                .join('\n');
+        try {
+          const images = blocks
+            .filter((block) => block.type === 'image')
+            .map(
+              (block) =>
+                new window.Blob(
+                  [Uint8Array.from(window.atob(block.data), (char) => char.charCodeAt(0))],
+                  { type: block.mimeType },
+                ),
+            );
+          void submission.sendChatMessage(text, images);
+        } catch {
+          showToast(t('activity.failed'));
+        }
+      },
+      { signal: scope?.signal },
+    );
 
     const askQuestion = setupAskQuestionHandlers({
       documentImpl: document,

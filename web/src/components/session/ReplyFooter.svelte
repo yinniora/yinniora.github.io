@@ -1,27 +1,15 @@
 <script>
-  import { icon, Copy } from '../../shared/icons.js';
-  import { t } from '../../shared/i18n.js';
-  import { copyToClipboard } from '../../shared/clipboard.js';
-  import { showToast } from '../../shared/toast.js';
+  import CopyMessageButton from './CopyMessageButton.svelte';
   import { formatTimestamp } from '../../session/render/entry-format.js';
 
   let { text, model, timestamp } = $props();
   const date = $derived(timestamp ? new Date(timestamp) : null);
   const time = $derived(date && Number.isFinite(date.getTime()) ? formatTimestamp(date) : '');
-
-  async function copyReply() {
-    const copied = await copyToClipboard(text);
-    showToast(t(copied ? 'common.copied' : 'common.copyFailed'));
-  }
 </script>
-
-<!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icon -->
 
 <div class="reply-footer">
   <div class="reply-actions">
-    <button type="button" class="reply-copy" onclick={copyReply}
-      >{@html icon(Copy, { size: 14 })}{t('artifact.copy')}</button
-    >
+    <CopyMessageButton {text} />
     {#if time}<time datetime={date.toISOString()} title={date.toLocaleString()}>{time}</time>{/if}
   </div>
   {#if model}<span class="reply-model" title={model}>{model}</span>{/if}
@@ -47,33 +35,8 @@
     white-space: nowrap;
   }
 
-  .reply-copy {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    min-height: 32px;
-    padding: 4px 7px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font-size: inherit;
-  }
-
-  .reply-copy:hover,
-  .reply-copy:focus-visible {
-    background: var(--hover);
-  }
-
   .reply-model {
     max-width: 100%;
     overflow-wrap: anywhere;
-  }
-
-  @media (pointer: coarse) {
-    .reply-copy {
-      min-height: 44px;
-    }
   }
 </style>

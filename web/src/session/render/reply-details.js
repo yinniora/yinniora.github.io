@@ -1,10 +1,32 @@
 export function entriesWithReplyDetails(entries) {
+  const repeatedErrors = new Set();
+  let nextError = '';
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry.type !== 'message') continue;
+    const message = entry.message;
+    const rejection =
+      message?.role === 'assistant' && message.stopReason === 'error'
+        ? /"(?:type|code)"\s*:\s*"(model_not_found|model_not_allowed)"/.exec(
+            message.errorMessage || '',
+          )?.[1]
+        : '';
+    const key = rejection && `${message.provider}/${message.model}/${rejection}`;
+    if (key && key === nextError) repeatedErrors.add(entry.id);
+    nextError = key;
+  }
   let previousModel = '';
+  let prompt = null;
   return entries.map((entry) => {
     if (entry.type === 'model_change' && entry.modelId) {
       previousModel = [entry.provider, entry.modelId].filter(Boolean).join('/');
     }
     const message = entry.type === 'message' && entry.message;
+    if (message?.role === 'user') prompt = message.content;
+    if (repeatedErrors.has(entry.id)) return { entry, repeatedError: true };
+    if (message?.role === 'assistant' && message.stopReason === 'error') {
+      return { entry, retryContent: prompt };
+    }
     if (message?.role !== 'assistant' || message.stopReason === 'toolUse') {
       return { entry, reply: null };
     }

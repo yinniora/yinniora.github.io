@@ -14,6 +14,7 @@
     model = getSessionModel(),
     afterRender = null,
     live = false,
+    chatAvailable = false,
     outputs = [],
     renderOutputs = null,
   } = $props();
@@ -34,15 +35,19 @@
 </script>
 
 <div id="messages-list" class="messages-list" bind:this={containerEl}>
-  {#each entries as { entry, reply } (entry.id)}
-    <SessionEntry
-      {entry}
-      {reply}
-      {model}
-      {live}
-      outputs={groups?.byEntry.get(entry.id)}
-      {renderOutputs}
-    />
+  {#each entries as { entry, reply, repeatedError, retryContent } (entry.id)}
+    {#if repeatedError}
+      <span id={`entry-${entry.id}`} hidden></span>
+    {:else}<SessionEntry
+        {entry}
+        {reply}
+        {model}
+        {live}
+        {chatAvailable}
+        {retryContent}
+        outputs={groups?.byEntry.get(entry.id)}
+        {renderOutputs}
+      />{/if}
   {/each}
   {#if groups?.unassigned.length}
     {@render renderOutputs?.(groups.unassigned)}

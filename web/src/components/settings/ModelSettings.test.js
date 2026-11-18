@@ -46,6 +46,8 @@ it('keeps keys out of browser storage, refreshes without applying, and applies m
   await fireEvent.click(view.getByRole('checkbox', { name: /Chat Two/ }));
   await fireEvent.click(view.getByRole('button', { name: 'Apply 2 selected models' }));
   await waitFor(() => expect(view.getByText('Applied models (2)')).toBeInTheDocument());
+  const group = view.getByRole('region', { name: 'Work key' });
+  expect(group.querySelectorAll('.model-applied-row')).toHaveLength(2);
   expect(calls.find((c) => c.action === 'apply').modelIds).toEqual(['one', 'two']);
   await fireEvent.click(view.getByRole('button', { name: 'Remove Chat One from Work key' }));
   await waitFor(() => expect(view.getByText('Applied models (1)')).toBeInTheDocument());

@@ -119,6 +119,24 @@ it('reports loading for finite requests without treating the event stream as per
   events.abort();
 });
 
+it('reuses a working authenticated channel when the app returns to the foreground', async () => {
+  const { RemoteClient } = await import('./client.js');
+  const client = new RemoteClient(config);
+  client.authorized = true;
+  client.channel = { readyState: 'open' };
+  client.peer = { connectionState: 'connected' };
+  client.fetch = vi
+    .fn()
+    .mockResolvedValueOnce(new Response('{}'))
+    .mockRejectedValueOnce(new Error('stale channel'));
+  client.reconnect = vi.fn().mockResolvedValue(undefined);
+  await client.resume();
+  expect(client.fetch).toHaveBeenCalledWith('/api/version', { signal: expect.anything() });
+  expect(client.reconnect).not.toHaveBeenCalled();
+  await client.resume();
+  expect(client.reconnect).toHaveBeenCalledOnce();
+});
+
 it('reports P2P or relay from the selected candidate pair instead of the chosen preference', async () => {
   const { RemoteClient } = await import('./client.js');
   const client = new RemoteClient(config, { preference: 'vps' });

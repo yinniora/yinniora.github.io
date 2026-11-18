@@ -100,6 +100,11 @@ public signaling and relay-only ICE. Switching routes keeps the same pinned
 identity and device approval. An authenticated metadata refresh can update the
 direct endpoint, but cannot change the pinned Mac identity.
 
+Signaling and ICE discovery run concurrently. The installed web app probes
+its authenticated channel when returning to the foreground and reconnects
+if that channel is stale. Startup synchronizes workspace settings once,
+while approved-device metadata updates in the background.
+
 Do not forward a Mac HTTP listener through SSH or serve this client program
 from the VPS. Use a separately controlled HTTPS static host. Remove obsolete
 reverse HTTP tunnels during migration; otherwise loopback forwarding can bypass

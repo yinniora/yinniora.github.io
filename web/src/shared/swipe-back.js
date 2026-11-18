@@ -1,10 +1,10 @@
-import { navigate } from '../../shared/navigation.js';
-import { isMobileLayout } from '../ui/sidebar.js';
-
 const INTERACTIVE =
   'a, button, input, textarea, select, label, summary, [contenteditable], [role="button"], pre, code, table, video, audio, img';
 
-export function setupSwipeHome(content, { documentImpl = document, windowImpl = window } = {}) {
+export function setupSwipeBack(
+  content,
+  { onBack, enabled, startOnControl = '', documentImpl = document },
+) {
   let start = null;
 
   function blocked() {
@@ -17,10 +17,11 @@ export function setupSwipeHome(content, { documentImpl = document, windowImpl = 
 
   function begin(event) {
     start = null;
+    const control = event.target.closest?.(INTERACTIVE);
     if (
       event.touches.length !== 1 ||
-      !isMobileLayout({ windowImpl }) ||
-      event.target.closest?.(INTERACTIVE) ||
+      !enabled() ||
+      (control && (!startOnControl || !control.matches(startOnControl))) ||
       blocked()
     )
       return;
@@ -53,7 +54,7 @@ export function setupSwipeHome(content, { documentImpl = document, windowImpl = 
     if (!touch) return;
     const dx = touch.clientX - gesture.x;
     const dy = Math.abs(touch.clientY - gesture.y);
-    if (dx >= 90 && dx > dy * 1.7) navigate('/', { windowImpl });
+    if (dx >= 90 && dx > dy * 1.7 && enabled()) onBack();
   }
 
   const cancel = () => {

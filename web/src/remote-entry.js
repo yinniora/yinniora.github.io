@@ -22,6 +22,8 @@ trackVisualViewport();
 const platformFetch = window.fetch.bind(window);
 let transportClient = null;
 let transportInstalled = false;
+const registration = navigator.serviceWorker?.register('/remote-sw.js', { scope: '/' });
+registration?.catch(() => {});
 
 async function start() {
   try {
@@ -83,8 +85,6 @@ async function start() {
       },
     },
   });
-  if ('serviceWorker' in navigator)
-    navigator.serviceWorker.register('/remote-sw.js', { scope: '/' }).catch(() => {});
 }
 
 async function launchWorkspace(client) {
@@ -167,11 +167,11 @@ async function launchWorkspace(client) {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) hiddenAt = Date.now();
       else if (hiddenAt && Date.now() - hiddenAt > 3000) {
-        transportClient.reconnect(transportClient.preference).catch(() => {});
+        transportClient.resume().catch(() => {});
         hiddenAt = 0;
       }
     });
-    window.addEventListener('online', () => transportClient.connect().catch(() => {}));
+    window.addEventListener('online', () => transportClient.resume().catch(() => {}));
     window.addEventListener('offline', () => {
       transportClient.peer?.close();
       transportClient.socket?.close();
@@ -180,7 +180,14 @@ async function launchWorkspace(client) {
     });
   }
   window.__PI_REMOTE_CLIENT__ = client;
-  await navigator.serviceWorker.register('/remote-sw.js', { scope: '/' });
+  client.setSyncing(true);
+  const syncSettings = prepareStartupSettings({ fetchImpl: window.fetch });
+  client
+    .fetch('/api/devices', { signal: AbortSignal.timeout(5000) })
+    .then((response) => response.json())
+    .then(({ connection }) => client.updateConfiguration(connection))
+    .catch(() => {});
+  await registration;
   await Promise.race([
     navigator.serviceWorker.ready,
     new Promise((_, reject) => setTimeout(() => reject(new Error(t('remote.startFailed'))), 10000)),
@@ -198,17 +205,7 @@ async function launchWorkspace(client) {
       navigator.serviceWorker.addEventListener('controllerchange', ready, { once: true });
       if (navigator.serviceWorker.controller) ready();
     });
-  client.setSyncing(true);
-  try {
-    const response = await client.fetch('/api/devices', { signal: AbortSignal.timeout(5000) });
-    const data = await response.json();
-    if (data.connection?.fingerprint === client.config.fingerprint) {
-      client.updateConfiguration(data.connection);
-    }
-  } catch {
-    /* Existing pinned transport remains usable while settings sync is unavailable. */
-  }
-  const settings = await prepareStartupSettings({ fetchImpl: window.fetch });
+  const settings = await syncSettings;
   if (settings?.['pi-web:v1:standalone-tap-diagnostics'] === 'true') {
     import('./remote/tap-diagnostics.js')
       .then(({ showTapDiagnostics }) => showTapDiagnostics())

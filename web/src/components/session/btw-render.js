@@ -53,7 +53,7 @@ export function renderBtwEntryParts(
     if (parts.length === 0 && typeof msg.content === 'string' && msg.content.trim()) {
       parts.push({ kind: 'md', html: toHtml(msg.content) });
     }
-    if (parts.length === 0) return null;
+    if (parts.length === 0 && msg.stopReason !== 'error') return null;
     return { role: 'assistant', parts };
   }
   if (msg.role === 'bashExecution' && msg.command) {

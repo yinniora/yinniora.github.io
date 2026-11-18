@@ -21,6 +21,8 @@
     setupBtwSessionEvents,
   } from './btw-events.js';
   import ReplyFooter from './ReplyFooter.svelte';
+  import CopyMessageButton from './CopyMessageButton.svelte';
+  import ReplyError from './ReplyError.svelte';
   import { entriesWithReplyDetails } from '../../session/render/reply-details.js';
   import { btwContentText, createBtwMarkdownRenderer, renderBtwEntryParts } from './btw-render.js';
 
@@ -62,9 +64,10 @@
   const renderEntryParts = (entry) => renderBtwEntryParts(entry, { toHtml });
 
   const renderedEntries = $derived(
-    entriesWithReplyDetails(entries).flatMap(({ entry, reply }) => {
+    entriesWithReplyDetails(entries).flatMap(({ entry, reply, repeatedError }) => {
+      if (repeatedError) return [];
       const rendered = renderEntryParts(entry);
-      return rendered ? [{ ...rendered, reply }] : [];
+      return rendered ? [{ ...rendered, reply, message: entry.message }] : [];
     }),
   );
   const isEmpty = $derived(
@@ -444,6 +447,15 @@
                 {p.text}
               </div>{/if}
           {/each}
+          {#if r.message?.stopReason === 'error'}
+            <ReplyError
+              error={r.message.errorMessage || t('activity.failed')}
+              model={[r.message.provider, r.message.model].filter(Boolean).join('/')}
+            />
+          {/if}
+          {#if r.role === 'user'}
+            <CopyMessageButton text={btwContentText(r.message?.content)} iconOnly />
+          {/if}
           {#if r.reply}<ReplyFooter {...r.reply} />{/if}
         </div>
       {/each}

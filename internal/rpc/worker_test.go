@@ -80,6 +80,20 @@ func TestStatusReturnsIdleAfterAgentEnd(t *testing.T) {
 	}
 }
 
+func TestWorkerCancelsAutomaticRetry(t *testing.T) {
+	var sent bytes.Buffer
+	w := &piRPCWorker{
+		stdin:  nopWriteCloser{w: &sent},
+		status: workers.WorkerStatus{State: workers.WorkerStateRunning},
+	}
+	w.handleRPCLine(`{"type":"message_end","message":{"role":"assistant","provider":"key-one","model":"model-x","stopReason":"error","errorMessage":"503 {\"error\":{\"type\":\"model_not_found\"}}"}}`)
+	w.handleRPCLine(`{"type":"auto_retry_start","attempt":1}`)
+	w.handleRPCLine(`{"type":"agent_end"}`)
+	if sent.String() != "{\"type\":\"abort_retry\"}\n" || w.Status().State != workers.WorkerStateIdle {
+		t.Fatalf("unexpected retry command or state: %q, %#v", sent.String(), w.Status())
+	}
+}
+
 func TestStatusDoesNotStayRunningAfterStreamActivityExpires(t *testing.T) {
 	w := &piRPCWorker{
 		status:  workers.WorkerStatus{State: workers.WorkerStateIdle},

@@ -28,8 +28,9 @@
       `${m.name} ${m.id}`.toLowerCase().includes(query.toLowerCase()),
     ),
   );
-  const applied = $derived(
-    profiles.flatMap((p) => p.applied.map((m) => ({ ...m, provider: p.id, label: p.label }))),
+  const appliedGroups = $derived(profiles.filter((profile) => profile.applied?.length));
+  const appliedCount = $derived(
+    appliedGroups.reduce((count, profile) => count + profile.applied.length, 0),
   );
 
   function accept(data) {
@@ -107,8 +108,8 @@
     )
       status = t('models.applied');
   }
-  async function remove(model) {
-    if (await action({ action: 'remove-model', id: model.provider, modelId: model.id }))
+  async function remove(profile, model) {
+    if (await action({ action: 'remove-model', id: profile.id, modelId: model.id }))
       status = t('models.removed');
   }
   onMount(load);
@@ -291,21 +292,29 @@
     {/if}
   {/if}
   <div class="model-applied">
-    <h3>{t('models.appliedList', { count: applied.length })}</h3>
+    <h3>{t('models.appliedList', { count: appliedCount })}</h3>
     <p>{t('models.appliedHint')}</p>
-    {#each applied as model (`${model.provider}/${model.id}`)}
-      <div class="model-applied-row">
-        <div>
-          <span class="model-label">{model.label}</span><strong>{model.name || model.id}</strong
-          ><small>{model.id}</small>
-        </div>
-        <button
-          type="button"
-          disabled={busy}
-          aria-label={t('models.removeNamed', { name: model.name || model.id, label: model.label })}
-          onclick={() => remove(model)}>{t('models.remove')}</button
-        >
-      </div>
+    {#each appliedGroups as profile (profile.id)}
+      <section class="model-applied-group" aria-label={profile.label}>
+        <h4>{profile.label}</h4>
+        {#each profile.applied as model (model.id)}
+          <div class="model-applied-row">
+            <div>
+              <strong>{model.name || model.id}</strong>
+              {#if model.name && model.name !== model.id}<small>{model.id}</small>{/if}
+            </div>
+            <button
+              type="button"
+              disabled={busy}
+              aria-label={t('models.removeNamed', {
+                name: model.name || model.id,
+                label: profile.label,
+              })}
+              onclick={() => remove(profile, model)}>{t('models.remove')}</button
+            >
+          </div>
+        {/each}
+      </section>
     {:else}<p>{t('models.noApplied')}</p>{/each}
   </div>
 </section>
@@ -514,14 +523,11 @@
     flex: 1;
     min-width: 0;
   }
-  .model-label {
-    display: inline-block;
-    color: var(--accent);
-    font-size: 10px;
-    padding: 3px 6px;
-    border: 1px solid var(--dim);
-    border-radius: 5px;
-    margin-bottom: 6px;
+  .model-applied-group h4 {
+    margin: 16px 0 4px;
+    color: var(--text-soft);
+    font-size: 12px;
+    overflow-wrap: anywhere;
   }
   .model-error {
     color: var(--error, #cf5f5f);

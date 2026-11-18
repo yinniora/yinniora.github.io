@@ -29,5 +29,6 @@ if (appTarget && !appTarget.dataset.piWebSvelteMounted) {
     /* Storage may be disabled in private browsing. */
   }
   appTarget.dataset.piWebSvelteMounted = 'true';
-  appReady = prepareStartupSettings().then(() => mountApp({ target: appTarget }));
+  const settingsReady = window.__PI_REMOTE_CLIENT__ ? Promise.resolve() : prepareStartupSettings();
+  appReady = settingsReady.then(() => mountApp({ target: appTarget }));
 }

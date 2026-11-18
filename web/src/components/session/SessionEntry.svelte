@@ -12,13 +12,24 @@
   import ToolCall from './ToolCall.svelte';
   import ActivityDisclosure from './ActivityDisclosure.svelte';
   import ReplyFooter from './ReplyFooter.svelte';
+  import CopyMessageButton from './CopyMessageButton.svelte';
+  import ReplyError from './ReplyError.svelte';
   import ToolOutput from './ToolOutput.svelte';
 
   // `live` (passed from <SessionContent>) gates the fork/label buttons, which
   // need the chat composer; copy-link is always shown. The static export passes
   // false. (Replaces the former renderForkButton/renderLabelButton isLive check —
   // a prop, not a DOM probe, since entries mount before the composer.)
-  let { entry, reply = null, model = null, live = false, outputs, renderOutputs = null } = $props();
+  let {
+    entry,
+    reply = null,
+    model = null,
+    live = false,
+    chatAvailable = false,
+    retryContent = null,
+    outputs,
+    renderOutputs = null,
+  } = $props();
 
   const ts = $derived(formatTimestamp(entry?.timestamp));
   const md = (text) => safeMarkedParse(text, { marked });
@@ -40,6 +51,15 @@
   const userImages = $derived(
     Array.isArray(msg?.content) ? msg.content.filter((b) => b.type === 'image') : [],
   );
+
+  function chooseModel(event) {
+    event.stopPropagation();
+    document.getElementById('pi-chat-model-label')?.click();
+  }
+  const retry = () =>
+    document
+      .getElementById('pi-chat-composer')
+      ?.dispatchEvent(new CustomEvent('pi:retry-prompt', { detail: retryContent }));
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
@@ -72,6 +92,9 @@
       </div>{/if}
     {#if userText.trim()}<div class="markdown-content">{@html md(userText)}</div>{/if}
   </div>
+  {#if live && userText.trim()}
+    <div class="message-copy-row"><CopyMessageButton text={userText} iconOnly /></div>
+  {/if}
 {:else if msg && msg.role === 'assistant'}
   <div class="assistant-message" id={`entry-${entry.id}`}>
     {@render actions(entry.id)}
@@ -101,9 +124,18 @@
         />{/if}{/each}
     {#if msg.stopReason === 'aborted'}<div class="error-text">
         Aborted
-      </div>{:else if msg.stopReason === 'error'}<div class="error-text">
-        Error: {msg.errorMessage || 'Unknown error'}
-      </div>{/if}
+      </div>{:else if msg.stopReason === 'error'}
+      {#if live}
+        <ReplyError
+          error={msg.errorMessage || t('activity.failed')}
+          model={[msg.provider, msg.model].filter(Boolean).join('/')}
+          onChooseModel={chatAvailable ? chooseModel : null}
+          onRetry={chatAvailable && retryContent ? retry : null}
+        />
+      {:else}
+        <div class="error-text">Error: {msg.errorMessage || 'Unknown error'}</div>
+      {/if}
+    {/if}
     {#if outputs?.length}
       {@render renderOutputs?.(outputs)}
     {/if}

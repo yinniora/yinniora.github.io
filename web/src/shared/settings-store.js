@@ -46,6 +46,11 @@ export const SERVER_SETTING_KEYS = [
 // unit tests (which exercise the pure setters with a fake storage) free of
 // network calls.
 let syncFetch = null;
+let startupSettings = null;
+
+export function rememberStartupSettings(settings) {
+  startupSettings = settings;
+}
 
 export function configureSettingsSync({ fetchImpl } = {}) {
   syncFetch = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
@@ -53,6 +58,7 @@ export function configureSettingsSync({ fetchImpl } = {}) {
 
 export function resetSettingsSyncForTests() {
   syncFetch = null;
+  startupSettings = null;
 }
 
 function defaultStorage() {
@@ -130,7 +136,16 @@ export function applySettingsFromServer(settings, { storage = defaultStorage() }
  * Writes are done directly to storage (not via writeSetting) so hydration does
  * not echo the values straight back to the server.
  */
-export async function hydrateSettings({ fetchImpl = syncFetch, storage = defaultStorage() } = {}) {
+export async function hydrateSettings({
+  fetchImpl = syncFetch,
+  storage = defaultStorage(),
+  reuseStartup = true,
+} = {}) {
+  if (reuseStartup && startupSettings) {
+    const settings = startupSettings;
+    startupSettings = null;
+    return applySettingsFromServer(settings, { storage });
+  }
   if (!fetchImpl) return null;
   try {
     const resp = await fetchImpl('/api/settings', { headers: { Accept: 'application/json' } });

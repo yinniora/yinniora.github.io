@@ -31,7 +31,8 @@
   import { getSessionRuntime } from '../../session/session-runtime-context.js';
   import { onMount } from 'svelte';
   import { navigate } from '../../shared/navigation.js';
-  import { setupSwipeHome } from '../../session/navigation/swipe-home.js';
+  import { setupSwipeBack } from '../../shared/swipe-back.js';
+  import { isMobileLayout } from '../../session/ui/sidebar.js';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { createAnnotationApi } from '../../session/annotations/annotation-api.js';
   import { createStatusEvents } from '../../shared/status-events.js';
@@ -121,7 +122,9 @@
   });
 
   let transcript = $state(null);
-  onMount(() => setupSwipeHome(transcript));
+  onMount(() =>
+    setupSwipeBack(transcript, { onBack: () => navigate('/'), enabled: isMobileLayout }),
+  );
 
   const runtime = getSessionRuntime();
   const runningSessionIds = new SvelteSet();
@@ -247,6 +250,7 @@
               afterRender={contentRuntime.afterRender}
               {outputs}
               {renderOutputs}
+              {chatAvailable}
               live
             />
           {/snippet}

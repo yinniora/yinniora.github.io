@@ -69,6 +69,7 @@
 @media (max-width: 760px) {
   .settings-page {
     padding: calc(52px + env(safe-area-inset-top)) 0 0;
+    touch-action: pan-y;
   }
   .settings-sidebar {
     position: static;

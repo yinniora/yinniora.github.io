@@ -269,9 +269,8 @@ test("model settings refresh labeled keys and explicitly apply and remove multip
       page.getByText("Model list refreshed. Select models, then apply them."),
     ).toBeVisible();
     expect(sawKey).toBe(true);
-    await expect(
-      page.locator(".model-applied-row").filter({ hasText: label }),
-    ).toHaveCount(0);
+    const group = page.getByRole("region", { name: label, exact: true });
+    await expect(group).toHaveCount(0);
     await page
       .getByRole("checkbox", { name: "yugo-chat-one", exact: true })
       .check();
@@ -281,9 +280,7 @@ test("model settings refresh labeled keys and explicitly apply and remove multip
     await page
       .getByRole("button", { name: "Apply 2 selected models", exact: true })
       .click();
-    await expect(
-      page.locator(".model-applied-row").filter({ hasText: label }),
-    ).toHaveCount(2);
+    await expect(group.locator(".model-applied-row")).toHaveCount(2);
     let payload = await (await page.request.get("/api/models")).json();
     expect(
       payload.models.filter((m: any) => m.providerLabel === label),
@@ -295,9 +292,7 @@ test("model settings refresh labeled keys and explicitly apply and remove multip
         exact: true,
       })
       .click();
-    await expect(
-      page.locator(".model-applied-row").filter({ hasText: label }),
-    ).toHaveCount(1);
+    await expect(group.locator(".model-applied-row")).toHaveCount(1);
     payload = await (await page.request.get("/api/models")).json();
     expect(
       payload.models
@@ -661,6 +656,93 @@ test("a right swipe in the conversation returns to mobile Home", async ({
   await page.locator("#pi-chat-message").tap();
   await expect(page.locator("#pi-chat-message")).toBeFocused();
   expect(await page.evaluate(() => history.length)).toBe(initialHistoryLength);
+});
+
+test("mobile Settings supports one-level swipe back", async ({ page }) => {
+  await collapseScratchpad(page);
+  await page.goto("/settings");
+  test.skip(!(await isMobileLayout(page)), "mobile layout");
+  const settings = page.locator(".settings-page");
+  const language = page.locator('[data-settings-nav="language"]');
+  await language.tap();
+  await expect(settings).toHaveClass(/settings-page-mobile-pane/);
+  const swipe = (selector: string) => page.locator(selector).evaluate((element) => {
+    const touch = { identifier: 1, clientX: 24, clientY: 136 };
+    const end = { ...touch, clientX: 155 };
+    for (const [type, touches, changedTouches] of [
+      ["touchstart", [touch], []],
+      ["touchmove", [end], []],
+      ["touchend", [], [end]],
+    ] as const) {
+      const event = new Event(type, { bubbles: true });
+      Object.defineProperties(event, { touches: { value: touches }, changedTouches: { value: changedTouches } });
+      element.dispatchEvent(event);
+    }
+  });
+  await swipe(".settings-pane");
+  await expect(language).toBeVisible();
+  await expect(page).toHaveURL(/\/settings$/);
+  await swipe('[data-settings-nav="language"]');
+  await expect(page.locator(".mobile-home")).toBeVisible();
+});
+
+test("a failed turn has a single expandable error and can copy or retry its prompt", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const { entries } = buildSession({ cwd: realWorkingDir() });
+  const prompt = entries.at(-2)!;
+  const first = assistantTextEntry(prompt.id, "");
+  const last = assistantTextEntry(first.id, "");
+  const failures = [first, last].map(({ entry }, index) => ({
+    ...entry,
+    message: { ...entry.message, provider: "fixture", model: "denied", stopReason: "error",
+      errorMessage: `503 {"error":{"type":"model_not_found","message":"No available channel ${index}"}}` },
+  }));
+  const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "retry-card"), [
+    ...entries.slice(0, -1), ...failures,
+  ]);
+  await collapseScratchpad(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: async (value: string) => { document.documentElement.dataset.copied = value; },
+    } });
+    const fetchFromServer = window.fetch.bind(window);
+    window.fetch = async (input, options) => {
+      const url = new URL(String(input), location.href);
+      if (url.pathname === "/api/worker-status") return Response.json({ state: "idle" });
+      if (url.pathname === "/api/models") return Response.json({
+        models: [{ id: "replacement", name: "Working model", provider: "fixture" }],
+      });
+      if (url.pathname === "/api/set-model") {
+        document.documentElement.dataset.selectedModel = JSON.parse(String(options?.body)).modelId;
+        return Response.json({ ok: true });
+      }
+      if (url.pathname === "/api/chat") {
+        document.documentElement.dataset.retry = String((options?.body as FormData).get("message"));
+        return Response.json({ ok: true, status: "queued" }, { status: 202 });
+      }
+      return fetchFromServer(input, options);
+    };
+  });
+  await page.goto("/session?id=" + encodeURIComponent(id));
+  const copy = page.locator(`#entry-${prompt.id} + .message-copy-row button`);
+  await copy.click();
+  await expect(page.locator("html")).toHaveAttribute("data-copied", "Initial prompt.");
+  await expect(page.locator(".reply-error")).toHaveCount(1);
+  const failed = page.locator(`#entry-${last.id}`);
+  await expect(failed.locator(".reply-error-detail")).toBeHidden();
+  await failed.locator(".reply-error summary").click();
+  await expect(failed.locator(".reply-error-detail")).toContainText("No available channel 1");
+  await failed.getByRole("button", { name: "Models", exact: true }).click();
+  await page.getByRole("button", { name: "Working model", exact: true }).click();
+  await expect(page.locator("#pi-chat-model-label")).toContainText("Working model");
+  await expect(page.locator("html")).toHaveAttribute("data-selected-model", "replacement");
+  const input = page.locator("#pi-chat-message");
+  await input.fill("An unsent draft");
+  await failed.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-retry", "Initial prompt.");
+  await expect(input).toHaveValue("An unsent draft");
 });
 
 test("finished replies show their own model and time and copy only reply text", async ({

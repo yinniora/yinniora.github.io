@@ -52,6 +52,7 @@ export function setupModelSelector({
 } = {}) {
   let allModels = [];
   let selectedModel = null;
+  let changingModel = false;
 
   function setSelected(model) {
     selectedModel = model;
@@ -108,6 +109,7 @@ export function setupModelSelector({
   const api = {
     open: openPopup,
     close: closePopup,
+    isChangingModel: () => changingModel,
   };
 
   // Attach click handlers immediately so the button is responsive
@@ -158,8 +160,9 @@ export function setupModelSelector({
     if (!item) return;
     const provider = item.dataset.provider;
     const modelId = item.dataset.modelId;
-    if (!provider || !modelId) return;
+    if (!provider || !modelId || changingModel) return;
     closePopup(true);
+    changingModel = true;
     try {
       const setRes = await chatApi.setModel(sessionId, { provider, modelId });
       const setData = await setRes.json();
@@ -176,6 +179,8 @@ export function setupModelSelector({
           : err.message || String(err),
         'error',
       );
+    } finally {
+      changingModel = false;
     }
   });
 

@@ -21,6 +21,33 @@ function connectionError(code) {
   return error;
 }
 
+function openSignalSocket(endpoint, signal) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(endpoint);
+    const fail = () => {
+      clearTimeout(timer);
+      reject(connectionError('relayFailed'));
+    };
+    const timer = setTimeout(() => {
+      fail();
+      socket.close();
+    }, 12000);
+    socket.onopen = () => {
+      clearTimeout(timer);
+      resolve(socket);
+    };
+    socket.onerror = socket.onclose = fail;
+    signal.addEventListener(
+      'abort',
+      () => {
+        fail();
+        socket.close();
+      },
+      { once: true },
+    );
+  });
+}
+
 export class RemoteClient extends EventTarget {
   constructor(config, { preference = 'auto' } = {}) {
     super();
@@ -99,13 +126,14 @@ export class RemoteClient extends EventTarget {
   }
 
   async connect() {
+    if (this.connecting) return this.connecting;
     if (['failed', 'closed', 'disconnected'].includes(this.peer?.connectionState)) {
       this.peer.close();
+      this.socket?.close();
       this.authorized = false;
     }
     if (this.channel?.readyState === 'open' && this.authorized) return;
     if (this.blocked) throw new Error(t('remote.denied'));
-    if (this.connecting) return this.connecting;
     this.connection = this.everConnected ? 'reconnecting' : 'connecting';
     this.diagnostics = {
       clientVersion,
@@ -115,22 +143,16 @@ export class RemoteClient extends EventTarget {
     this.transport = '';
     this.emitStatus();
     this.connecting = this.openConnection()
-      .then(async () => {
+      .then(() => {
         this.phase('sync');
-        this.setSyncing(true);
-        try {
-          const response = await this.fetch('/api/devices', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'identify', features: deviceFeatures() }),
-            signal: AbortSignal.timeout(8000),
-          });
-          await response.arrayBuffer();
-        } catch {
-          /* Older servers and offline metadata sync do not block the workspace. */
-        } finally {
-          this.setSyncing(false);
-        }
+        this.fetch('/api/devices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'identify', features: deviceFeatures() }),
+          signal: AbortSignal.timeout(8000),
+        })
+          .then((response) => response.arrayBuffer())
+          .catch(() => {});
       })
       .catch((error) => {
         error.diagnostics ||= { ...this.diagnostics };
@@ -154,6 +176,45 @@ export class RemoteClient extends EventTarget {
       error.code = 'storageUnavailable';
       throw error;
     }
+    const signaling = new AbortController();
+    try {
+      await this.negotiate(identity, signaling.signal);
+    } catch (error) {
+      signaling.abort();
+      throw error;
+    }
+  }
+
+  async negotiate(identity, signal) {
+    const direct = this.config.directUrl;
+    const endpoints =
+      this.preference === 'tailscale'
+        ? [direct || this.config.signalUrl]
+        : direct && this.preference === 'auto'
+          ? [direct, this.config.signalUrl]
+          : [this.config.signalUrl];
+    const attempts = endpoints.map(() => new AbortController());
+    signal.addEventListener('abort', () => attempts.forEach((attempt) => attempt.abort()), {
+      once: true,
+    });
+    const signaling = Promise.any(
+      endpoints.map(async (endpoint, index) => {
+        const socket = await openSignalSocket(endpoint, attempts[index].signal);
+        return { socket, index };
+      }),
+    ).then(({ socket, index }) => {
+      attempts.forEach((attempt, other) => {
+        if (other !== index) attempt.abort();
+      });
+      const relayReady =
+        direct && socket.url === new URL(direct).href
+          ? Promise.resolve()
+          : authenticateRelay(socket, identity, this.config);
+      relayReady.catch(() => {});
+      return { socket, relayReady };
+    });
+    signaling.catch(() => {});
+
     let iceServers = [];
     if (this.preference !== 'tailscale') {
       this.phase('ice');
@@ -299,47 +360,8 @@ export class RemoteClient extends EventTarget {
     approved.catch(() => {});
     try {
       this.phase('signal');
-      const endpoints =
-        this.preference === 'tailscale'
-          ? [this.config.directUrl || this.config.signalUrl]
-          : this.config.directUrl && this.preference === 'auto'
-            ? [this.config.directUrl, this.config.signalUrl]
-            : [this.config.signalUrl];
-      const sockets = [];
-      try {
-        socket = await Promise.any(
-          endpoints.map(
-            (endpoint) =>
-              new Promise((resolve, reject) => {
-                const candidate = new WebSocket(endpoint);
-                sockets.push(candidate);
-                const timeout = setTimeout(() => {
-                  candidate.close();
-                  reject(new Error(t('remote.relayFailed')));
-                }, 12000);
-                candidate.onopen = () => {
-                  clearTimeout(timeout);
-                  resolve(candidate);
-                };
-                candidate.onerror = () => {
-                  clearTimeout(timeout);
-                  reject(new Error(t('remote.relayFailed')));
-                };
-                candidate.onclose = () => {
-                  clearTimeout(timeout);
-                  reject(new Error(t('remote.relayFailed')));
-                };
-              }),
-          ),
-        );
-      } finally {
-        for (const candidate of sockets) if (candidate !== socket) candidate.close();
-      }
-      const relayReady =
-        this.config.directUrl && socket.url === new URL(this.config.directUrl).href
-          ? Promise.resolve()
-          : authenticateRelay(socket, identity, this.config);
-      relayReady.catch(() => {});
+      const chosen = await signaling;
+      socket = chosen.socket;
       const answerPromise = new Promise((resolve, reject) => {
         // Start the answer budget only after sending the offer, not during ICE gathering.
         rejectAnswer = reject;
@@ -377,7 +399,7 @@ export class RemoteClient extends EventTarget {
       this.diagnostics.localRelayCandidates = (
         peer.localDescription.sdp.match(/ typ relay/g) || []
       ).length;
-      await relayReady;
+      await chosen.relayReady;
       this.phase('answer');
       socket.send(JSON.stringify({ type: 'offer', sdp: peer.localDescription.sdp }));
       answerTimer = setTimeout(() => rejectAnswer(connectionError('signalTimeout')), 30000);
@@ -524,11 +546,28 @@ export class RemoteClient extends EventTarget {
     return response;
   }
 
+  async resume() {
+    const peer = this.peer;
+    if (
+      !this.authorized ||
+      this.channel?.readyState !== 'open' ||
+      peer?.connectionState !== 'connected'
+    )
+      return this.connect();
+    try {
+      const response = await this.fetch('/api/version', { signal: AbortSignal.timeout(2000) });
+      await response.arrayBuffer();
+    } catch {
+      if (this.peer === peer) return this.reconnect(this.preference);
+    }
+  }
+
   reconnect(preference = 'all') {
     this.preference = normalizeTransport(preference);
     try {
       localStorage.setItem(TRANSPORT_KEY, this.preference);
     } catch {}
+    this.authorized = false;
     this.peer?.close();
     this.socket?.close();
     return this.connect();

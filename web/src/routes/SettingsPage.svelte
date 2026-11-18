@@ -15,6 +15,7 @@
   import SessionTitleSettings from '../components/settings/SessionTitleSettings.svelte';
   import { t } from '../shared/i18n.js';
   import { navigate, replaceLocation } from '../shared/navigation.js';
+  import { setupSwipeBack } from '../shared/swipe-back.js';
   import { loadSettings, persistSetting } from '../settings/settings-support.js';
   import { createAppEvents } from '../shared/app-events.js';
   import { applyRemoteSettings } from '../shared/settings-live.js';
@@ -43,6 +44,7 @@
   let isMobile = $state(false);
   let mobileShowingPane = $state(false);
   let cameFromApp = $state(false);
+  let settingsPage = $state(null);
 
   const activeLabel = $derived(
     t(sections.find((s) => s.id === activeSection)?.labelKey || 'settings.title'),
@@ -74,6 +76,12 @@
   function backToList() {
     mobileShowingPane = false;
     syncSectionUrl(window, '');
+    const root = settingsPage?.closest('#spa-root');
+    if (root) root.scrollTop = 0;
+  }
+
+  function leaveSettings() {
+    navigate(typeof window.history.state?.back === 'string' ? window.history.state.back : '/');
   }
 
   function onHomeBack(e) {
@@ -81,7 +89,7 @@
     if (typeof e.button === 'number' && e.button !== 0) return;
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    navigate(typeof window.history.state?.back === 'string' ? window.history.state.back : '/');
+    leaveSettings();
   }
 
   function flashSaved() {
@@ -111,6 +119,11 @@
     };
     updateMobile();
     mq?.addEventListener('change', updateMobile);
+    const stopSwipe = setupSwipeBack(settingsPage, {
+      enabled: () => isMobile,
+      startOnControl: '[data-settings-nav]',
+      onBack: () => (mobileShowingPane ? backToList() : leaveSettings()),
+    });
 
     const initialSection = sectionFromUrl(window);
     if (initialSection) {
@@ -141,6 +154,7 @@
       document.title = previousTitle;
       clearTimeout(savedTimer);
       mq?.removeEventListener('change', updateMobile);
+      stopSwipe();
       settingsEvents.cleanup?.();
     };
   });
@@ -168,6 +182,7 @@
 
 <div
   class="settings-page"
+  bind:this={settingsPage}
   class:settings-page-mobile-list={isMobile && !mobileShowingPane}
   class:settings-page-mobile-pane={isMobile && mobileShowingPane}
 >

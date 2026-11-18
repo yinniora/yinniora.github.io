@@ -78,11 +78,11 @@ export function groupOutputsByReply(entries, outputs) {
   let anchorId = null;
   // Walk back from each reply to associate it with the tool calls that led to it.
   for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const { entry, reply } = entries[index];
+    const { entry, reply, repeatedError } = entries[index];
     if (entry.type !== 'message') continue;
     if (entry.message?.role === 'user') anchorId = null;
     if (entry.message?.role !== 'assistant') continue;
-    if (reply || !anchorId) anchorId = entry.id;
+    if (!repeatedError && (reply || !anchorId)) anchorId = entry.id;
     replyByEntry.set(entry.id, anchorId);
   }
 

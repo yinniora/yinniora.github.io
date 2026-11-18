@@ -471,6 +471,11 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 			w.emitStreamPreview(msg.AssistantMessageEvent)
 		}
 		w.noteStreamActivity()
+	case "auto_retry_start":
+		// Cancel Pi's pending backoff for this web turn without rewriting CLI settings.
+		w.writeMu.Lock()
+		_ = WriteCommand(w.stdin, map[string]any{"type": "abort_retry"})
+		w.writeMu.Unlock()
 	case "message_end", "turn_end":
 		w.noteStreamActivity()
 		w.completeStreamPreview()
