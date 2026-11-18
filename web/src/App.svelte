@@ -13,6 +13,7 @@
   import { handleNavClick } from './shared/navigation.js';
   import { recoverStandaloneTaps } from './shared/ios-standalone-taps.js';
   import { t } from './shared/i18n.js';
+  import { initializeSessionCompletions } from './index/session-completions.js';
 
   let {
     path: initialPath = typeof window !== 'undefined' ? window.location.pathname : '/',
@@ -34,6 +35,7 @@
   const retrySession = () => (sessionAttempt += 1);
 
   onMount(() => {
+    initializeSessionCompletions();
     const stopViewport = trackVisualViewport();
     const stopTapRecovery = recoverStandaloneTaps();
     const remoteEvents = createAppEvents({

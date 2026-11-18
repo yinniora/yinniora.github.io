@@ -19,6 +19,7 @@
   import { resetSessionRuntimeContext } from '../session/session-runtime-context.js';
   import { handleNavClick } from '../shared/navigation.js';
   import { t } from '../shared/i18n.js';
+  import { markSessionCompletionSeen } from '../index/session-completions.js';
 
   let { routeSearch = window.location.search, onRetry = () => window.location.reload() } = $props();
 
@@ -47,8 +48,16 @@
   let chatDisabledReason = $state('');
   let modelLabel = $state('');
   let dataEl = $state(null);
+  let visible = $state(false);
+
+  $effect(() => {
+    if (visible && !loading && !error) markSessionCompletionSeen(sessionId, sessionModel.entries);
+  });
 
   onMount(() => {
+    const syncVisibility = () => (visible = !document.hidden);
+    syncVisibility();
+    document.addEventListener('visibilitychange', syncVisibility);
     const previousTitle = document.title;
     const locationSearch = routeSearch;
     const request = new AbortController();
@@ -125,6 +134,7 @@
 
     return () => {
       active = false;
+      document.removeEventListener('visibilitychange', syncVisibility);
       request.abort();
       clearTimeout(loadingTimer);
       clearTimeout(timeout);

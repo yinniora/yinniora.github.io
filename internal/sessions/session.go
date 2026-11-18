@@ -36,11 +36,12 @@ type summaryLine struct {
 }
 
 type summaryMsg struct {
-	Role     string          `json:"role"`
-	Provider string          `json:"provider"`
-	Model    string          `json:"model"`
-	Content  json.RawMessage `json:"content"`
-	Usage    summaryUsage    `json:"usage"`
+	Role       string          `json:"role"`
+	Provider   string          `json:"provider"`
+	Model      string          `json:"model"`
+	Content    json.RawMessage `json:"content"`
+	Usage      summaryUsage    `json:"usage"`
+	StopReason string          `json:"stopReason"`
 }
 
 type summaryUsage struct {
@@ -58,6 +59,7 @@ type SessionSummary struct {
 	Filename           string
 	Project            string
 	LastActivity       string
+	LastCompletedAt    string `json:",omitempty"`
 	Name               string
 	MessageCount       int
 	TokenTotal         int
@@ -202,6 +204,10 @@ func applySummaryContext(s *SessionSummary, path, fileName, sessionInfoName, hea
 	}
 }
 
+func isCompletedReply(role, stopReason string) bool {
+	return role == "assistant" && (stopReason == "" || stopReason == "stop" || stopReason == "length")
+}
+
 // ParseSummary streams path line-by-line, accumulating only the fields the
 // index page needs. Lines are discarded after parsing — unlike ParseFile,
 // the full conversation is not retained in memory.
@@ -249,6 +255,9 @@ func ParseSummary(path, dirName, fileName string) (SessionSummary, error) {
 				continue
 			}
 			msg := raw.Message
+			if raw.Timestamp != "" && isCompletedReply(msg.Role, msg.StopReason) {
+				s.LastCompletedAt = raw.Timestamp
+			}
 			s.MessageCount++
 			s.TokenTotal += int(msg.Usage.TotalTokens)
 			s.CostTotal += msg.Usage.Cost.Total
@@ -551,10 +560,13 @@ func ParseFile(path, dirName, fileName string) (Session, error) {
 					}
 				}
 			}
-			if firstUserText == "" {
-				if role, _ := msg["role"].(string); role == "user" {
-					firstUserText = extractMessageText(msg["content"])
-				}
+			role, _ := msg["role"].(string)
+			stopReason, _ := msg["stopReason"].(string)
+			if ts, _ := raw["timestamp"].(string); ts != "" && isCompletedReply(role, stopReason) {
+				s.LastCompletedAt = ts
+			}
+			if firstUserText == "" && role == "user" {
+				firstUserText = extractMessageText(msg["content"])
 			}
 		case "model_change":
 			if ts, ok := raw["timestamp"].(string); ok {

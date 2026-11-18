@@ -176,6 +176,7 @@
     reloadTimer = setTimeout(() => {
       reloadTimer = null;
       refreshSessions({ preserveWindow: true });
+      if (mobile) homeRevision += 1;
     }, RELOAD_DEBOUNCE_MS);
   }
 
@@ -348,7 +349,10 @@
 
     const statusEvents = createStatusEvents({
       onSnapshot: (snapshot) => setRunningSessions(snapshot),
-      onDelta: (status) => setSessionRunning(status.id, status.running, status),
+      onDelta: (status) => {
+        setSessionRunning(status.id, status.running, status);
+        if (!status.running) scheduleReload();
+      },
       onMessage: (message) => {
         if (message === 'new-session') refreshHome();
         if (message === 'reload') scheduleReload();

@@ -749,6 +749,33 @@ func TestParseSummaryAccumulatesUsage(t *testing.T) {
 	}
 }
 
+func TestSessionSummaryTracksOnlyCompletedAssistantReplies(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	content := strings.Join([]string{
+		`{"type":"session","id":"test"}`,
+		`{"type":"message","timestamp":"2026-01-01T12:00:00Z","message":{"role":"assistant","stopReason":"stop"}}`,
+		`{"type":"message","timestamp":"2026-01-01T12:00:01Z","message":{"role":"assistant","stopReason":"toolUse"}}`,
+		`{"type":"message","timestamp":"2026-01-01T12:00:02Z","message":{"role":"assistant","stopReason":"error"}}`,
+		`{"type":"message","timestamp":"2026-01-01T12:00:03Z","message":{"role":"assistant","stopReason":"aborted"}}`,
+		`{"type":"message","timestamp":"2026-01-01T12:00:04Z","message":{"role":"user"}}`,
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := ParseSummary(path, "--proj--", "s.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := ParseFile(path, "--proj--", "s.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "2026-01-01T12:00:00Z"
+	if summary.LastCompletedAt != want || session.LastCompletedAt != want {
+		t.Errorf("completed reply time = %q from summary and %q from file, want %q", summary.LastCompletedAt, session.LastCompletedAt, want)
+	}
+}
+
 func TestParseSummaryTracksLatestModelInfo(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "s.jsonl")

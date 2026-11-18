@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { icon, ChevronRight, FolderGit2, Plus, Ellipsis, Trash2 } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import {
@@ -31,14 +31,14 @@
     ordinary ? t('mobile.ordinarySessions') : project.path.split('/').filter(Boolean).at(-1),
   );
 
-  async function load(append = false) {
+  async function load(append = false, limit = 20) {
     const request = ++generation;
     loading = true;
     error = '';
     try {
       const data = await defaultFetchSessions({
         project: project.path,
-        limit: 20,
+        limit,
         offset: append ? entries.length : 0,
       });
       if (request !== generation) return;
@@ -66,7 +66,7 @@
 
   $effect(() => {
     revision;
-    if (ready && expanded) load();
+    if (ready && expanded) untrack(() => load(false, Math.max(20, entries.length)));
   });
 
   onMount(() => {

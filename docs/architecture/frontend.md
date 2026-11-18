@@ -166,6 +166,9 @@ dedicated Mac workspace (configured default or the agent workspace folder),
 without asking the phone to pick a folder. The session header returns Home;
 the redundant mobile left drawer and session-creation/device shortcuts are
 hidden. Desktop keeps the existing sidebar and home composer.
+Session cards show a completion dot after a finished assistant reply. The dot
+survives reloads and clears when the conversation is viewed in the foreground.
+Read state is kept in the current browser.
 
 `trackVisualViewport` is installed once per document. The whole mobile session,
 model picker, sheets and BTW window use one height. A browser resize takes
@@ -184,8 +187,11 @@ browser history. Sheets unmount on close and never traverse history.
 Navigation clears the old view's input focus. The installed iOS app can
 recover a stationary single-finger tap when WebKit omits its native click.
 The fallback requires the same visible enabled control at touchdown and
-release and gives native clicks precedence. Vertical scrolling and
-multitouch gestures retain native handling.
+release and gives native clicks precedence. When WebKit returns an empty hit in
+the standalone viewport, the fallback can recover unambiguous Home, Settings,
+conversation and BTW controls. The standalone remote document uses the system's
+contained viewport and keeps scrolling inside the transcript. Vertical scroll
+and multitouch retain their native handling.
 
 `ImageModal` handles transcript/Markdown images and gallery images/SVGs in a
 native modal with an explicit close button, blank/letterbox dismissal, zoom and reset controls.

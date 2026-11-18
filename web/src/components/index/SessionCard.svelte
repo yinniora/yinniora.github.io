@@ -2,6 +2,7 @@
   import { openHub } from '../../shared/hub.js';
   import { icon, Ellipsis } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
+  import { hasUnseenCompletion } from '../../index/session-completions.js';
   import { handleNavClick } from '../../shared/navigation.js';
   import { prefetchSession } from '../../routes/session-prefetch.js';
   import {
@@ -18,6 +19,7 @@
   const modelLabel = $derived(formatRunningModel(runningStatus) || sessionModelLabel(session));
   const runningModel = $derived(running ? formatRunningModel(runningStatus) : '');
   const search = $derived(sessionSearchText(session));
+  const completed = $derived(!running && hasUnseenCompletion(session));
 
   // Start /api/session as soon as the user signals intent (hover or press), so
   // the response is usually back by the time SessionPage mounts. All three
@@ -43,6 +45,14 @@
     <div class="session-title-row">
       <div class="session-title">{title}</div>
       <div class="session-card-flags">
+        {#if completed}
+          <span
+            class="session-completion-dot"
+            role="img"
+            aria-label={t('common.done')}
+            title={t('common.done')}
+          ></span>
+        {/if}
         {#if !session.chatAvailable}
           <span
             class="session-card-badge"
@@ -83,6 +93,12 @@
   }
   .hub-card-wrap :global(.session-title-row) {
     padding-right: 38px;
+  }
+  .session-completion-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
   }
   .hub-card-menu {
     position: absolute;

@@ -85,6 +85,57 @@ test("leaving a running conversation isolates its completion from the next conve
   }
 });
 
+test("an unseen completed reply keeps its dot until the conversation is opened", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const cwd = realWorkingDir();
+  const { entries } = buildSession({ cwd });
+  const first = writeSession(
+    sessionsDir,
+    uniqueSessionName(testInfo, "completed"),
+    entries,
+  );
+  const second = writeSession(
+    sessionsDir,
+    uniqueSessionName(testInfo, "other"),
+    buildSession({ cwd }).entries,
+  );
+  await page.goto("/");
+  const card = (id: string) =>
+    page.locator(`.session-card[data-session-id="${id}"]`);
+  const dot = card(first).locator(".session-completion-dot");
+  await expect(card(first)).toBeVisible();
+  await expect(dot).toHaveCount(0);
+
+  const accepted = await page.evaluate(async (id) => {
+    const body = new FormData();
+    body.set("message", "Reply in the background [[slow:1500]]");
+    const response = await fetch("/api/chat?id=" + encodeURIComponent(id), {
+      method: "POST",
+      body,
+    });
+    return response.ok;
+  }, first);
+  expect(accepted).toBe(true);
+  await expect(dot).toHaveCount(0);
+  await expect(dot).toBeVisible({ timeout: 12000 });
+  await expect(card(second).locator(".session-completion-dot")).toHaveCount(0);
+
+  await page.reload();
+  await expect(dot).toBeVisible();
+  await card(first).click();
+  await expect(page.locator("#messages")).toContainText(
+    "Reply in the background",
+  );
+  await page.locator(".session-header-back").click();
+  await expect(card(first)).toBeVisible();
+  await expect(dot).toHaveCount(0);
+  await page.reload();
+  await expect(card(first)).toBeVisible();
+  await expect(dot).toHaveCount(0);
+});
+
 test("a stalled session stays navigable and can be retried in place", async ({
   page,
   sessionsDir,
@@ -580,6 +631,29 @@ test("installed app recovers a stationary touch when the browser omits click", a
   await expect(page.locator(settings)).toBeVisible();
   await tap(settings);
   await expect(page.locator(".settings-page")).toBeVisible();
+
+  // Simulate the device's other failure mode: the viewport reports no hit
+  // even though the controls are visible and receives touch at the root.
+  await page.goto(`/session?id=${encodeURIComponent(id)}`);
+  await expect(composer).toBeEditable();
+  await page.addStyleTag({
+    content: "#spa-root, #spa-root * { pointer-events: none !important; }",
+  });
+  await page.evaluate(() => {
+    document.elementFromPoint = () => null;
+  });
+  await tap("#pi-chat-message");
+  await expect(composer).toBeFocused();
+  await tap("#pi-btw-button");
+  await expect(popup).toBeVisible();
+  await tap(".session-header-back");
+  await expect(popup).toBeVisible();
+  await tap(".pi-btw-close");
+  await expect(popup).toBeHidden();
+  await tap(".session-header-back", true);
+  await expect(composer).toBeVisible();
+  await tap(".session-header-back");
+  await expect(page.locator(".mobile-home")).toBeVisible();
 });
 
 test("mobile images zoom independently and BTW explains itself before opening the keyboard", async ({

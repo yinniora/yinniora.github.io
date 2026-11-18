@@ -46,6 +46,9 @@ export function showTapDiagnostics() {
     if (node?.closest?.('dialog[open], [aria-modal="true"]')) return 'dialog';
     if (node?.closest?.('#content')) return 'transcript';
     if (node?.closest?.('#spa-root')) return 'workspace';
+    if (node === document.body) return 'body';
+    if (node === document.documentElement) return 'html';
+    if (node === document) return 'document';
     return node ? 'outside' : 'none';
   }
 
@@ -61,7 +64,10 @@ export function showTapDiagnostics() {
           const hit = Number.isFinite(point.clientX)
             ? labelFor(document.elementFromPoint(point.clientX, point.clientY))
             : '—';
-          last = type + '/' + labelFor(event.target) + '→' + hit;
+          const pointLabel = Number.isFinite(point.clientX)
+            ? `@${Math.round(point.clientX)},${Math.round(point.clientY)}`
+            : '';
+          last = type + '/' + labelFor(event.target) + '→' + hit + pointLabel;
         }
       },
       { capture: true, passive: true, signal: lifetime.signal },
@@ -87,7 +93,9 @@ export function showTapDiagnostics() {
     const elapsed = Math.floor((performance.now() - start) / 1000);
     const { touchstart, touchend, touchcancel, pointerdown, pointerup, click, focusin, scroll } =
       events;
-    panel.value = `Touch ${touchstart}/${touchend}/${touchcancel} · Pointer ${pointerdown}/${pointerup} · Click ${click}+${synthetic} · Focus ${focusin}\nScroll ${scroll} · JS ${elapsed}s · Error ${errors} · ${last}\nHit ${hit || '—'}`;
+    const { width, height, offsetTop } = window.visualViewport || {};
+    const dim = `${innerWidth}×${innerHeight} / ${Math.round(width || 0)}×${Math.round(height || 0)}+${Math.round(offsetTop || 0)}`;
+    panel.value = `Touch ${touchstart}/${touchend}/${touchcancel} · Pointer ${pointerdown}/${pointerup} · Click ${click}+${synthetic} · Focus ${focusin}\nScroll ${scroll} · JS ${elapsed}s · Error ${errors} · ${last}\nHit ${hit || '—'} · ${dim}`;
   }
   refresh();
   const interval = setInterval(refresh, 500);

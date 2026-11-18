@@ -13,6 +13,7 @@ export function normalizeSession(raw = {}) {
     sessionUUID: raw.sessionUUID || raw.SessionUUID || '',
     project: raw.project || raw.Project || '',
     lastActivity: raw.lastActivity || raw.LastActivity || '',
+    lastCompletedAt: raw.lastCompletedAt || raw.LastCompletedAt || '',
     name: raw.name || raw.Name || raw.id || raw.ID || '',
     messageCount: raw.messageCount ?? raw.MessageCount ?? 0,
     tokenTotal: raw.tokenTotal ?? raw.TokenTotal ?? 0,
