@@ -1203,3 +1203,58 @@ test("all phone routes keep the outer page fixed and disable page zoom", async (
     );
   }
 });
+
+test("composer switches effort on model change and sends a file using the attachment menu", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const { entries } = buildSession({ cwd: realWorkingDir() });
+  const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "composer"), entries);
+  await page.addInitScript(() => {
+    const fetchOriginal = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      switch (new URL(String(input), location.href).pathname) {
+        case "/api/models":
+          return Response.json({ models: [
+            { provider: "catalog", id: "parameter-model", reasoning: true, thinkingLevelMap: { off: null, minimal: null, medium: null } },
+            { provider: "catalog", id: "fixed-model-thinking", reasoning: false },
+          ] });
+        case "/api/set-model":
+          return Response.json({ ok: true });
+        case "/api/worker-status":
+          return Response.json({ state: "idle" });
+        default:
+          return fetchOriginal(input, init);
+      }
+    };
+  });
+  await collapseScratchpad(page);
+  await page.goto("/session?id=" + encodeURIComponent(id));
+  const effort = page.locator("#pi-chat-thinking-label");
+  await expect(effort).toBeHidden();
+  await page.locator("#pi-chat-model-label").click();
+  await page.locator('.model-item[data-model-id="parameter-model"]').click();
+  await expect(effort).toBeVisible();
+  await page.locator("#pi-chat-model-label").click();
+  await page.locator('.model-item[data-model-id="fixed-model-thinking"]').click();
+  await expect(effort).toBeHidden();
+
+  const permission = page.locator(".computer-permission summary");
+  await permission.click();
+  await expect(page.getByRole("button", { name: "Ask each time" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Off", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Off", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await permission.click();
+
+  await page.locator(".composer-add summary").click();
+  await expect(page.getByRole("button", { name: "Take a photo", exact: true })).toBeVisible();
+  await expect(page.locator("#pi-chat-camera")).toHaveAttribute("capture", "environment");
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Upload files", exact: true }).click();
+  await (await chooser).setFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("test notes") });
+  await expect(page.locator("#pi-chat-attachments")).toContainText("notes.txt");
+  const requested = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/chat");
+  await page.locator("#pi-chat-send").click();
+  expect((await requested).status()).toBe(202);
+  await expect(page.locator("#messages")).toContainText("notes.txt");
+});

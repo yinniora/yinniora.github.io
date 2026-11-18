@@ -124,6 +124,15 @@
     hidden
     disabled={!chatAvailable}
   />
+  <input
+    id="pi-chat-camera"
+    type="file"
+    accept="image/*"
+    capture="environment"
+    hidden
+    disabled={!chatAvailable}
+  />
+  <input id="pi-chat-files" type="file" multiple hidden disabled={!chatAvailable} />
   <QueuePanel store={queueStore} />
   <div class="pi-chat-shell">
     <ChatExpandButton {chatAvailable} />
@@ -141,7 +150,7 @@
     ></textarea>
     <div id="pi-chat-attachments" class="pi-chat-attachments"></div>
     <ChatSelectorPopups />
-    <ChatToolbar {chatAvailable} {toolbar} {modelLabel} />
+    <ChatToolbar {chatAvailable} {toolbar} {modelLabel} {sessionId} />
     <ContextUsage popover />
   </div>
   <TextAttachmentModal />

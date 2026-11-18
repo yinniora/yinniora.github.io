@@ -219,7 +219,7 @@ export function setupModelSelector({
       function updateToggleFromStatus(provider, modelId) {
         if (!provider || !modelId) return;
         const model = findModel(allModels, provider, modelId);
-        if (model) setSelected(model);
+        setSelected(model || null);
       }
       setWorkerModelUpdate(updateToggleFromStatus);
       const detected = detectCurrentModel(entries);

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,6 +39,8 @@ type piRPCWorker struct {
 	lastStreamActivity   atomic.Int64 // unix nanos; stream/turn events keep worker visually running
 	streamSink           StreamEventSink
 	streamPreview        *streamPreviewAccumulator
+	computerMode         func() string
+	computerRequests     map[string]workers.ComputerRequest
 }
 
 func (w *piRPCWorker) touch() {
@@ -107,11 +110,15 @@ func sessionHeaderCWD(sessionPath string) string {
 	return strings.TrimSpace(hdr.CWD)
 }
 
-func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink) (workers.ChatWorker, error) {
+func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink, guardPath string, computerMode func() string) (workers.ChatWorker, error) {
 	if _, err := exec.LookPath("pi"); err != nil {
 		return nil, fmt.Errorf("pi executable not found: %w", err)
 	}
-	cmd := exec.Command("pi", "--mode", "rpc")
+	args := []string{"--mode", "rpc"}
+	if guardPath != "" {
+		args = append(args, "-e", guardPath)
+	}
+	cmd := exec.Command("pi", args...)
 	cmd.Dir = workerDir(sessionPath)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -132,6 +139,7 @@ func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink) (work
 		pending:       make(map[string]chan response),
 		stderrBuf:     &stderrBuf,
 		streamSink:    streamSink,
+		computerMode:  computerMode,
 		streamPreview: &streamPreviewAccumulator{},
 	}
 	if err := cmd.Start(); err != nil {
@@ -144,6 +152,15 @@ func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink) (work
 	if err := worker.switchSession(ctx); err != nil {
 		_ = worker.Close()
 		return nil, err
+	}
+	if guardPath != "" {
+		commands, err := worker.GetCommands(ctx)
+		if err != nil || !slices.ContainsFunc(commands, func(c workers.SlashCommand) bool {
+			return c.Name == "yugo-computer-guard-ready" && c.Source == "extension"
+		}) {
+			_ = worker.Close()
+			return nil, errors.New("computer approval extension failed to load")
+		}
 	}
 	// Best-effort: refresh model/thinking-level from pi so a respawned worker
 	// doesn't show stale defaults after the in-memory cache was lost on reap.
@@ -451,6 +468,10 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		return
 	}
 	switch meta.Type {
+	case "extension_ui_request":
+		if w.computerMode != nil {
+			w.handleComputerApproval(line)
+		}
 	case "response":
 		var res response
 		if err := json.Unmarshal([]byte(line), &res); err != nil {
@@ -483,6 +504,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		w.completeStreamPreview()
 		w.mu.Lock()
 		w.status = workers.WorkerStatus{State: workers.WorkerStateIdle}
+		clear(w.computerRequests)
 		w.mu.Unlock()
 		w.lastStreamActivity.Store(0)
 	case "thinking_level_changed":

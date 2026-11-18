@@ -273,6 +273,7 @@ func initDB(agentDir string) (*sql.DB, error) {
 		stmt string
 	}{
 		{"session trash table", sessionTrashSchema},
+		{"session computer mode table", computerModeSchema},
 		{"scratchpads table", `CREATE TABLE IF NOT EXISTS scratchpads (
 			project_path TEXT PRIMARY KEY,
 			content TEXT,
@@ -376,6 +377,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/model-settings", s.auth.Wrap(s.handleModelSettings))
 	mux.HandleFunc("/api/plugins", s.auth.Wrap(s.handlePlugins))
 	mux.HandleFunc("/api/set-thinking-level", s.auth.Wrap(s.visibleSession(s.handleSetThinkingLevel)))
+	mux.HandleFunc("/api/computer-use", s.auth.Wrap(s.visibleSession(s.handleComputerUse)))
 	mux.HandleFunc("/api/models", s.auth.Wrap(s.visibleSession(s.handleAvailableModels)))
 	mux.HandleFunc("/api/worker-status", s.auth.Wrap(s.visibleSession(s.handleWorkerStatus)))
 	mux.HandleFunc("/api/commands", s.auth.Wrap(s.visibleSession(s.handleCommands)))

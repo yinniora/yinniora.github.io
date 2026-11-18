@@ -12,6 +12,7 @@ export function setupAttachmentManager({
   windowImpl = window,
   textarea,
   fileInput,
+  extraInputs = [],
   attachButton,
   attachmentList,
   updateSendEnabled = () => {},
@@ -148,10 +149,12 @@ export function setupAttachmentManager({
   }
 
   attachButton?.addEventListener('click', () => fileInput?.click());
-  fileInput?.addEventListener('change', () => {
-    addFiles(fileInput.files || []);
-    fileInput.value = '';
-  });
+  for (const input of [fileInput, ...extraInputs].filter(Boolean)) {
+    input.addEventListener('change', () => {
+      addFiles(input.files || []);
+      input.value = '';
+    });
+  }
 
   textarea?.addEventListener('paste', (event) => {
     const data = event.clipboardData;

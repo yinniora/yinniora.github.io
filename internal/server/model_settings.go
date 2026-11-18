@@ -131,10 +131,13 @@ func configuredModels(p map[string]any) []map[string]any {
 
 func publicModel(m map[string]any, provider, label string) map[string]any {
 	result := map[string]any{"provider": provider, "providerLabel": label, "id": m["id"], "name": m["id"], "input": []string{"text"}, "reasoning": false, "contextWindow": 128000, "maxTokens": 8192}
-	for _, key := range []string{"name", "input", "reasoning", "contextWindow", "maxTokens", "thinkingLevelMap", "cost", "api"} {
+	for _, key := range []string{"name", "input", "reasoning", "contextWindow", "maxTokens", "thinkingLevelMap", "cost", "api", "supportsTools"} {
 		if value, ok := m[key]; ok {
 			result[key] = value
 		}
+	}
+	if id, ok := m["id"].(string); ok && fixedThinkingAlias.MatchString(id) {
+		result["reasoning"] = false
 	}
 	return result
 }
@@ -170,8 +173,15 @@ func (s *Server) modelProfiles(providers map[string]any) []modelProfile {
 		row.Available = append(row.Available, row.Applied...)
 		if catalog, ok := s.modelCatalogs[id]; ok && catalog.Signature == profileSignature(p, key) {
 			row.Available = []map[string]any{}
+			toolsByID := map[string]bool{}
 			for _, m := range catalog.Models {
 				row.Available = append(row.Available, publicModel(m, id, label))
+				toolsByID[m["id"].(string)] = m["supportsTools"] == true
+			}
+			for _, m := range row.Applied {
+				if modelID, ok := m["id"].(string); ok && toolsByID[modelID] {
+					m["supportsTools"] = true
+				}
 			}
 		}
 		profiles = append(profiles, row)
@@ -205,6 +215,10 @@ func modelBaseURL(raw, api string) (*url.URL, error) {
 
 func (s *Server) discoverModels(ctx context.Context, p map[string]any, key string) ([]map[string]any, error) {
 	api, _ := p["api"].(string)
+	modelAPI, _ := p["catalogFallbackAPI"].(string)
+	if modelAPI == "" {
+		modelAPI = api
+	}
 	base, _ := p["baseUrl"].(string)
 	u, err := modelBaseURL(base, api)
 	if err != nil {
@@ -278,6 +292,7 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 			}
 			seen[id] = true
 			m := map[string]any{"id": id, "name": id}
+			describeCatalogModel(m, raw, id, modelAPI, base)
 			for _, field := range []string{"display_name", "displayName"} {
 				if name, ok := raw[field].(string); ok && len(name) <= 512 && !strings.Contains(name, key) {
 					m["name"] = name
@@ -459,22 +474,40 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 	case "add":
 		request.Label = strings.TrimSpace(request.Label)
 		request.Key = strings.TrimSpace(request.Key)
-		u, e := modelBaseURL(request.BaseURL, request.API)
-		if e != nil {
-			writeJSONError(w, 400, e.Error())
-			return
-		}
 		if request.Label == "" || len(request.Label) > 100 || request.Key == "" || len(request.Key) > 8192 || strings.ContainsAny(request.Key, "\r\n\x00") {
 			writeJSONError(w, 400, "a label and valid API key are required")
 			return
 		}
 		var random [12]byte
-		if _, e = rand.Read(random[:]); e != nil {
+		if _, e := rand.Read(random[:]); e != nil {
 			writeJSONError(w, 500, "cannot create profile")
 			return
 		}
 		id := "yugo-" + hex.EncodeToString(random[:])
-		providers[id] = map[string]any{"name": request.Label, "baseUrl": u.String(), "api": request.API, "apiKey": literalModelKey(request.Key), "models": []any{}}
+		var models []map[string]any
+		var u *url.URL
+		var e error
+		if request.API == "" || request.API == "auto" {
+			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+			s.modelConfigMu.Unlock()
+			u, request.API, models, e = s.detectModelProtocol(ctx, strings.TrimSpace(request.BaseURL), request.Key)
+			cancel()
+			s.modelConfigMu.Lock()
+		} else {
+			u, e = modelBaseURL(request.BaseURL, request.API)
+		}
+		if e != nil {
+			writeJSONError(w, 400, e.Error())
+			return
+		}
+		profile := map[string]any{"name": request.Label, "baseUrl": u.String(), "api": request.API, "apiKey": literalModelKey(request.Key), "models": []any{}}
+		providers[id] = profile
+		if models != nil {
+			if s.modelCatalogs == nil {
+				s.modelCatalogs = make(map[string]modelCatalog)
+			}
+			s.modelCatalogs[id] = modelCatalog{Signature: profileSignature(profile, request.Key), Models: models}
+		}
 	case "refresh":
 		if p == nil {
 			writeJSONError(w, 404, "key profile not found")
@@ -489,13 +522,22 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		signature := profileSignature(p, key)
 		s.modelConfigMu.Unlock()
-		models, e := s.discoverModels(ctx, p, key)
+		var models []map[string]any
+		if p["api"] == apiAnthropic {
+			// Some dual-protocol services only attach capability metadata to
+			// their Bearer catalog. Keep the saved execution API as fallback.
+			models, _ = s.discoverModels(ctx, map[string]any{"api": apiChat, "baseUrl": p["baseUrl"], "catalogFallbackAPI": apiAnthropic}, key)
+		}
+		var e error
+		if models == nil {
+			models, e = s.discoverModels(ctx, p, key)
+		}
 		s.modelConfigMu.Lock()
 		if e != nil {
 			writeJSONError(w, 400, e.Error())
 			return
 		}
-		_, providers, revision, e = readModelConfig(s.agentDir)
+		config, providers, revision, e = readModelConfig(s.agentDir)
 		current, _ := providers[request.ID].(map[string]any)
 		if e != nil || current == nil || profileSignature(current, s.modelProfileKey(request.ID, current)) != signature {
 			writeJSONError(w, 409, "model configuration changed; refresh again")
@@ -505,6 +547,41 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			s.modelCatalogs = map[string]modelCatalog{}
 		}
 		s.modelCatalogs[request.ID] = modelCatalog{Signature: signature, Models: models}
+		detected := map[string]map[string]any{}
+		for _, m := range models {
+			detected[m["id"].(string)] = m
+		}
+		changed := false
+		for _, m := range configuredModels(current) {
+			id, _ := m["id"].(string)
+			detection := detected[id]
+			// Refresh can enable confirmed capability on existing model records
+			// when the request protocol stays the same.
+			actual, _ := m["api"].(string)
+			if actual == "" {
+				actual, _ = current["api"].(string)
+			}
+			if detection["reasoning"] != true || detection["api"] != actual || m["reasoning"] == true {
+				continue
+			}
+			m["reasoning"] = true
+			for _, field := range []string{"compat", "thinkingLevelMap"} {
+				if m[field] == nil && detection[field] != nil {
+					m[field] = detection[field]
+				}
+			}
+			changed = true
+		}
+		if changed {
+			if e := writeModelConfig(s.agentDir, config); e != nil {
+				writeJSONError(w, 500, "could not update model capabilities")
+				return
+			}
+			if manager, ok := s.chatSender.(interface{ ModelsChanged() }); ok {
+				manager.ModelsChanged()
+			}
+			_, _, revision, _ = readModelConfig(s.agentDir)
+		}
 		writeJSON(w, 200, map[string]any{"profiles": s.modelProfiles(providers), "revision": revision})
 		return
 	case "apply":
@@ -547,11 +624,16 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			for k, v := range m {
 				next[k] = v
 			}
-			next["input"] = []string{"text"}
+			delete(next, "supportsTools")
+			if next["input"] == nil {
+				next["input"] = []string{"text"}
+			}
 			if request.Vision {
 				next["input"] = []string{"text", "image"}
 			}
-			next["reasoning"] = request.Reasoning
+			if next["reasoning"] != true {
+				next["reasoning"] = request.Reasoning && !fixedThinkingAlias.MatchString(id)
+			}
 			if request.ContextWindow > 0 {
 				next["contextWindow"] = request.ContextWindow
 			}

@@ -1,7 +1,7 @@
 // Live-only DOM/runtime glue for the chat composer, extracted from
 // ChatComposer.svelte so the component stays declarative. Kept DI-friendly so
 // tests can drive it directly and inject selector implementations.
-import { THINKING_LEVELS } from '../../../session/chat/chat-selectors.js';
+import { THINKING_LEVELS, supportedThinkingLevels } from '../../../session/chat/chat-selectors.js';
 import { setupModelSelector } from './model-selector.js';
 import { setupThinkingLevelSelector } from './thinking-selector.js';
 import { setupSlashCommands } from './slash-command.js';
@@ -111,6 +111,10 @@ export function runChatComposer({
     getKnownModelLabel: toolbar.getKnownModelLabel,
     setCurrentModelForThinking: (model) => {
       currentModelForThinking = model;
+      toolbar.selectedModel = model;
+      toolbar.canAdjustThinking = Boolean(
+        model?.reasoning && supportedThinkingLevels(model).length > 1,
+      );
     },
     setWorkerModelUpdate: (handler) => {
       onWorkerModelUpdate = handler;
@@ -159,6 +163,10 @@ export function runChatComposer({
       windowImpl: window,
       textarea,
       fileInput,
+      extraInputs: [
+        document.getElementById('pi-chat-camera'),
+        document.getElementById('pi-chat-files'),
+      ],
       attachButton,
       attachmentList,
       updateSendEnabled,

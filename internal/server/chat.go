@@ -44,7 +44,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, chat.ErrEmptyRequest):
 			writeJSONError(w, http.StatusBadRequest, err.Error())
-		case errors.Is(err, chat.ErrImageTooLarge):
+		case errors.Is(err, chat.ErrImageTooLarge), errors.Is(err, chat.ErrFileTooLarge):
 			writeJSONError(w, http.StatusRequestEntityTooLarge, err.Error())
 		case errors.Is(err, chat.ErrUnsupportedImageType):
 			writeJSONError(w, http.StatusUnsupportedMediaType, err.Error())
@@ -61,11 +61,19 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := resolved.Session.ID
 	sessionPath := resolved.Path
+	uploadDir, err := s.saveChatFiles(sessionID, &chatReq)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not save attached files")
+		return
+	}
 	if !s.startTask(func(ctx context.Context) {
 		if err := s.chatSender.Send(ctx, sessionID, sessionPath, chatReq); err != nil && !errors.Is(err, context.Canceled) {
 			fmt.Fprintf(os.Stderr, "chat send failed for %s: %v\n", sessionID, err)
 		}
 	}) {
+		if uploadDir != "" {
+			_ = os.RemoveAll(uploadDir)
+		}
 		writeJSONError(w, http.StatusServiceUnavailable, "server is shutting down")
 		return
 	}

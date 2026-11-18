@@ -26,6 +26,9 @@ const COMMANDS = [
   { name: "workon", description: "Start working on a task", source: "prompt" },
   { name: "skill:memory", description: "Project memory skill", source: "skill" },
 ];
+if (process.argv.includes("-e")) {
+  COMMANDS.push({ name: "yugo-computer-guard-ready", source: "extension" });
+}
 
 function send(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");

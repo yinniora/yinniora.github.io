@@ -40,7 +40,10 @@ export function setupChatSubmission({
     }
     const body = new FormDataImpl();
     body.set('message', message);
-    for (const file of files) body.append('images', file);
+    for (const file of files) {
+      const image = /^image\/(png|jpeg|webp|gif)$/i.test(file.type);
+      body.append(image ? 'images' : 'files', file);
+    }
     sendButton.dataset.sending = '1';
     sendButton.disabled = true;
     setStatus('sending', 'running');

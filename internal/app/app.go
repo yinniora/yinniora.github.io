@@ -142,11 +142,20 @@ func Main(version string) {
 		}
 	}
 	var srv *server.Server
+	guardPath, guardErr := rpc.InstallComputerGuard(agentdir.WebDir(agentDir))
 	manager := workers.NewManager(func(sessionID, sessionPath string) (workers.ChatWorker, error) {
+		if guardErr != nil {
+			return nil, fmt.Errorf("cannot load computer guard: %w", guardErr)
+		}
 		return rpc.NewPiWorkerWithStream(sessionPath, func(preview rpc.StreamPreview) {
 			if srv != nil {
 				srv.BroadcastChatPreview(sessionID, preview)
 			}
+		}, guardPath, func() string {
+			if srv == nil {
+				return "ask"
+			}
+			return srv.ComputerMode(sessionID)
 		})
 	})
 	var srvErr error

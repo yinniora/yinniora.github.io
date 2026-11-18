@@ -235,12 +235,23 @@ a different future official commit shows a new reminder.
 
 Settings → Models is shared by desktop and mobile. `ModelSettings` groups keys
 by user labels, refreshes one provider at a time, allows searching and selecting
-multiple models, then explicitly applies them. The applied list groups models by
-the saved API key label. Applied models have independent
-remove controls and optional new-model context/output, image and thinking settings.
+multiple models, then explicitly applies them. The backend detects API format from
+the catalog and keeps model IDs intact. Advertised effort capability and available
+levels drive the conversation effort picker. Fixed-effort aliases and models with
+unknown capability stay selectable with the effort picker hidden. The applied list
+groups models by key label and offers per-model removal plus context, output and
+image input options when applying models.
 The selected key can be removed after confirmation. This also removes its
 applied models and saved API credential from the Mac's Pi configuration.
 Conversation history is retained. Idle workers reload after deletion, and
 active replies finish with their original configuration.
 Key entry uses a password field, is cleared after save, and never uses browser
 storage. The conversation picker refreshes on opening and displays provider labels.
+
+The composer attachment menu opens file selection, the photo library, or the
+camera. Supported image formats enter Pi's image input. Other files are saved
+to a private host directory and referenced by path in the message. The computer
+control menu shows tool registration and any provider-advertised model capability.
+The server stores the computer-tool approval mode by session ID. A worker-side
+Pi extension gates computer actions and routes individual requests through the
+authenticated session API. Approvals expire and can be answered once.

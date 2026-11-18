@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta
@@ -33,9 +33,48 @@
       #remote-status:has(+ #spa-root:not(:empty)) {
         display: none;
       }
-      #remote-status h1 {
-        font-size: 28px;
-        font-weight: 600;
+      .yugo-boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 16px;
+        background: var(--body-bg, #f6f7fa);
+        color: var(--text, #1f2937);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme]) .yugo-boot {
+          background: #171a21;
+          color: #edf1f7;
+        }
+      }
+      .yugo-boot strong {
+        font-size: 24px;
+        font-weight: 640;
+        letter-spacing: -0.04em;
+      }
+      .yugo-boot i {
+        width: 27px;
+        height: 3px;
+        border-radius: 4px;
+        background: currentColor;
+        opacity: 0.45;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .yugo-boot i {
+          animation: yugo-start 1s ease-in-out infinite alternate;
+        }
+      }
+      @keyframes yugo-start {
+        from {
+          transform: scaleX(0.4);
+          opacity: 0.28;
+        }
+        to {
+          transform: scaleX(1.5);
+          opacity: 0.8;
+        }
       }
       #remote-status p {
         color: var(--text-soft, #52525b);
@@ -48,8 +87,10 @@
   </head>
   <body>
     <main id="remote-status">
-      <h1>YuGo Pi</h1>
-      <p>Preparing a secure connection…</p>
+      <div class="yugo-boot" role="status">
+        <img src="/icon.svg" width="64" height="64" alt="" />
+        <strong>YuGo Pi</strong><i aria-hidden="true"></i>
+      </div>
     </main>
     <div id="spa-root"></div>
     <script type="module" src="/src/remote-entry.js"></script>

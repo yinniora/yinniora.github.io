@@ -18,6 +18,8 @@ export class ChatToolbarState {
   statusClass = $state('');
   modelLabel = $state('');
   thinkingLevel = $state('');
+  canAdjustThinking = $state(false);
+  selectedModel = $state(null);
   knownModelLabel = $state('');
   knownThinkingLevel = $state('');
 

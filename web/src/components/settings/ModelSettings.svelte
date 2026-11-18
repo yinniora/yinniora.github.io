@@ -13,11 +13,9 @@
     label = $state(''),
     baseUrl = $state(''),
     key = $state('');
-  let api = $state('openai-completions'),
-    query = $state(''),
+  let query = $state(''),
     selected = $state([]);
   let vision = $state(false),
-    reasoning = $state(false),
     contextWindow = $state(128000),
     maxTokens = $state(8192);
   const prefix = $props.id();
@@ -81,7 +79,7 @@
   async function add(event) {
     event.preventDefault();
     const previous = new Set(profiles.map((p) => p.id));
-    const data = await action({ action: 'add', label, baseUrl, api, key });
+    const data = await action({ action: 'add', label, baseUrl, api: 'auto', key });
     if (data) {
       activeID = data.profiles.find((p) => !previous.has(p.id))?.id || activeID;
       key = '';
@@ -101,7 +99,6 @@
         id: activeID,
         modelIds: selected,
         vision,
-        reasoning,
         contextWindow,
         maxTokens,
       })
@@ -149,16 +146,6 @@
         maxlength="100"
         disabled={busy}
       />
-      <label for={prefix + '-api'}>{t('models.protocol')}</label><select
-        id={prefix + '-api'}
-        bind:value={api}
-        disabled={busy}
-      >
-        <option value="openai-completions">{t('models.openaiCompatible')}</option>
-        <option value="openai-responses">{t('models.openaiResponses')}</option>
-        <option value="anthropic-messages">{t('models.anthropic')}</option>
-        <option value="google-generative-ai">{t('models.gemini')}</option>
-      </select>
       <label for={prefix + '-url'}>{t('models.baseUrl')}</label><input
         id={prefix + '-url'}
         type="url"
@@ -179,7 +166,7 @@
         autocapitalize="none"
         spellcheck={false}
       />
-      <p>{t('models.keyPrivacy')}</p>
+      <p>{t('models.autoProtocol')} {t('models.keyPrivacy')}</p>
       <button
         type="submit"
         class="primary"
@@ -274,11 +261,6 @@
                 'models.vision',
               )}</label
             >
-            <label
-              ><input type="checkbox" bind:checked={reasoning} disabled={busy} />{t(
-                'models.reasoning',
-              )}</label
-            >
             <label for={prefix + '-context'}
               >{t('models.contextWindow')}<input
                 id={prefix + '-context'}
@@ -357,8 +339,7 @@
     margin: 8px 0;
   }
   button,
-  input,
-  select {
+  input {
     font: inherit;
     box-sizing: border-box;
   }
@@ -379,8 +360,7 @@
     background: var(--text);
     color: var(--body-bg);
   }
-  input:not([type='checkbox']),
-  select {
+  input:not([type='checkbox']) {
     width: 100%;
     min-width: 0;
     padding: 10px;

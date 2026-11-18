@@ -967,9 +967,6 @@
     max-width: 160px;
     font-size: 10px;
   }
-  #spa-root .pi-chat-thinking-label {
-    display: none;
-  }
   #spa-root .pi-chat-toolbar {
     flex-wrap: nowrap;
   }

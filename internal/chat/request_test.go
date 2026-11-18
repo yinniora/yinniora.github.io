@@ -77,3 +77,11 @@ func TestParseChatRequestRejectsOversizedImage(t *testing.T) {
 		t.Fatalf("err = %v, want ErrImageTooLarge", err)
 	}
 }
+
+func TestParseFileOnlyRequest(t *testing.T) {
+	request := multipartRequest(t, "", map[string]testUpload{"files": {"notes.txt", "notes"}})
+	result, err := ParseRequest(request, 1024, 4096)
+	if err != nil || result.Message != "" || len(result.Files) != 1 || result.Files[0].Name != "notes.txt" || string(result.Files[0].Data) != "notes" {
+		t.Fatalf("file only request: %+v, %v", result, err)
+	}
+}

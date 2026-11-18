@@ -1,6 +1,14 @@
 {{.LiveDocumentStart}}
 {{.ThemeBoot}}
 {{.Bootstrap}}
+<style>
+  .yugo-boot{position:fixed;inset:0;display:grid;place-content:center;justify-items:center;gap:16px;background:var(--body-bg,#f6f7fa);color:var(--text,#1f2937);font:640 24px system-ui;letter-spacing:-.04em}
+  .yugo-boot:has(+ #spa-root:not(:empty)){display:none}
+  .yugo-boot i{width:27px;height:3px;border-radius:4px;background:currentColor;opacity:.45}
+  @media(prefers-reduced-motion:no-preference){.yugo-boot i{animation:yugo-start 1s ease-in-out infinite alternate}}
+  @keyframes yugo-start{from{transform:scaleX(.4);opacity:.28}to{transform:scaleX(1.5);opacity:.8}}
+</style>
+<div class="yugo-boot" role="status"><img src="/icon.svg" width="64" height="64" alt=""><strong>YuGo Pi</strong><i aria-hidden="true"></i></div>
 <div id="spa-root"></div>
 {{.AppScript}}
 {{.ServiceWorker}}
