@@ -542,6 +542,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		Type       string                `json:"type"`
 		Level      string                `json:"level"`
 		ToolCallID string                `json:"toolCallId"`
+		ToolName   string                `json:"toolName"`
 		Message    struct{ Role string } `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(line), &meta); err != nil {
@@ -584,7 +585,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		w.noteStreamActivity()
 	case "tool_execution_start", "tool_execution_end":
 		w.noteStreamActivity()
-		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type, ToolCallID: meta.ToolCallID})
+		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type, ToolCallID: meta.ToolCallID, ToolName: meta.ToolName})
 	case "agent_start":
 		w.mu.Lock()
 		w.agentRevision++

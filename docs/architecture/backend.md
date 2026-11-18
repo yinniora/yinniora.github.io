@@ -34,6 +34,13 @@ response sizes. HTTPS is required except on loopback; redirects never receive
 keys. Error responses do not include upstream response bodies. Refresh is a
 read-only model listing, not an inference request, and does not apply models.
 
+`/api/model-balances` reads New API token quota and OpenRouter key limits using
+the corresponding saved credentials on the Mac. Only the balance state and
+formatted amount inputs reach clients. A balance is bounded by both account and
+key quotas when both are available. Currency conversion uses the gateway's
+published units and exchange rate. Unlimited keys without account data are
+reported separately. Lookup results are cached briefly by credential signature.
+
 `/api/models` overlays canonical custom definitions on the Pi cache,
 omits removed models and strips private headers. Worker configuration generations
 reload an idle process on its next model selection; active replies remain intact.
@@ -342,6 +349,11 @@ release a command-only run without waiting for a model turn.
 Generic extension dialogs have a per-worker expiry, validate replies against
 the specific pending prompt, and travel over existing authenticated session
 routes. Reserved computer approval prompts keep their separate policy.
+The RPC worker's bundled extension supplies Pi's native 300-second timeout to
+`bash` and `powershell` calls that omit one. Explicit timeout arguments pass
+through unchanged. Pi cancels the shell process on timeout and returns the
+captured output and error to the existing turn. This policy applies to the
+shell tool calls in YuGo sessions.
 `/api/project-folders` uses an account-home filesystem root for both listing
 and creating a single child folder.
 

@@ -25,7 +25,6 @@
     return null;
   });
   const result = $derived(resultEntry?.message || null);
-  const statusClass = $derived(result ? (result.isError ? 'error' : 'success') : 'pending');
   const args = $derived(call.arguments || {});
 
   const resultText = $derived(
@@ -36,6 +35,15 @@
           .join('\n')
       : '',
   );
+  // Pi appends its own timeout status after any captured command output.
+  const timedOut = $derived(
+    result?.isError &&
+      ['bash', 'powershell'].includes(call.name) &&
+      /(?:^|\n\n)Command timed out after \d+(?:\.\d+)?(?:e[+-]?\d+)? seconds(?:\. The shell exited[^\n]*)?\s*$/.test(
+        resultText,
+      ),
+  );
+  const statusClass = $derived(result ? (result.isError ? 'error' : 'success') : 'pending');
   const resultImages = $derived(result ? result.content.filter((c) => c.type === 'image') : []);
   const rendered = $derived(model?.renderedTools?.[call.id] || null);
 
@@ -171,7 +179,7 @@
     id={`tool:${call.id}`}
     label={call.name}
     summary={filePath || str(args.command) || ''}
-    status={statusClass}
+    status={timedOut ? 'timeout' : statusClass}
     required={!result &&
       ['ask_user_question', 'pi_web_ask_user_question', 'ask_question'].includes(call.name)}
   >

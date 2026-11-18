@@ -3,6 +3,7 @@ package rpc
 import (
 	"strings"
 	"sync/atomic"
+	"time"
 	"unicode/utf8"
 
 	"pi-web/internal/workers"
@@ -17,6 +18,7 @@ type assistantMessageEvent struct {
 	Content      string `json:"content"`
 	ContentIndex int    `json:"contentIndex"`
 	ToolCallID   string `json:"toolCallId"`
+	ToolName     string `json:"toolName"`
 }
 
 var previewRevision atomic.Uint64
@@ -59,15 +61,33 @@ type streamPreviewAccumulator struct {
 	content, thinking previewText
 	phase             string
 	revision          uint64
-	tools             map[string]struct{}
+	tools             map[string]runningTool
+}
+
+type runningTool struct {
+	name      string
+	startedAt time.Time
 }
 
 func (a *streamPreviewAccumulator) snapshot() StreamPreview {
-	return StreamPreview{
+	preview := StreamPreview{
 		Content:  previewTail(a.content.previous + a.content.current),
 		Thinking: previewTail(a.thinking.previous + a.thinking.current),
 		Phase:    a.phase, Revision: a.revision,
 	}
+	if a.phase == "tool" {
+		var oldest runningTool
+		for _, tool := range a.tools {
+			if oldest.startedAt.IsZero() || tool.startedAt.Before(oldest.startedAt) {
+				oldest = tool
+			}
+		}
+		if !oldest.startedAt.IsZero() {
+			preview.ToolName = oldest.name
+			preview.ToolElapsedMs = time.Since(oldest.startedAt).Milliseconds()
+		}
+	}
+	return preview
 }
 
 func (a *streamPreviewAccumulator) handleAssistantEvent(event assistantMessageEvent) (StreamPreview, bool) {
@@ -82,9 +102,9 @@ func (a *streamPreviewAccumulator) handleAssistantEvent(event assistantMessageEv
 		a.phase = "reply"
 	case "tool_execution_start":
 		if a.tools == nil {
-			a.tools = make(map[string]struct{})
+			a.tools = make(map[string]runningTool)
 		}
-		a.tools[event.ToolCallID] = struct{}{}
+		a.tools[event.ToolCallID] = runningTool{name: event.ToolName, startedAt: time.Now()}
 		a.phase = "tool"
 	case "tool_execution_end":
 		if _, active := a.tools[event.ToolCallID]; !active {
@@ -99,7 +119,9 @@ func (a *streamPreviewAccumulator) handleAssistantEvent(event assistantMessageEv
 			return StreamPreview{}, false
 		}
 		a.content, a.thinking = previewText{}, previewText{}
-		a.phase = "working"
+		if len(a.tools) == 0 {
+			a.phase = "working"
+		}
 	case "agent_end":
 		return a.complete()
 	default:
@@ -118,6 +140,7 @@ func (a *streamPreviewAccumulator) complete() (StreamPreview, bool) {
 	preview := a.snapshot()
 	*a = streamPreviewAccumulator{}
 	preview.Phase = ""
+	preview.ToolName, preview.ToolElapsedMs = "", 0
 	preview.Revision = previewRevision.Add(1)
 	preview.Done = true
 	return preview, true

@@ -89,7 +89,7 @@ describe('session-page-data', () => {
     expect(seen).toEqual(['/api/session?id=s.jsonl&paginate=1']);
   });
 
-  it('uses the embedded bootstrap payload without fetching', async () => {
+  it('uses the embedded bootstrap once and fetches fresh data when reopening the session', async () => {
     const b64utf8 = (value) => Buffer.from(value, 'utf8').toString('base64');
     const bootstrap = b64utf8(
       JSON.stringify({
@@ -105,13 +105,14 @@ describe('session-page-data', () => {
         scratchpad: 'notes',
       }),
     );
+    const element = { textContent: bootstrap };
     const documentImpl = {
-      getElementById: (id) => (id === 'pi-session-bootstrap' ? { textContent: bootstrap } : null),
+      getElementById: (id) => (id === 'pi-session-bootstrap' ? element : null),
     };
     let fetched = false;
     const fetchImpl = async () => {
       fetched = true;
-      throw new Error('should not fetch when bootstrap is present');
+      return new Response(JSON.stringify({ name: 'Fresh transcript', entries: [] }));
     };
 
     const state = await loadSessionPageState({
@@ -125,6 +126,13 @@ describe('session-page-data', () => {
     expect(state.title).toBe('Embedded');
     expect(state.scratchpad).toBe('notes');
     expect(state.modelLabel).toBe('haiku @ anthropic');
+    const reopened = await loadSessionPageState({
+      locationSearch: '?id=s.jsonl',
+      fetchImpl,
+      btoaImpl,
+      documentImpl,
+    });
+    expect(reopened.title).toBe('Fresh transcript');
   });
 
   it('reuses a prefetched /api/session payload instead of fetching again', async () => {

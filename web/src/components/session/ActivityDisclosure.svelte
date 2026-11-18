@@ -1,8 +1,15 @@
 <script>
-  import { icon, ChevronRight, Loader, Check, X } from '../../shared/icons.js';
+  import { icon, ChevronRight, Clock, Loader, Check, X } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { sessionRuntime } from '../../session/session-runtime.js';
   let { kind, id, label, summary = '', status = '', required = false, children } = $props();
+  const indicators = {
+    pending: { glyph: Loader, label: 'activity.running' },
+    success: { glyph: Check, label: 'activity.done' },
+    error: { glyph: X, label: 'activity.failed' },
+    timeout: { glyph: Clock, label: 'activity.timedOut' },
+  };
+  const indicator = $derived(indicators[status]);
   let element;
   function toggle(event) {
     event.preventDefault();
@@ -27,16 +34,15 @@
     >
     <span class="activity-label">{label}</span>
     {#if summary}<span class="activity-summary" title={summary}>{summary}</span>{/if}
-    {#if status}<span
+    {#if indicator}<span
         class="activity-status"
         class:pending={status === 'pending'}
         class:failed={status === 'error'}
-        title={t(
-          `activity.${status === 'pending' ? 'running' : status === 'error' ? 'failed' : 'done'}`,
-        )}
+        class:timed-out={status === 'timeout'}
+        title={t(indicator.label)}
       >
-        {@html icon(status === 'pending' ? Loader : status === 'error' ? X : Check, { size: 14 })}
-        {t(`activity.${status === 'pending' ? 'running' : status === 'error' ? 'failed' : 'done'}`)}
+        {@html icon(indicator.glyph, { size: 14 })}
+        {t(indicator.label)}
       </span>{/if}
   </summary>
   <div class="activity-body">{@render children()}</div>

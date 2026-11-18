@@ -3,11 +3,17 @@ const computerTools = new Set([
   'read_text', 'wait_for', 'launch_browser', 'navigate_browser', 'evaluate_browser',
   'computer_use', 'computer',
 ]);
+const defaultShellTimeoutSeconds = 300;
 
 export default function guardComputerTools(pi) {
   pi.registerCommand('yugo-computer-guard-ready', {
     description: 'YuGo Pi computer approval is active',
     handler: async () => {},
+  });
+  pi.on('tool_call', (event) => {
+    if ((event.toolName === 'bash' || event.toolName === 'powershell') && event.input.timeout === undefined) {
+      event.input.timeout = defaultShellTimeoutSeconds;
+    }
   });
   pi.on('tool_call', async (event, ctx) => {
     if (!computerTools.has(event.toolName)) return;

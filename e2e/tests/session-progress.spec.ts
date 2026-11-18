@@ -42,11 +42,21 @@ test("returning to a running session restores its thinking and progress before t
 
   expect(await send("[[preview-tool]]")).toBe(202);
   await expect(progress).toContainText("Tool calls");
+  await expect(progress.locator(".session-progress-tool")).toHaveText("bash");
+  await expect(progress.locator(".session-progress-duration")).toHaveText(/^0:0[1-9]$/);
+  await go("/");
+  await expect(page.locator(".personal-home-main")).toBeVisible();
+  await go(url(current));
+  await expect(progress.locator(".session-progress-duration")).toHaveText(/^0:0[1-9]$/);
   await expect(page.locator("#messages-list .activity-thinking")).toHaveCount(1);
   await expect(thinking).toBeHidden();
   expect(await send("[[complete-preview]]")).toBe(202);
   await expect(page.locator("#messages-list")).toContainText("Fixture final answer.");
   await expect(progress).toHaveCount(0);
+  const timedOut = page.locator('[data-collapse-key="tool:fixture-live-tool"]');
+  await expect(timedOut.locator(".activity-status.timed-out")).toHaveText("Timed out");
+  await timedOut.locator("summary").click();
+  await expect(timedOut.locator(".tool-output")).toContainText("Captured output.");
 });
 
 test("stopping an empty reply keeps its status, model, time and retry action on reopen", async ({ page, sessionsDir }, info) => {

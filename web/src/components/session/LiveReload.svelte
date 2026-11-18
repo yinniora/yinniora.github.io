@@ -132,10 +132,12 @@
       return clearChatPreviewState(CHAT_PREVIEW_STATE, { keepAssistant });
     }
     let lastPhase = '';
-    function publishPhase(phase) {
-      if (lastPhase === phase) return;
+    function publishPhase(phase, { toolName, toolElapsedMs } = {}) {
+      if (lastPhase === phase && phase !== 'tool') return;
       lastPhase = phase;
-      windowImpl.dispatchEvent(new CustomEvent('pi:chat-phase', { detail: { sessionId, phase } }));
+      windowImpl.dispatchEvent(
+        new CustomEvent('pi:chat-phase', { detail: { sessionId, phase, toolName, toolElapsedMs } }),
+      );
     }
     function finishChatPreview() {
       finishChatPreviewState(CHAT_PREVIEW_STATE);
@@ -150,7 +152,7 @@
         forceFollowToBottom,
         scrollAfterLayout,
       });
-      if (rendered) publishPhase(CHAT_PREVIEW_STATE.phase);
+      if (rendered) publishPhase(CHAT_PREVIEW_STATE.phase, payload);
       return rendered;
     }
     function renderPendingChat(message) {

@@ -1117,6 +1117,9 @@
 #spa-root .activity-status.failed {
   color: var(--danger-fg);
 }
+#spa-root .activity-status.timed-out {
+  color: var(--warning);
+}
 #spa-root .activity-body {
   padding: 2px 11px 8px;
   border-top: 1px solid var(--dim-2);
@@ -1221,6 +1224,32 @@
   border: 2px solid var(--dim);
   border-top-color: var(--accent);
   border-radius: 50%;
+}
+#spa-root .session-progress-tool {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-code, monospace);
+}
+#spa-root .session-progress-duration {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+#spa-root #pi-chat-model-list .model-provider {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  overflow-wrap: anywhere;
+}
+#spa-root .model-picker-balance {
+  color: var(--text-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: normal;
 }
 #spa-root .chat-preview-stream {
   padding-bottom: 6px;
@@ -1366,7 +1395,7 @@
   display: none;
 }
 @media (max-width: 600px) {
-  #spa-root .activity-status {
+  #spa-root .activity-status:not(.timed-out) {
     font-size: 0;
   }
   #spa-root .project-row-count {

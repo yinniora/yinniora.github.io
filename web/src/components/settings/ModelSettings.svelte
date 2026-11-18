@@ -3,6 +3,7 @@
   import { getJSON, postJSON } from '../../shared/api.js';
   import { t } from '../../shared/i18n.js';
   import { supportedThinkingLevels } from '../../session/chat/chat-selectors.js';
+  import { loadModelBalances, modelBalanceLabel } from '../../session/chat/model-balances.js';
   import { icon, Trash2 } from '../../shared/icons.js';
   let profiles = $state([]),
     revision = $state(''),
@@ -17,6 +18,10 @@
     key = $state('');
   let query = $state(''),
     selected = $state([]);
+  let balances = $state({});
+  let loadingBalances = $state(false);
+  let balanceRequest;
+  let mounted = false;
   let vision = $state(false),
     contextWindow = $state(128000),
     maxTokens = $state(8192);
@@ -38,6 +43,27 @@
     revision = data.revision;
     if (!profiles.some((p) => p.id === activeID)) activeID = profiles[0]?.id || '';
     selected = [];
+    void refreshBalances();
+  }
+  async function refreshBalances() {
+    if (!mounted) return;
+    balanceRequest?.abort();
+    if (!profiles.some((profile) => profile.hasKey)) {
+      balances = {};
+      loadingBalances = false;
+      return;
+    }
+    const request = new AbortController();
+    balanceRequest = request;
+    loadingBalances = true;
+    try {
+      const result = await loadModelBalances({ signal: request.signal });
+      if (!request.signal.aborted) balances = result;
+    } catch {
+      if (!request.signal.aborted) balances = {};
+    } finally {
+      if (!request.signal.aborted) loadingBalances = false;
+    }
   }
   async function load() {
     loading = true;
@@ -120,7 +146,14 @@
       status = t('common.saved');
     }
   }
-  onMount(load);
+  onMount(() => {
+    mounted = true;
+    void load();
+    return () => {
+      mounted = false;
+      balanceRequest?.abort();
+    };
+  });
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icons -->
@@ -199,6 +232,13 @@
           <strong>{profile.label}</strong><span
             >{t(profile.hasKey ? 'models.keyConfigured' : 'models.keyUnavailable')}</span
           >
+          {#if profile.hasKey}
+            <span class="model-source-balance">
+              {modelBalanceLabel(
+                Object.hasOwn(balances, profile.id) ? balances[profile.id] : null,
+              ) || t(loadingBalances ? 'models.balanceLoading' : 'models.balanceUnavailable')}
+            </span>
+          {/if}
         </button>
       {/each}
     </div>
@@ -421,6 +461,12 @@
     gap: 6px;
     min-width: 0;
     text-align: left;
+  }
+  .model-source .model-source-balance {
+    color: var(--text);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
   }
   .model-source strong {
     max-width: 100%;

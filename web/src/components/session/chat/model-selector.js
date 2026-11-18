@@ -7,10 +7,11 @@ import {
 } from '../../../session/chat/chat-selectors.js';
 import { t } from '../../../shared/i18n.js';
 import { handleNavClick, backState } from '../../../shared/navigation.js';
+import { loadModelBalances, modelBalanceLabel } from '../../../session/chat/model-balances.js';
 
 export function renderModelList(
   models,
-  { filter = '', selectedModel = null, escapeHtml = String } = {},
+  { filter = '', selectedModel = null, balances = {}, escapeHtml = String } = {},
 ) {
   const byProvider = groupModelsByProvider(models, filter);
   const providers = Object.keys(byProvider).sort();
@@ -19,7 +20,10 @@ export function renderModelList(
 
   let html = '';
   providers.forEach((provider) => {
-    html += `<div class="model-provider">${escapeHtml(byProvider[provider][0]?.providerLabel || provider)}</div>`;
+    const balance = modelBalanceLabel(
+      Object.hasOwn(balances, provider) ? balances[provider] : null,
+    );
+    html += `<div class="model-provider"><span>${escapeHtml(byProvider[provider][0]?.providerLabel || provider)}</span><span class="model-picker-balance" data-balance-provider="${escapeHtml(provider)}"${balance ? '' : ' hidden'}>${escapeHtml(balance)}</span></div>`;
     byProvider[provider].forEach((model) => {
       const id = model.id || model.modelId || '';
       const name = model.name || id;
@@ -53,6 +57,8 @@ export function setupModelSelector({
   setThinkingLabel = () => {},
 } = {}) {
   let allModels = [];
+  let balances = {};
+  let balanceRequest;
   let selectedModel = null;
   let changingModel = false;
   let current = detectCurrentModel(entries);
@@ -95,7 +101,7 @@ export function setupModelSelector({
   function renderPopupList(filter) {
     if (!popupList) return;
     popupList.innerHTML = allModels.length
-      ? renderModelList(allModels, { filter, selectedModel, escapeHtml })
+      ? renderModelList(allModels, { filter, selectedModel, balances, escapeHtml })
       : `<div class="model-empty"><a href="/settings?section=models">${escapeHtml(t('models.noneInPicker'))}</a></div>`;
     popupList.dataset.activeIndex = '-1';
   }
@@ -109,6 +115,26 @@ export function setupModelSelector({
         popupSearch.focus({ preventScroll: true });
     }
     renderPopupList('');
+    if (!balanceRequest) {
+      balanceRequest = loadModelBalances({
+        fetchImpl: documentImpl.defaultView?.fetch?.bind(documentImpl.defaultView),
+        signal: scope,
+      })
+        .then((result) => {
+          if (scope?.aborted) return;
+          balances = result;
+          for (const label of popupList?.querySelectorAll('[data-balance-provider]') || []) {
+            const provider = label.dataset.balanceProvider;
+            const text = modelBalanceLabel(
+              Object.hasOwn(balances, provider) ? balances[provider] : null,
+            );
+            label.textContent = text;
+            label.hidden = !text;
+          }
+        })
+        .catch(() => {})
+        .finally(() => (balanceRequest = null));
+    }
     chatApi
       .listModels()
       .then((res) => (res.ok ? res.json() : null))

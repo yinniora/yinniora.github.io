@@ -2,11 +2,13 @@ package workers
 
 // LivePreview is a transient view of one worker's current reply.
 type LivePreview struct {
-	Content  string `json:"content"`
-	Thinking string `json:"thinking,omitempty"`
-	Phase    string `json:"phase,omitempty"`
-	Done     bool   `json:"done"`
-	Revision uint64 `json:"revision,omitempty"`
+	Content       string `json:"content"`
+	Thinking      string `json:"thinking,omitempty"`
+	Phase         string `json:"phase,omitempty"`
+	ToolName      string `json:"toolName,omitempty"`
+	ToolElapsedMs int64  `json:"toolElapsedMs,omitempty"`
+	Done          bool   `json:"done"`
+	Revision      uint64 `json:"revision,omitempty"`
 }
 
 func (m *Manager) ChatPreview(sessionID string) (LivePreview, bool) {

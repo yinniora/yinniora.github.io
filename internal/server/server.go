@@ -73,6 +73,7 @@ type Server struct {
 	modelConfigMu         sync.Mutex
 	pluginConfigMu        sync.Mutex
 	modelCatalogs         map[string]modelCatalog
+	modelBalances         modelBalanceCache
 	removedModelProviders map[string]struct{}
 	remoteControl         *relay.Controller
 	sessionManagementMu   sync.Mutex
@@ -375,6 +376,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/chat/cancel", s.auth.Wrap(s.visibleSession(s.handleCancelChat)))
 	mux.HandleFunc("/api/set-model", s.auth.Wrap(s.visibleSession(s.handleSetModel)))
 	mux.HandleFunc("/api/model-settings", s.auth.Wrap(s.handleModelSettings))
+	mux.HandleFunc("/api/model-balances", s.auth.Wrap(s.handleModelBalances))
 	mux.HandleFunc("/api/plugins", s.auth.Wrap(s.handlePlugins))
 	mux.HandleFunc("/api/set-thinking-level", s.auth.Wrap(s.visibleSession(s.handleSetThinkingLevel)))
 	mux.HandleFunc("/api/computer-use", s.auth.Wrap(s.visibleSession(s.handleComputerUse)))

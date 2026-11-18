@@ -37,6 +37,22 @@
   // <ChatToolbar> renders from it.
   const toolbar = new ChatToolbarState();
   let previewPhase = $state('');
+  let toolProgress = $state(null);
+  let toolSeconds = $state(0);
+  const toolDuration = $derived(
+    `${Math.floor(toolSeconds / 60)}:${String(toolSeconds % 60).padStart(2, '0')}`,
+  );
+
+  $effect(() => {
+    const tool = toolProgress;
+    if (!tool) return;
+    const tick = () => {
+      toolSeconds = Math.floor((tool.elapsed + performance.now() - tool.observedAt) / 1000);
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  });
   // Reactive queue panel state — shared with chat-composer-runtime so its
   // steer/queue glue mutates the same items <QueuePanel> renders. The queued
   // items live on the server (chat_queue table); we hydrate on mount and
@@ -104,7 +120,17 @@
     }
     const onQueueEvent = () => queueStore.refresh?.();
     const onChatPhase = (event) => {
-      if (event.detail?.sessionId === sessionId) previewPhase = event.detail.phase;
+      if (event.detail?.sessionId !== sessionId) return;
+      const { phase, toolName, toolElapsedMs } = event.detail;
+      previewPhase = phase;
+      toolProgress =
+        phase === 'tool' && typeof toolName === 'string' && toolName
+          ? {
+              name: toolName,
+              elapsed: Math.max(0, Number(toolElapsedMs) || 0),
+              observedAt: performance.now(),
+            }
+          : null;
     };
     target.addEventListener('pi-queue-event', onQueueEvent);
     target.addEventListener('pi:chat-phase', onChatPhase);
@@ -146,6 +172,10 @@
     <div class="session-progress" role="status">
       <span class="session-progress-spinner" aria-hidden="true"></span>
       <span>{toolbar.compacting ? t('piSession.compacting') : progressLabel(previewPhase)}</span>
+      {#if toolProgress && !toolbar.compacting}
+        <span class="session-progress-tool">{toolProgress.name}</span>
+        <span class="session-progress-duration" aria-hidden="true">{toolDuration}</span>
+      {/if}
     </div>
   {/if}
   <div class="pi-chat-shell">

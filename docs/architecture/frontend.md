@@ -162,6 +162,11 @@ The live client adds `OutputGallery` with confined asset URLs and scriptless SVG
 
 `ProjectsModal` offers project deletion for discovered and registered folders. Its confirmation defaults to preserving files; selecting a Mac Trash move opens a second confirmation covering the entire folder and its descendants, without a typed challenge. The client supplies the existing API confirmation field only after that second click. Live thinking and tool calls use native `ActivityDisclosure` details/summary controls. The existing toggle controller persists per-entry overrides and exposes expand/collapse-all through `ActivityControls`. Static exports retain their existing markup.
 
+The progress row uses the Mac worker's active tool name and elapsed time. An
+event-stream reconnect restores the timer from the worker snapshot. A shell
+timeout has a distinct label on the tool row, and its output is available in
+the expanded details alongside the other tools in the turn.
+
 `DevicePanel` lists active approvals with precise enrollment/connection times,
 coarse system/browser/app labels, short key IDs and live presence. Removal uses
 a second click, removes the row immediately, and rejects stale list responses.

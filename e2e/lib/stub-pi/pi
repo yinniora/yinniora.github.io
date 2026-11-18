@@ -109,18 +109,24 @@ function handlePrompt(cmd) {
     const assistant = messageEntry("assistant", "", heldPreview.last);
     assistant.entry.message.content = [
       { type: "thinking", thinking: "Fixture thinking before reconnect." },
-      { type: "toolCall", id: "fixture-live-tool", name: "read", arguments: { path: "fixture.txt" } },
+      { type: "toolCall", id: "fixture-live-tool", name: "bash", arguments: { command: "fixture shell command" } },
     ];
     assistant.entry.message.stopReason = "toolUse";
     appendEntry(assistant.entry);
     heldPreview = { last: assistant.id, tool: true };
     send({ type: "message_end", message: { role: "assistant" } });
-    send({ type: "tool_execution_start", toolCallId: "fixture-live-tool", toolName: "read" });
+    send({ type: "tool_execution_start", toolCallId: "fixture-live-tool", toolName: "bash" });
     return;
   }
   if (heldPreview && raw === "[[complete-preview]]") {
     respond(cmd.id, "prompt", { disposition: "queued" });
-    if (heldPreview.tool) send({ type: "tool_execution_end", toolCallId: "fixture-live-tool" });
+    if (heldPreview.tool) {
+      const toolResult = messageEntry("toolResult", "Captured output.\n\nCommand timed out after 300 seconds", heldPreview.last);
+      Object.assign(toolResult.entry.message, { toolCallId: "fixture-live-tool", toolName: "bash", isError: true });
+      appendEntry(toolResult.entry);
+      heldPreview.last = toolResult.id;
+      send({ type: "tool_execution_end", toolCallId: "fixture-live-tool", toolName: "bash", isError: true });
+    }
     appendEntry(messageEntry("assistant", "Fixture final answer.", heldPreview.last).entry);
     heldPreview = null;
     send({ type: "message_update", assistantMessageEvent: { type: "text_end", content: "Fixture final answer." } });

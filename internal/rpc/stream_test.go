@@ -1,6 +1,9 @@
 package rpc
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestStreamPreviewAccumulatorBuildsFullContentFromTextDeltas(t *testing.T) {
 	acc := &streamPreviewAccumulator{}
@@ -72,5 +75,28 @@ func TestStreamPreviewAccumulatorCompletesExistingPreview(t *testing.T) {
 	}
 	if _, ok := acc.complete(); ok {
 		t.Fatalf("second complete should not emit after reset")
+	}
+}
+
+func TestStreamPreviewTracksOldestRunningToolAcrossSnapshots(t *testing.T) {
+	acc := &streamPreviewAccumulator{}
+	_, _ = acc.handleAssistantEvent(assistantMessageEvent{Type: "agent_start"})
+	_, _ = acc.handleAssistantEvent(assistantMessageEvent{Type: "tool_execution_start", ToolCallID: "first", ToolName: "bash"})
+	acc.tools["first"] = runningTool{name: "bash", startedAt: time.Now().Add(-time.Minute)}
+	second, _ := acc.handleAssistantEvent(assistantMessageEvent{Type: "tool_execution_start", ToolCallID: "second", ToolName: "read"})
+	if second.ToolName != "bash" || second.ToolElapsedMs < 60000 {
+		t.Fatalf("parallel tool preview = %+v, want elapsed time for bash", second)
+	}
+	reconnected := acc.snapshot()
+	if reconnected.ToolName != "bash" || reconnected.ToolElapsedMs < second.ToolElapsedMs {
+		t.Fatalf("reconnect preview = %+v, want continuing elapsed time", reconnected)
+	}
+	remaining, _ := acc.handleAssistantEvent(assistantMessageEvent{Type: "tool_execution_end", ToolCallID: "first"})
+	if remaining.ToolName != "read" || remaining.Phase != "tool" {
+		t.Fatalf("remaining tool preview = %+v, want read", remaining)
+	}
+	finished, _ := acc.handleAssistantEvent(assistantMessageEvent{Type: "tool_execution_end", ToolCallID: "second"})
+	if finished.Phase != "working" || finished.ToolName != "" || finished.ToolElapsedMs != 0 {
+		t.Fatalf("preview after tools finish = %+v", finished)
 	}
 }

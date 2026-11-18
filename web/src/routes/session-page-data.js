@@ -4,12 +4,13 @@ import { consumeSessionPrefetch } from './session-prefetch.js';
 
 // The session route's HTML shell embeds the session payload (and scratchpad) in
 // a <script id="pi-session-bootstrap"> so the first paint needs no round-trip to
-// /api/session or /api/scratchpad. Returns { id, data, scratchpad } or null.
+// /api/session or /api/scratchpad. Consume it once per page document.
 export function readSessionBootstrap({ documentImpl, atobImpl, TextDecoderImpl } = {}) {
   const doc = documentImpl || (typeof document !== 'undefined' ? document : null);
   const el = doc?.getElementById?.('pi-session-bootstrap');
   const raw = el && el.textContent ? el.textContent.trim() : '';
   if (!raw) return null;
+  el.textContent = '';
   try {
     return decodeBase64JSON(raw, { atobImpl, TextDecoderImpl });
   } catch {
