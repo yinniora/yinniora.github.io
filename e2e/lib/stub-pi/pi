@@ -95,13 +95,27 @@ let heldPreview = null;
 
 function handlePrompt(cmd) {
   const raw = typeof cmd.message === "string" ? cmd.message : JSON.stringify(cmd.message ?? "");
-  if (raw === "[[hold-preview]]") {
+  if (raw === "[[hold-preview]]" || raw === "[[hold-stream]]") {
     respond(cmd.id, "prompt", { disposition: "started" });
     const user = messageEntry("user", "Track preview state", lastEntryId());
     appendEntry(user.entry);
     heldPreview = { last: user.id, tool: false };
     send({ type: "agent_start" });
-    send({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "Fixture thinking before reconnect." } });
+    if (raw === "[[hold-preview]]") {
+      send({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "Fixture thinking before reconnect." } });
+    }
+    return;
+  }
+  if (heldPreview && raw === "[[preview-thinking]]") {
+    respond(cmd.id, "prompt", { disposition: "queued" });
+    heldPreview.thinking = true;
+    send({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "Fixture thinking before reconnect." } });
+    return;
+  }
+  if (heldPreview && raw === "[[preview-reply]]") {
+    respond(cmd.id, "prompt", { disposition: "queued" });
+    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: heldPreview.reply ? " answer." : "Fixture final" } });
+    heldPreview.reply = true;
     return;
   }
   if (heldPreview && raw === "[[preview-tool]]") {
@@ -127,9 +141,11 @@ function handlePrompt(cmd) {
       heldPreview.last = toolResult.id;
       send({ type: "tool_execution_end", toolCallId: "fixture-live-tool", toolName: "bash", isError: true });
     }
-    appendEntry(messageEntry("assistant", "Fixture final answer.", heldPreview.last).entry);
+    const assistant = messageEntry("assistant", "Fixture final answer.", heldPreview.last);
+    if (heldPreview.thinking) assistant.entry.message.content.unshift({ type: "thinking", thinking: "Fixture thinking before reconnect." });
+    appendEntry(assistant.entry);
     heldPreview = null;
-    send({ type: "message_update", assistantMessageEvent: { type: "text_end", content: "Fixture final answer." } });
+    send({ type: "message_update", assistantMessageEvent: { type: "text_end", contentIndex: 1, content: "Fixture final answer." } });
     send({ type: "message_end", message: { role: "assistant" } });
     send({ type: "agent_end" });
     return;
@@ -149,13 +165,13 @@ function handlePrompt(cmd) {
   // but let the original run own the agent_end / completion signal.
   if (activeSlowRun) {
     writeTurn(userText, reply);
-    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", text: reply } });
+    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: reply } });
     return;
   }
 
   if (delay > 0) {
     activeSlowRun = true;
-    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", text: "working…" } });
+    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "working…" } });
     setTimeout(() => {
       writeTurn(userText, reply);
       send({ type: "message_end" });
@@ -169,8 +185,7 @@ function handlePrompt(cmd) {
   // Mimic real pi taking ownership of the session file.
   setTimeout(() => {
     writeTurn(userText, reply);
-    // Best-effort stream signals; shape mismatch is harmless to the worker.
-    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", text: reply } });
+    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: reply } });
     send({ type: "message_end" });
     send({ type: "turn_end" });
     send({ type: "agent_end" });

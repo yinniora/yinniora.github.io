@@ -143,7 +143,10 @@
       finishChatPreviewState(CHAT_PREVIEW_STATE);
       publishPhase('');
     }
-    function renderChatPreview(payload) {
+    let previewFrame = 0;
+    let pendingPreview;
+    cleanups.push(() => windowImpl.cancelAnimationFrame(previewFrame));
+    function applyChatPreview(payload) {
       const rendered = renderChatPreviewState(payload, CHAT_PREVIEW_STATE, {
         documentImpl,
         windowImpl,
@@ -153,7 +156,22 @@
         scrollAfterLayout,
       });
       if (rendered) publishPhase(CHAT_PREVIEW_STATE.phase, payload);
-      return rendered;
+    }
+    function renderChatPreview(payload) {
+      if (payload?.done) {
+        windowImpl.cancelAnimationFrame(previewFrame);
+        previewFrame = 0;
+        pendingPreview = null;
+        applyChatPreview(payload);
+        return;
+      }
+      pendingPreview = payload;
+      if (previewFrame) return;
+      previewFrame = requestAnimationFrame(() => {
+        previewFrame = 0;
+        applyChatPreview(pendingPreview);
+        pendingPreview = null;
+      });
     }
     function renderPendingChat(message) {
       return renderPendingChatState(message, CHAT_PREVIEW_STATE, {
@@ -194,6 +212,12 @@
     on(windowImpl, 'pi-worker-done', () => {
       // If the final filesystem reload is missed/delayed, don't leave the
       // streaming preview "working"; proactively reconcile from /api/session.
+      if (pendingPreview) {
+        windowImpl.cancelAnimationFrame(previewFrame);
+        previewFrame = 0;
+        applyChatPreview(pendingPreview);
+        pendingPreview = null;
+      }
       finishChatPreview();
       triggerReload();
     });

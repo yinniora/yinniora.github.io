@@ -1255,9 +1255,10 @@
   padding-bottom: 6px;
 }
 #spa-root .chat-preview-stream .message-content:empty,
-#spa-root:has(.session-progress) .chat-preview-stream .preview-progress,
-#spa-root:has(.session-progress)
-  .chat-preview-stream:not(:has(.preview-thinking:not([hidden]), .message-content:not(:empty))) {
+#spa-root
+  .chat-preview-stream.done:not(
+    :has(.preview-thinking:not([hidden]), .message-content:not(:empty))
+  ) {
   display: none;
 }
 #spa-root .preview-thinking:not([hidden]) {

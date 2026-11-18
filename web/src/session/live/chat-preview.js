@@ -47,6 +47,7 @@ export function clearChatPreviewState(state, { keepAssistant = false } = {}) {
     }
     state.chatPreviewEl = null;
     state.phase = '';
+    state.content = undefined;
     stopWorkingAnimation(state);
   }
 }
@@ -97,7 +98,7 @@ function setMarkdownContent(el, html) {
   // `renderMarkdown` returns sanitized markdown HTML (or escaped fallback). This
   // is content rendering, not structural view construction; the surrounding
   // preview DOM is built with elements so the helper stays narrowly scoped.
-  if (el) el.innerHTML = html;
+  if (el && el.innerHTML !== html) el.innerHTML = html;
 }
 
 function createMarkdownBlock(documentImpl, className) {
@@ -217,6 +218,7 @@ export function renderChatPreviewState(
     clearChatPreviewState(state);
   }
   if (!state.chatPreviewEl) {
+    if (payload.done && !payload.phase && !payload.content && !payload.thinking) return false;
     state.chatPreviewEl = createAssistantPreview(documentImpl, { windowImpl });
     container.appendChild(state.chatPreviewEl);
     startWorkingAnimation(state, { setIntervalImpl, windowImpl });
@@ -229,7 +231,8 @@ export function renderChatPreviewState(
   if (phase !== state.phase || thinking.hidden) thinking.open = phase === 'thinking';
   thinking.hidden = !hasThoughts;
   thinking.classList.toggle('is-thinking', phase === 'thinking');
-  thinking.querySelector('.activity-thinking-text').textContent = thoughts;
+  const thinkingContent = thinking.querySelector('.activity-thinking-text');
+  if (thinkingContent.textContent !== thoughts) thinkingContent.textContent = thoughts;
   const progress = state.chatPreviewEl.querySelector('.preview-progress');
   if (progress) {
     progress.hidden = phase === 'thinking' && hasThoughts;
@@ -239,7 +242,10 @@ export function renderChatPreviewState(
 
   state.chatPreviewEl.classList.remove('chat-preview-waiting');
   const content = state.chatPreviewEl.querySelector('.message-content');
-  setMarkdownContent(content, renderMarkdown(payload.content));
+  if (state.content !== payload.content) {
+    setMarkdownContent(content, renderMarkdown(payload.content));
+    state.content = payload.content;
+  }
   if (!phase) finishChatPreviewState(state);
   else state.chatPreviewEl.classList.remove('done');
   if (shouldFollow()) {

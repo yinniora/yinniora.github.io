@@ -139,6 +139,18 @@ describe('updateContextUsage', () => {
     expect(positionPopover).toHaveBeenCalledTimes(1);
   });
 
+  it('uses the selected model and key identity even when the label differs', () => {
+    renderDom();
+    updateContextUsage({
+      knownModelLabel: 'Opus for work @ My key',
+      selectedModel: { id: 'claude-opus-5-5', provider: 'gateway-work', contextWindow: 1000000 },
+      contextWindows: { 'claude-opus-5-5': 128000 },
+      entries: [{ type: 'message', message: { role: 'assistant', usage: { totalTokens: 10000 } } }],
+    });
+    expect(document.querySelector('.pi-context-text').textContent).toBe('1%');
+    expect(document.querySelector('.pi-popover-limit').textContent).toBe('1.0M');
+  });
+
   it('loads dynamic limits in the controller', async () => {
     renderDom();
     const controller = createContextUsageController({

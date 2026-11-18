@@ -131,6 +131,7 @@ export function updateContextUsage({
   documentImpl = document,
   entries = [],
   knownModelLabel = '',
+  selectedModel = null,
   contextWindows = {},
   positionPopover = () => {},
   previous = null,
@@ -148,9 +149,15 @@ export function updateContextUsage({
 
   const { modelName, providerName } = splitModelLabel(knownModelLabel);
   const limit =
-    !modelName && previous?.limit
-      ? previous.limit
-      : getModelContextLimit(modelName, providerName, contextWindows);
+    selectedModel?.contextWindow > 0
+      ? selectedModel.contextWindow
+      : !modelName && previous?.limit
+        ? previous.limit
+        : getModelContextLimit(
+            selectedModel?.id || modelName,
+            selectedModel?.provider || providerName,
+            contextWindows,
+          );
   const percent = Math.min(100, Math.max(0, Math.round((contextTokens / limit) * 100)));
 
   const fillPath = el.querySelector('.pi-context-fill');
@@ -210,6 +217,7 @@ export function createContextUsageController({
   entries = [],
   chatApi,
   getKnownModelLabel = () => '',
+  getSelectedModel = () => null,
   positionPopover = () => {},
 } = {}) {
   let contextWindows = {};
@@ -221,6 +229,7 @@ export function createContextUsageController({
       documentImpl,
       entries,
       knownModelLabel: getKnownModelLabel(),
+      selectedModel: getSelectedModel(),
       contextWindows,
       positionPopover,
       previous: lastShown,

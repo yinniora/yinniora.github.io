@@ -37,7 +37,7 @@ func TestModelKeysRefreshMultiApplyRemoveAndPrivacy(t *testing.T) {
 		if r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer "+secret {
 			t.Errorf("wrong discovery request")
 		}
-		w.Write([]byte(`{"data":[{"id":"chat-one"},{"id":"chat-two"}]}`))
+		w.Write([]byte(`{"data":[{"id":"chat-one","context_length":1000000,"max_output_tokens":128000},{"id":"chat-two"}]}`))
 	}))
 	defer service.Close()
 	_, data, _ := modelSettingsCall(t, s, nil)
@@ -67,9 +67,25 @@ func TestModelKeysRefreshMultiApplyRemoveAndPrivacy(t *testing.T) {
 	if err != nil || len(models) != 2 || models[0]["providerLabel"] != "Personal New API" {
 		t.Fatal("picker did not use applied models", models, err)
 	}
+	if models[0]["contextWindow"] != float64(1000000) || models[0]["maxTokens"] != float64(128000) ||
+		models[1]["contextWindow"] != float64(fallbackContextWindow) {
+		t.Fatalf("catalog limits and local defaults were applied incorrectly: %+v", models)
+	}
 	serialized, _ := json.Marshal(models)
 	if strings.Contains(string(serialized), secret) {
 		t.Fatal("picker leaked credentials")
+	}
+	code, data, _ = modelSettingsCall(t, s, map[string]any{
+		"action": "edit-limits", "id": id, "revision": data["revision"], "modelId": "chat-two",
+		"contextWindow": 300000, "maxTokens": 8192,
+	})
+	if code != 200 {
+		t.Fatalf("edit-limits rejected an applied model: status %d", code)
+	}
+	models, err = s.appliedModels(nil)
+	if err != nil || models[0]["contextWindow"] != float64(1000000) || models[1]["contextWindow"] != float64(300000) ||
+		models[1]["maxTokens"] != float64(8192) {
+		t.Fatalf("edit-limits did not update exactly the requested model: %+v, %v", models, err)
 	}
 	code, _, _ = modelSettingsCall(t, s, map[string]any{"action": "remove-model", "id": id, "revision": stale, "modelId": "chat-one"})
 	if code != 409 {

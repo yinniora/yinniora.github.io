@@ -41,15 +41,18 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		ChatPreview(string) (workers.LivePreview, bool)
 	}); ok {
 		if preview, active := source.ChatPreview(sessID); active {
-			if msg, err := formatSSEJSONEvent("chat-preview", preview); err == nil {
-				fmt.Fprint(w, msg+"\n\n")
-				flusher.Flush()
-			}
+			writeChatPreview(w, flusher, preview)
 		}
 	}
 
 	for {
 		select {
+		case pending := <-client.preview:
+			writeChatPreview(w, flusher, pending.snapshot)
+			if pending.reload && !pending.snapshot.Done {
+				fmt.Fprint(w, "data: reload\n\n")
+				flusher.Flush()
+			}
 		case msg, open := <-client.ch:
 			if !open {
 				return
@@ -70,6 +73,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		}
+	}
+}
+
+func writeChatPreview(w http.ResponseWriter, flusher http.Flusher, preview workers.LivePreview) {
+	if msg, err := formatSSEJSONEvent("chat-preview", preview); err == nil {
+		fmt.Fprint(w, msg+"\n\n")
+		flusher.Flush()
 	}
 }
 

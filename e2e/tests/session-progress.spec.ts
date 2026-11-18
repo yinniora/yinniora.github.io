@@ -1,5 +1,49 @@
 import { test, expect, collapseScratchpad } from "../lib/test";
 import { buildSession, realWorkingDir, uniqueSessionName, writeSession } from "../lib/sessions";
+import { remoteEventSource } from "../../web/src/remote/event-source.js";
+
+test("thinking and two reply chunks are visible before completion", async ({ page, sessionsDir }, info) => {
+  const id = writeSession(sessionsDir, uniqueSessionName(info, "streaming"), buildSession({ cwd: realWorkingDir() }).entries);
+  await collapseScratchpad(page);
+  if (info.project.name === "Mobile Safari") {
+    // Use the same stream parser as the published iPhone client.
+    await page.addInitScript({
+      content: `window.EventSource = (${remoteEventSource.toString()})({ fetch: window.fetch.bind(window) });`,
+    });
+  }
+  await page.goto("/session?id=" + encodeURIComponent(id));
+  await page.locator("#pi-chat-message").fill("[[hold-stream]]");
+  await page.locator("#pi-chat-send").click();
+  const preview = page.locator("#chat-preview-stream");
+  const answer = preview.locator(".message-content");
+  await expect(preview.locator(".preview-progress")).toBeVisible();
+
+  const step = async (message: string) => {
+    const status = await page.evaluate(async ({ id, message }) => {
+      const body = new FormData();
+      body.set("message", message);
+      return (await fetch("/api/chat?id=" + encodeURIComponent(id), { method: "POST", body })).status;
+    }, { id, message });
+    expect(status).toBe(202);
+  };
+  await step("[[preview-thinking]]");
+  await expect(preview.locator(".activity-thinking-text")).toHaveText("Fixture thinking before reconnect.");
+  await expect(preview.locator(".activity-thinking-text")).toBeVisible();
+  await step("[[preview-reply]]");
+  await expect(answer).toBeVisible();
+  await expect(answer).toHaveText("Fixture final");
+  await expect(page.locator("#messages-list")).not.toContainText("Fixture final");
+
+  await page.reload();
+  await expect(answer).toHaveText("Fixture final");
+  await step("[[preview-reply]]");
+  await expect(answer).toHaveText("Fixture final answer.");
+  await expect(page.locator("#messages-list")).not.toContainText("Fixture final");
+  await step("[[complete-preview]]");
+  await expect(page.locator("#messages-list")).toContainText("Fixture final answer.");
+  await expect(page.getByText("Fixture final answer.", { exact: true })).toHaveCount(1);
+  await expect(page.locator(".session-progress")).toHaveCount(0);
+});
 
 test("returning to a running session restores its thinking and progress before the next update", async ({ page, sessionsDir }, info) => {
   const cwd = realWorkingDir();

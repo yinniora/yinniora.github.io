@@ -29,8 +29,9 @@
   let balanceRequest;
   let mounted = false;
   let vision = $state(false),
-    contextWindow = $state(128000),
-    maxTokens = $state(8192);
+    contextWindow = $state(undefined),
+    maxTokens = $state(undefined);
+  let limitEditor = $state(null);
   const prefix = $props.id();
   const active = $derived(profiles.find((p) => p.id === activeID));
   const catalogAPIs = $derived([
@@ -200,6 +201,14 @@
       })
     )
       status = t('models.applied');
+  }
+  async function saveLimits(event) {
+    event.preventDefault();
+    if (busy || !limitEditor) return;
+    if (await action({ action: 'edit-limits', ...limitEditor })) {
+      limitEditor = null;
+      status = t('common.saved');
+    }
   }
   async function remove(profile, model) {
     if (await action({ action: 'remove-model', id: profile.id, modelId: model.id }))
@@ -414,7 +423,10 @@
                 disabled={busy || appliedIDs.has(model.id)}
               /><span
                 ><strong>{model.name || model.id}</strong
-                >{#if model.name && model.name !== model.id}<small>{model.id}</small>{/if}</span
+                >{#if model.name && model.name !== model.id}<small>{model.id}</small>{/if}
+                {#if model.contextWindow}<small
+                    >{t('models.contextWindow')} · {model.contextWindow.toLocaleString()}</small
+                  >{/if}</span
               >{#if appliedIDs.has(model.id)}<em>{t('models.inUse')}</em>{/if}</label
             >
           {:else}<p>{t('models.refreshHint')}</p>{/each}
@@ -467,10 +479,33 @@
             <div>
               <strong>{model.name || model.id}</strong>
               {#if model.name && model.name !== model.id}<small>{model.id}</small>{/if}
+              {#if model.contextWindow}<small
+                  >{t('models.contextWindow')} · {model.contextWindow.toLocaleString()}</small
+                >{/if}
+              {#if model.maxTokens}<small
+                  >{t('models.maxTokens')} · {model.maxTokens.toLocaleString()}</small
+                >{/if}
               {#if supportedThinkingLevels(model).length > 1}<small>
                   {t('models.effortAvailable')}
                 </small>{/if}
             </div>
+            <button
+              type="button"
+              class="limit-edit-button"
+              disabled={busy}
+              aria-label={t('models.contextWindow') + ' · ' + (model.name || model.id)}
+              aria-expanded={limitEditor?.id === profile.id && limitEditor?.modelId === model.id}
+              onclick={() =>
+                (limitEditor =
+                  limitEditor?.id === profile.id && limitEditor?.modelId === model.id
+                    ? null
+                    : {
+                        id: profile.id,
+                        modelId: model.id,
+                        contextWindow: model.contextWindow,
+                        maxTokens: model.maxTokens,
+                      })}>{@html icon(Pencil, { size: 16 })}</button
+            >
             <button
               type="button"
               class="danger-button"
@@ -483,6 +518,40 @@
               >{@html icon(Trash2, { size: 16 })}{t('models.remove')}</button
             >
           </div>
+          {#if limitEditor?.id === profile.id && limitEditor?.modelId === model.id}
+            <form class="model-limit-form" onsubmit={saveLimits}>
+              <div class="model-options">
+                <label>
+                  {t('models.contextWindow')}
+                  <input
+                    type="number"
+                    min="1"
+                    max="10000000"
+                    required
+                    bind:value={limitEditor.contextWindow}
+                    disabled={busy}
+                  />
+                </label>
+                <label>
+                  {t('models.maxTokens')}
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000000"
+                    required
+                    bind:value={limitEditor.maxTokens}
+                    disabled={busy}
+                  />
+                </label>
+              </div>
+              <div class="model-limit-actions">
+                <button type="button" disabled={busy} onclick={() => (limitEditor = null)}
+                  >{t('common.cancel')}</button
+                >
+                <button type="submit" class="primary" disabled={busy}>{t('common.save')}</button>
+              </div>
+            </form>
+          {/if}
         {/each}
       </section>
     {:else}<p>{t('models.noApplied')}</p>{/each}
@@ -717,6 +786,25 @@
   .model-applied-row > div {
     flex: 1;
     min-width: 0;
+  }
+  .limit-edit-button {
+    display: grid;
+    place-items: center;
+    flex: none;
+    min-width: 40px;
+    padding: 8px;
+  }
+  .model-limit-form {
+    padding: 4px 12px 12px;
+    margin-bottom: 10px;
+    background: var(--surface-2);
+    border-radius: 12px;
+  }
+  .model-limit-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
   }
   .danger-button {
     display: inline-flex;

@@ -481,17 +481,24 @@ func (s *Server) loadSummaries() ([]sessions.SessionSummary, error) {
 // ── SSE clients ────────────────────────────────────────────────────────────
 
 type sseClient struct {
-	ch     chan string
-	sessID string
-	mu     sync.Mutex
-	queued map[string]bool
+	ch      chan string
+	sessID  string
+	mu      sync.Mutex
+	queued  map[string]bool
+	preview chan pendingChatPreview
+}
+
+type pendingChatPreview struct {
+	snapshot rpc.StreamPreview
+	reload   bool
 }
 
 func (s *Server) addClient(sessID string) *sseClient {
 	c := &sseClient{
-		ch:     make(chan string, 16),
-		sessID: sessID,
-		queued: make(map[string]bool),
+		ch:      make(chan string, 16),
+		sessID:  sessID,
+		queued:  make(map[string]bool),
+		preview: make(chan pendingChatPreview, 1),
 	}
 	s.clientsMu.Lock()
 	s.clients = append(s.clients, c)
@@ -530,11 +537,25 @@ func (s *Server) BroadcastChatPreview(sessionID string, preview rpc.StreamPrevie
 	if sessionID == "" || sessionID == globalSessID {
 		return
 	}
-	msg, err := formatSSEJSONEvent("chat-preview", preview)
-	if err != nil {
-		return
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
+	for _, client := range s.clients {
+		if client.sessID != sessionID {
+			continue
+		}
+		client.mu.Lock()
+		update := pendingChatPreview{snapshot: preview}
+		select {
+		case pending := <-client.preview:
+			if pending.snapshot.Revision > preview.Revision {
+				update.snapshot = pending.snapshot
+			}
+			update.reload = pending.reload || pending.snapshot.Done || preview.Done
+		default:
+		}
+		client.preview <- update
+		client.mu.Unlock()
 	}
-	s.broadcast(sessionID, msg)
 }
 
 func (s *Server) broadcast(sessID, msg string) {

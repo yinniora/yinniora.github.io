@@ -166,6 +166,9 @@ The progress row uses the Mac worker's active tool name and elapsed time. An
 event-stream reconnect restores the timer from the worker snapshot. A shell
 timeout has a distinct label on the tool row, and its output is available in
 the expanded details alongside the other tools in the turn.
+In the transcript, a waiting label appears before the first model chunk.
+Reply and model-supplied thinking snapshots render at most once per animation
+frame, with the final transcript reconciled on the worker's completion event.
 
 `DevicePanel` lists active approvals with precise enrollment/connection times,
 coarse system/browser/app labels, short key IDs and live presence. Removal uses
@@ -270,11 +273,14 @@ levels drive the conversation effort picker. A custom model can also
 use `reasoning` and a `thinkingLevelMap` in Pi's model configuration when its
 catalog omits those fields. Fixed-effort aliases and models with unknown capability
 stay selectable with the effort picker hidden. The applied list
-groups models by key label and offers per-model removal plus context, output and
-image input options when applying models.
+groups models by key label and shows the saved context and output limits
+separately. Both limits can be edited on an applied model. The conversation's
+context gauge uses the selected provider and model's metadata, including when
+the display label differs from its ID.
 Reasoning uses Pi's native registry and map semantics. Catalogs may also
 describe exact levels using the OpenCode/models.dev `capabilities.reasoning`
-shape. Model discovery uses the provider's read-only catalog, and switching
+or Anthropic's `capabilities.effort` and `capabilities.thinking` shapes.
+Model discovery uses the provider's read-only catalog, and switching
 reads the selected model's declared options locally. The composer shows an
 effort button with an icon and the current level. Its menu uses a checkmark
 for the selected option. The model label keeps the configured key label as

@@ -22,7 +22,7 @@ read capability from sharing.
 remote devices. GET exposes labels, API formats, sanitized endpoints, cached
 available models and applied metadata, never API keys or custom headers. POST
 adds or edits a labeled key, refreshes its endpoint, applies selected models, or
-removes an applied model. Edits retain the provider ID and applied models. A
+edits limits and removes entries in the applied list. Edits retain the provider ID and applied models. A
 blank key keeps the stored credential. Switching servers requires an entered
 key and explicitly configured credentials and routes are checked before the
 move. Replacement clears a legacy API key from `auth.json` so Pi uses the new
@@ -50,6 +50,11 @@ Google Gemini formats, with bounded same-endpoint pagination, timeouts and
 response sizes. HTTPS is required except on loopback; redirects never receive
 keys. Error responses do not include upstream response bodies. Refresh is a
 read-only model listing, not an inference request, and does not apply models.
+Advertised context and output limits are adopted on apply unless the user enters
+an explicit override. Missing limits use local defaults of 128K context and 8,192
+output tokens for newly added models. Gateway aliases can have different limits
+from upstream models. Editing an applied model updates its Pi definition and
+refreshes idle workers on their next use.
 
 `/api/model-balances` reads New API token quota and OpenRouter key limits using
 the corresponding saved credentials on the Mac. Only the balance state and
@@ -515,7 +520,11 @@ transient snapshot in memory, replacing it with a phase-only snapshot when an
 assistant message commits and discarding it when the run ends. Revisions keep a
 reconnect snapshot ahead of older events that may already be queued.
 
-Broadcasting is fire-and-forget with a buffered channel (16). If the client is slow, keyless events are dropped rather than blocking. Duplicate `reload` and `new-session` events are coalesced per-client while pending.
+Chat previews use a separate one-slot queue for each subscriber. A newer
+cumulative snapshot replaces the pending one, and a skipped commit still
+triggers a transcript reload. A slow subscriber cannot block the Pi worker.
+Other events use a 16-slot queue. Duplicate `reload` and `new-session` events are
+coalesced per-client while pending.
 
 ## Running-Status Computation
 

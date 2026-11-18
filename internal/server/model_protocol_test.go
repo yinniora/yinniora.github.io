@@ -87,3 +87,26 @@ func TestEffortFromStructuredProviderCapabilities(t *testing.T) {
 		t.Fatalf("incorrect declared effort mapping: %+v", model)
 	}
 }
+
+func TestAnthropicCatalogDeclaresEffortAndLimitsForAnAlias(t *testing.T) {
+	model := map[string]any{}
+	describeCatalogModel(model, map[string]any{
+		"max_input_tokens": float64(1000000),
+		"max_tokens":       float64(128000),
+		"capabilities": map[string]any{
+			"thinking": map[string]any{"supported": true, "types": map[string]any{
+				"adaptive": map[string]any{"supported": true},
+				"disabled": map[string]any{"supported": false},
+			}},
+			"effort": map[string]any{"supported": true,
+				"low": map[string]any{"supported": true}, "high": map[string]any{"supported": true},
+				"xhigh": map[string]any{"supported": false}},
+		},
+	}, "gateway-alias", apiAnthropic, "https://example.invalid")
+	levels, _ := model["thinkingLevelMap"].(map[string]any)
+	if model["contextWindow"] != float64(1000000) || model["maxTokens"] != float64(128000) ||
+		model["reasoning"] != true || levels["low"] != "low" || levels["high"] != "high" ||
+		levels["medium"] != nil || levels["xhigh"] != nil || levels["off"] != nil {
+		t.Fatalf("incorrect native catalog capabilities: %+v", model)
+	}
+}

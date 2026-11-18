@@ -154,6 +154,18 @@ func declaredEffortLevels(levels map[string]bool) map[string]any {
 }
 
 func describeCatalogModel(model, raw map[string]any, id, api, base string) {
+	for _, field := range []string{"contextWindow", "context_length", "context_window", "contextLength", "inputTokenLimit", "max_input_tokens"} {
+		if n, ok := raw[field].(float64); ok && n >= 1 && n <= 10000000 && float64(int(n)) == n {
+			model["contextWindow"] = n
+			break
+		}
+	}
+	for _, field := range []string{"maxTokens", "max_output_tokens", "max_completion_tokens", "outputTokenLimit", "max_tokens"} {
+		if n, ok := raw[field].(float64); ok && n >= 1 && n <= 1000000 && float64(int(n)) == n {
+			model["maxTokens"] = n
+			break
+		}
+	}
 	catalogAPI := api
 	types := catalogStrings(raw["supported_endpoint_types"])
 	params := catalogStrings(raw["supported_parameters"])
@@ -211,7 +223,35 @@ func describeCatalogModel(model, raw map[string]any, id, api, base string) {
 			levels["none"] = true
 		}
 	}
+	adaptive := false
+	if api == apiAnthropic {
+		nativeThinking, _ := capabilities["thinking"].(map[string]any)
+		nativeEffort, _ := capabilities["effort"].(map[string]any)
+		if nativeThinking["supported"] == false || nativeEffort["supported"] == false {
+			return
+		}
+		types, _ := nativeThinking["types"].(map[string]any)
+		adaptiveMode, _ := types["adaptive"].(map[string]any)
+		adaptive = adaptiveMode["supported"] == true
+		if nativeEffort["supported"] == true {
+			declared := make(map[string]bool)
+			for _, level := range []string{"low", "medium", "high", "xhigh", "max"} {
+				option, _ := nativeEffort[level].(map[string]any)
+				if option["supported"] == true {
+					declared[level] = true
+				}
+			}
+			if len(declared) > 0 {
+				levels = declared
+				disabled, _ := types["disabled"].(map[string]any)
+				if disabled["supported"] == true {
+					levels["off"] = true
+				}
+			}
+		}
+	}
 	if api == apiAnthropic && ((host == "api.anthropic.com" && adaptiveClaude.MatchString(id)) ||
+		(adaptive && len(levels) > 0) ||
 		params["output_config.effort"] || (adaptiveClaude.MatchString(id) && (params["output_config"] || params["effort"] || len(levels) > 0))) {
 		model["reasoning"] = true
 		model["compat"] = map[string]any{"forceAdaptiveThinking": true}

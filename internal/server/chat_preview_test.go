@@ -1,13 +1,13 @@
 package server
 
 import (
-	"strings"
+	"strconv"
 	"testing"
 
 	"pi-web/internal/rpc"
 )
 
-func TestBroadcastChatPreviewSendsNamedSSEToSession(t *testing.T) {
+func TestBroadcastChatPreviewKeepsLatestSnapshotAndPendingReload(t *testing.T) {
 	s, err := New(Deps{AgentDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -16,18 +16,31 @@ func TestBroadcastChatPreviewSendsNamedSSEToSession(t *testing.T) {
 	client := s.addClient("a.jsonl")
 	defer s.removeClient(client)
 
-	s.BroadcastChatPreview("a.jsonl", rpc.StreamPreview{Content: "hello\nworld", Done: false})
+	other := s.addClient("b.jsonl")
+	defer s.removeClient(other)
+
+	for i := 0; i < cap(client.ch); i++ {
+		client.ch <- "other-event"
+	}
+	s.BroadcastChatPreview("a.jsonl", rpc.StreamPreview{Done: true, Revision: 1, Phase: "working"})
+	for i := 2; i <= 100; i++ {
+		s.BroadcastChatPreview("a.jsonl", rpc.StreamPreview{
+			Content: strconv.Itoa(i), Revision: uint64(i), Phase: "reply",
+		})
+	}
 
 	select {
-	case msg := <-client.ch:
-		if !strings.HasPrefix(msg, "event: chat-preview\ndata: ") {
-			t.Fatalf("msg = %q", msg)
-		}
-		if !strings.Contains(msg, `"content":"hello\nworld"`) {
-			t.Fatalf("content was not JSON escaped in msg = %q", msg)
+	case latest := <-client.preview:
+		if latest.snapshot.Content != "100" || latest.snapshot.Revision != 100 || latest.snapshot.Done || !latest.reload {
+			t.Fatalf("unexpected preview: %+v", latest)
 		}
 	default:
 		t.Fatalf("expected chat-preview broadcast")
+	}
+	select {
+	case <-other.preview:
+		t.Fatal("preview exposed to an unrelated session")
+	default:
 	}
 }
 
@@ -43,8 +56,8 @@ func TestBroadcastChatPreviewDoesNotSendToGlobalTopic(t *testing.T) {
 	s.BroadcastChatPreview("a.jsonl", rpc.StreamPreview{Content: "secret", Done: false})
 
 	select {
-	case msg := <-client.ch:
-		t.Fatalf("global client received chat preview: %q", msg)
+	case msg := <-client.preview:
+		t.Fatalf("global client received chat preview: %+v", msg)
 	default:
 	}
 }

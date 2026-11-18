@@ -77,6 +77,7 @@ export function runChatComposer({
     entries,
     chatApi,
     getKnownModelLabel: () => toolbar.knownModelLabel,
+    getSelectedModel: () => currentModelForThinking,
     positionPopover: () => positionPopover(),
   });
   const updateContextUsage = () => contextUsage.update();
@@ -113,6 +114,7 @@ export function runChatComposer({
       currentModelForThinking = model;
       toolbar.selectedModel = model;
       toolbar.canAdjustThinking = Boolean(model && supportedThinkingLevels(model).length > 1);
+      updateContextUsage();
       _thinkingSelectorApi?.refresh?.();
     },
     setWorkerModelUpdate: (handler) => {

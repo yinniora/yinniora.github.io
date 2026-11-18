@@ -141,8 +141,10 @@ func configuredModels(p map[string]any) []map[string]any {
 	return list
 }
 
+const fallbackContextWindow, fallbackOutputTokens = 128000, 8192
+
 func publicModel(m map[string]any, provider, label string) map[string]any {
-	result := map[string]any{"provider": provider, "providerLabel": label, "id": m["id"], "name": m["id"], "input": []string{"text"}, "reasoning": false, "contextWindow": 128000, "maxTokens": 8192}
+	result := map[string]any{"provider": provider, "providerLabel": label, "id": m["id"], "name": m["id"], "input": []string{"text"}, "reasoning": false}
 	for _, key := range []string{"name", "input", "reasoning", "contextWindow", "maxTokens", "thinkingLevelMap", "cost", "api", "supportsTools"} {
 		if value, ok := m[key]; ok {
 			result[key] = value
@@ -172,8 +174,18 @@ func (s *Server) modelProfiles(providers map[string]any) []modelProfile {
 		}
 		key := s.modelProfileKey(id, p)
 		row := modelProfile{ID: id, Label: label, BaseURL: publicModelBaseURL(base), API: api, HasKey: key != "", Applied: []map[string]any{}, Available: []map[string]any{}}
+		overrides, _ := p["modelOverrides"].(map[string]any)
 		for _, m := range configuredModels(p) {
-			row.Applied = append(row.Applied, publicModel(m, id, label))
+			public := publicModel(m, id, label)
+			if modelID, ok := m["id"].(string); ok {
+				override, _ := overrides[modelID].(map[string]any)
+				for _, field := range []string{"contextWindow", "maxTokens"} {
+					if override[field] != nil {
+						public[field] = override[field]
+					}
+				}
+			}
+			row.Applied = append(row.Applied, public)
 		}
 		row.Available = append(row.Available, row.Applied...)
 		if catalog, ok := s.modelCatalogs[id]; ok && catalog.Signature == profileSignature(p, key) {
@@ -462,12 +474,6 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 				}
 			}
 			if api == "google-generative-ai" {
-				if n, ok := raw["inputTokenLimit"].(float64); ok {
-					m["contextWindow"] = n
-				}
-				if n, ok := raw["outputTokenLimit"].(float64); ok {
-					m["maxTokens"] = n
-				}
 				if methods, ok := raw["supportedGenerationMethods"].([]any); ok {
 					chat := false
 					for _, v := range methods {
@@ -684,15 +690,19 @@ func (s *Server) appliedModels(fallback []map[string]any) ([]map[string]any, err
 		if p.HasKey || availableProviders[p.ID] {
 			profile, _ := providers[p.ID].(map[string]any)
 			for i, configured := range configuredModels(profile) {
-				if _, explicit := configured["reasoning"]; explicit {
-					continue
-				}
 				modelID, _ := configured["id"].(string)
 				if runtime := runtimeModels[[2]string{p.ID, modelID}]; runtime != nil {
 					native := publicModel(runtime, p.ID, p.Label)
-					p.Applied[i]["reasoning"] = native["reasoning"]
-					if levelMap := native["thinkingLevelMap"]; levelMap != nil && configured["thinkingLevelMap"] == nil {
-						p.Applied[i]["thinkingLevelMap"] = levelMap
+					if _, explicit := configured["reasoning"]; !explicit {
+						p.Applied[i]["reasoning"] = native["reasoning"]
+						if levelMap := native["thinkingLevelMap"]; levelMap != nil && configured["thinkingLevelMap"] == nil {
+							p.Applied[i]["thinkingLevelMap"] = levelMap
+						}
+					}
+					for _, field := range []string{"contextWindow", "maxTokens"} {
+						if p.Applied[i][field] == nil && native[field] != nil {
+							p.Applied[i][field] = native[field]
+						}
 					}
 				}
 			}
@@ -978,14 +988,50 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			}
 			if request.ContextWindow > 0 {
 				next["contextWindow"] = request.ContextWindow
+			} else if next["contextWindow"] == nil {
+				next["contextWindow"] = fallbackContextWindow
 			}
 			if request.MaxTokens > 0 {
 				next["maxTokens"] = request.MaxTokens
+			} else if next["maxTokens"] == nil {
+				next["maxTokens"] = fallbackOutputTokens
 			}
 			existing = append(existing, next)
 			present[id] = true
 		}
 		p["models"] = existing
+	case "edit-limits":
+		if p == nil || request.ModelID == "" {
+			writeJSONError(w, 404, "model not found")
+			return
+		}
+		if request.ContextWindow < 1 || request.ContextWindow > 10000000 || request.MaxTokens < 1 || request.MaxTokens > 1000000 {
+			writeJSONError(w, 400, "invalid model limits")
+			return
+		}
+		found := false
+		for _, model := range configuredModels(p) {
+			if model["id"] == request.ModelID {
+				model["contextWindow"] = request.ContextWindow
+				model["maxTokens"] = request.MaxTokens
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeJSONError(w, 404, "model not found")
+			return
+		}
+		if overrides, ok := p["modelOverrides"].(map[string]any); ok {
+			if override, ok := overrides[request.ModelID].(map[string]any); ok {
+				if override["contextWindow"] != nil {
+					override["contextWindow"] = request.ContextWindow
+				}
+				if override["maxTokens"] != nil {
+					override["maxTokens"] = request.MaxTokens
+				}
+			}
+		}
 	case "remove-model":
 		if p == nil || request.ModelID == "" {
 			writeJSONError(w, 404, "model not found")
@@ -1057,7 +1103,7 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		s.modelCatalogs[request.ID] = *editedCatalog
 	}
-	if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok && (configAffectsResources || request.Action == "remove-key" || request.Action == "remove-model") {
+	if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok && (configAffectsResources || request.Action == "remove-key" || request.Action == "remove-model" || request.Action == "edit-limits") {
 		manager.ResourcesChanged()
 	} else if manager, ok := s.chatSender.(interface{ ModelsChanged() }); ok {
 		manager.ModelsChanged()
