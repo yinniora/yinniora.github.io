@@ -53,11 +53,22 @@ export function setupModelSelector({
   let allModels = [];
   let selectedModel = null;
   let changingModel = false;
+  let current = detectCurrentModel(entries);
 
   function setSelected(model) {
     selectedModel = model;
     setCurrentModelForThinking(model || null);
   }
+
+  function reconcileSelection() {
+    setSelected(findModel(allModels, current.provider, current.modelId) || null);
+  }
+
+  setWorkerModelUpdate((provider, modelId) => {
+    if (changingModel || !provider || !modelId) return;
+    current = { provider, modelId };
+    reconcileSelection();
+  });
 
   const popup = documentImpl.getElementById('pi-chat-model-popup');
   const popupSearch = documentImpl.getElementById('pi-chat-model-search');
@@ -89,10 +100,9 @@ export function setupModelSelector({
       .listModels()
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!Array.isArray(data?.models)) return;
+        if (scope?.aborted || !Array.isArray(data?.models)) return;
         allModels = data.models;
-        if (selectedModel)
-          setSelected(findModel(allModels, selectedModel.provider, selectedModel.id) || null);
+        reconcileSelection();
         renderPopupList(popupSearch?.value || '');
       })
       .catch(() => {});
@@ -169,6 +179,8 @@ export function setupModelSelector({
       const setRes = await chatApi.setModel(sessionId, { provider, modelId });
       const setData = await setRes.json();
       if (!setRes.ok) throw new Error(setData.error || 'set model failed');
+      if (scope?.aborted) return;
+      current = { provider, modelId };
       const model = findModel(allModels, provider, modelId);
       setSelected(model || { provider, id: modelId, name: modelId });
       const newLabel = modelDisplayLabel(model || { provider, id: modelId, name: modelId });
@@ -207,39 +219,21 @@ export function setupModelSelector({
       return res.json();
     })
     .then((data) => {
-      if (!data.models || data.models.length === 0) {
-        allModels = [];
-        if (popupList) {
-          popupList.innerHTML = `<div class="model-empty"><a href="/settings?section=models">${escapeHtml(t('models.noneInPicker'))}</a></div>`;
-        }
-        return;
-      }
-      allModels = data.models;
+      if (scope?.aborted) return;
+      allModels = Array.isArray(data.models) ? data.models : [];
+      reconcileSelection();
       if (popup && popup.style.display !== 'none') {
         renderPopupList(popupSearch ? popupSearch.value : '');
       }
-      function updateToggleFromStatus(provider, modelId) {
-        if (!provider || !modelId) return;
-        const model = findModel(allModels, provider, modelId);
-        setSelected(model || null);
-      }
-      setWorkerModelUpdate(updateToggleFromStatus);
-      const detected = detectCurrentModel(entries);
-      if (detected.modelId) {
-        const model = findModel(allModels, detected.provider, detected.modelId);
-        if (model) {
-          setSelected(model);
-          const detectedLabel = modelDisplayLabel(model);
-          if (detectedLabel && !getKnownModelLabel()) {
-            setKnownModelLabel(detectedLabel);
-            setModelLabel(detectedLabel);
-          }
-        }
+      if (selectedModel && !getKnownModelLabel()) {
+        const label = modelDisplayLabel(selectedModel);
+        setKnownModelLabel(label);
+        setModelLabel(label);
       }
     })
     .catch(() => {
       // Model list fetch failed; button still works (shows empty list).
-      if (popupList) {
+      if (!scope?.aborted && popupList) {
         popupList.innerHTML = `<div class="model-empty">${escapeHtml(t('models.pickerFailed'))}</div>`;
       }
     });

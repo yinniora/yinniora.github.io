@@ -53,6 +53,7 @@ export function setupThinkingLevelSelector({
 
   function openThinkingPopup() {
     thinkingPopup.style.display = 'flex';
+    thinkingLabelBtn.setAttribute('aria-expanded', 'true');
     renderThinkingList(getKnownThinkingLevel());
     const rect = thinkingLabelBtn.getBoundingClientRect();
     const minW = 120;
@@ -66,6 +67,7 @@ export function setupThinkingLevelSelector({
 
   function closeThinkingPopup() {
     thinkingPopup.style.display = 'none';
+    thinkingLabelBtn.setAttribute('aria-expanded', 'false');
   }
 
   thinkingLabelBtn.addEventListener('click', (e) => {

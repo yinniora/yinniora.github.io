@@ -1,5 +1,5 @@
 <script>
-  import { icon, Camera, Paperclip, Plus } from '../../../shared/icons.js';
+  import { icon, Camera, Gauge, Paperclip, Plus } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
   import { supportedThinkingLevels } from '../../../session/chat/chat-selectors.js';
   import { ChatToolbarState } from './chat-toolbar-state.svelte.js';
@@ -22,10 +22,18 @@
   const statusText = $derived(
     toolbar.statusText || (chatAvailable ? t('composer.idle') : t('composer.unavailable')),
   );
+  const modelTitle = $derived(
+    toolbar.selectedModel?.providerLabel
+      ? `${toolbar.selectedModel.providerLabel} · ${toolbar.selectedModel.name || toolbar.selectedModel.id}`
+      : toolbar.modelLabel || modelLabel || t('composer.modelPlaceholder'),
+  );
   const effortLabel = $derived(
     supportedThinkingLevels(toolbar.selectedModel).includes(toolbar.thinkingLevel)
       ? t('thinking.' + toolbar.thinkingLevel)
-      : t('composer.switchEffort'),
+      : '',
+  );
+  const effortTitle = $derived(
+    effortLabel ? `${t('composer.switchEffort')} · ${effortLabel}` : t('composer.switchEffort'),
   );
 </script>
 
@@ -56,10 +64,9 @@
       type="button"
       id="pi-chat-model-label"
       class="pi-chat-model-label"
-      title={t('composer.switchModel')}
+      title={modelTitle}
       style:display={chatAvailable ? '' : 'none'}
-      disabled={!chatAvailable}
-      >{toolbar.modelLabel || modelLabel || t('composer.modelPlaceholder')}</button
+      disabled={!chatAvailable}>{modelTitle}</button
     >
     <ContextUsage />
   </div>
@@ -70,13 +77,15 @@
     <button
       type="button"
       id="pi-chat-thinking-label"
-      class="pi-chat-thinking-label {toolbar.thinkingLevel
-        ? 'thinking-' + toolbar.thinkingLevel
-        : ''}"
+      class="pi-chat-thinking-label"
       style:display={chatAvailable && toolbar.canAdjustThinking ? '' : 'none'}
-      title={t('composer.switchEffort')}
-      aria-label={t('composer.switchEffort')}
-      disabled={!chatAvailable}>{effortLabel}</button
+      title={effortTitle}
+      aria-label={effortTitle}
+      aria-controls="pi-chat-thinking-popup"
+      aria-expanded="false"
+      disabled={!chatAvailable}
+      >{@html icon(Gauge, { size: 19 })}
+      {#if effortLabel}<span>{effortLabel}</span>{/if}</button
     >
     <button
       type="button"
@@ -112,6 +121,26 @@
 />
 
 <style>
+  .pi-chat-thinking-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 36px;
+    min-height: 36px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    color: var(--text);
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+  }
+  .pi-chat-thinking-label:is(:hover, :focus-visible) {
+    background: color-mix(in srgb, var(--text) 15%, transparent);
+  }
+  @media (max-width: 760px) {
+    .pi-chat-thinking-label span {
+      display: none;
+    }
+  }
   .pi-chat-toolbar:has(:global(details[open])) {
     overflow: visible;
   }

@@ -247,8 +247,10 @@ Applied models that use a compatible chat endpoint can be checked explicitly.
 The check uses a fixed synthetic prompt and up to three bounded requests for
 that key and model. It requires the gateway to reject an invalid parameter
 and accept adjustable levels before saving them. Ordinary model switching and
-catalog refreshes do not run inference probes. The conversation menu only
-lists levels the selected model supports.
+catalog refreshes do not run inference probes. The composer shows an effort
+gauge beside the computer-control button when the selected model has adjustable
+levels. The menu lists only those levels. The model label keeps the configured
+key label as worker status updates.
 The selected key can be removed after confirmation. This also removes its
 applied models and saved API credential from the Mac's Pi configuration.
 Conversation history is retained. Idle workers reload after deletion, and

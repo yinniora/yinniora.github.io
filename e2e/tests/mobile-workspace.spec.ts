@@ -1237,18 +1237,22 @@ test("composer switches effort on model change and sends a file using the attach
   const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "composer"), entries);
   await page.addInitScript(() => {
     const fetchOriginal = window.fetch.bind(window);
+    let active: { provider: string; modelId: string } | undefined;
     window.fetch = async (input, init) => {
       switch (new URL(String(input), location.href).pathname) {
         case "/api/models":
           return Response.json({ models: [
-            { provider: "catalog", id: "parameter-model", reasoning: true, thinkingLevelMap: { off: null, minimal: null, medium: null, max: "max" } },
+            { provider: "catalog", providerLabel: "Pro key", id: "parameter-model", reasoning: true, thinkingLevelMap: { minimal: null, medium: null, max: "max" } },
             { provider: "other-key", id: "parameter-model", reasoning: true, thinkingLevelMap: { off: null, minimal: null, high: null, low: null, xhigh: "xhigh" } },
             { provider: "catalog", id: "fixed-model-thinking", reasoning: false },
           ] });
         case "/api/set-model":
+          active = JSON.parse(String(init?.body));
           return Response.json({ ok: true });
         case "/api/worker-status":
-          return Response.json({ state: "idle" });
+          return Response.json(active
+            ? { state: "idle", modelProvider: active.provider, model: active.modelId, thinkingLevel: "off" }
+            : { state: "idle" });
         default:
           return fetchOriginal(input, init);
       }
@@ -1260,9 +1264,12 @@ test("composer switches effort on model change and sends a file using the attach
   await expect(effort).toBeHidden();
   await page.locator("#pi-chat-model-label").click();
   await page.locator('.model-item[data-provider="catalog"][data-model-id="parameter-model"]').click();
-  await expect(effort).toBeVisible();
+  await expect(effort).toHaveAttribute("title", "Switch effort · off");
+  await expect(effort.locator("svg")).toBeVisible();
+  await expect(effort).toHaveCSS("height", "36px");
+  await expect(page.locator("#pi-chat-model-label")).toHaveText("Pro key · parameter-model");
   await effort.click();
-  await expect(page.locator("#pi-chat-thinking-list button")).toHaveCount(3);
+  await expect(page.locator("#pi-chat-thinking-list button")).toHaveCount(4);
   await expect(page.locator("#pi-chat-thinking-list button[data-level=max]")).toBeVisible();
   await effort.click();
   await page.locator("#pi-chat-model-label").click();
