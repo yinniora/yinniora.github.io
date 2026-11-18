@@ -11,8 +11,8 @@ export function isTextEditor(element) {
   );
 }
 
-// A resize of the layout viewport already accounts for the keyboard. Only
-// fall back to the visual viewport on browsers where the keyboard overlays it.
+// Fit the shell to the visible keyboard boundary in one step. WebKit may
+// resize both viewports and leave an additional document scroll from focusing.
 export function trackVisualViewport({ windowImpl = window, documentImpl = document } = {}) {
   if (viewportTrackers.has(documentImpl)) return () => {};
   const viewport = windowImpl.visualViewport;
@@ -24,7 +24,7 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
   const history = installedIOS ? windowImpl.history : null;
   const originalRestoration = history?.scrollRestoration;
   if (originalRestoration) history.scrollRestoration = 'manual';
-  let resetScroll = false;
+  let resetAtHeight = null;
   let frame = 0;
   let restingHeight = windowImpl.innerHeight;
   let width = windowImpl.innerWidth;
@@ -33,38 +33,40 @@ export function trackVisualViewport({ windowImpl = window, documentImpl = docume
     if (viewport && Math.abs(viewport.scale - 1) > 0.01) return;
     const layoutHeight = windowImpl.innerHeight;
     if (!Number.isFinite(layoutHeight) || layoutHeight < 1) return;
-    const editing = isTextEditor(documentImpl.activeElement);
+    const editor = documentImpl.activeElement;
+    const editing = isTextEditor(editor);
     if (!editing || width !== windowImpl.innerWidth) restingHeight = layoutHeight;
     width = windowImpl.innerWidth;
     const reportedHeight = viewport?.height;
-    const layoutAlreadyResized = restingHeight - layoutHeight > 100;
-    const overlay =
-      editing &&
-      !layoutAlreadyResized &&
-      reportedHeight >= Math.min(120, layoutHeight) &&
-      layoutHeight - reportedHeight > 100;
-    const height = overlay ? reportedHeight : layoutHeight;
+    const visibleHeight =
+      reportedHeight >= Math.min(120, layoutHeight)
+        ? Math.min(layoutHeight, reportedHeight)
+        : layoutHeight;
+    const keyboardOpen =
+      editing && (restingHeight - layoutHeight > 100 || layoutHeight - visibleHeight > 100);
+    const height = Math.floor(keyboardOpen ? visibleHeight : layoutHeight);
+    style.setProperty('--pi-visual-height', `${height}px`);
+    documentImpl.documentElement.classList.toggle('pi-keyboard-open', Boolean(keyboardOpen));
 
-    // WebKit can retain a full-height pan after the document collapses to
-    // one screen. At normal scale with the keyboard closed, correct it once.
+    if (!installedIOS || !viewport) return;
     const stalePan =
-      installedIOS &&
-      !editing &&
+      !keyboardOpen &&
       Math.abs(reportedHeight - layoutHeight) < 32 &&
       viewport.offsetTop >= layoutHeight - 32;
-    if (stalePan && !resetScroll) {
-      resetScroll = true;
-      const root = documentImpl.scrollingElement;
+    const root = documentImpl.scrollingElement;
+    const composerPan =
+      keyboardOpen &&
+      editor.closest('#pi-chat-composer, .pi-btw-window') &&
+      ((root?.scrollTop || 0) > 1 || viewport.offsetTop > 48);
+    if (!stalePan && !composerPan) {
+      resetAtHeight = null;
+    } else if (resetAtHeight === null || Math.abs(height - resetAtHeight) >= 8) {
+      // Setting the shell height first lets the input fit before undoing
+      // iOS's document scroll. Avoid repeated resets at the same size.
+      resetAtHeight = height;
       if (root?.scrollTop) root.scrollTop = 0;
       windowImpl.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-    } else if (!stalePan) {
-      resetScroll = false;
     }
-    style.setProperty('--pi-visual-height', `${height}px`);
-    documentImpl.documentElement.classList.toggle(
-      'pi-keyboard-open',
-      Boolean(editing && (layoutAlreadyResized || overlay)),
-    );
   };
   const schedule = () => {
     if (!frame) frame = windowImpl.requestAnimationFrame(update);

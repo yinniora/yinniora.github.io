@@ -35,7 +35,7 @@ it('resizes the whole visible area for a keyboard and ignores page pinch zoom', 
   win.innerHeight = 390;
   viewport.height = 260;
   win.dispatchEvent(new Event('resize'));
-  expect(document.documentElement.style.getPropertyValue('--pi-visual-height')).toBe('390px');
+  expect(document.documentElement.style.getPropertyValue('--pi-visual-height')).toBe('260px');
   editor.remove();
   win.innerHeight = 760;
   viewport.height = 760;
@@ -91,6 +91,59 @@ it('resets a whole-screen standalone iOS pan once without fighting the keyboard'
   editor.remove();
   dispose();
   expect(win.history.scrollRestoration).toBe('auto');
+});
+
+it('fits and resets the dock after the iPhone resizes and scrolls on focus', () => {
+  const viewport = Object.assign(new EventTarget(), { height: 812, offsetTop: 0, scale: 1 });
+  const root = { scrollTop: 0 };
+  const win = Object.assign(new EventTarget(), {
+    navigator: { standalone: true },
+    visualViewport: viewport,
+    innerWidth: 402,
+    innerHeight: 812,
+    requestAnimationFrame: (fn) => {
+      fn();
+      return 0;
+    },
+    cancelAnimationFrame: vi.fn(),
+    scrollTo: vi.fn(() => {
+      expect(document.documentElement.style.getPropertyValue('--pi-visual-height')).toBe('415px');
+      viewport.offsetTop = 0;
+    }),
+  });
+  const scroller = Object.getOwnPropertyDescriptor(document, 'scrollingElement');
+  Object.defineProperty(document, 'scrollingElement', { value: root, configurable: true });
+  const form = document.createElement('form');
+  form.id = 'pi-chat-composer';
+  const editor = document.createElement('textarea');
+  editor.value = 'Draft';
+  form.append(editor);
+  document.body.append(form);
+
+  const dispose = trackVisualViewport({ documentImpl: document, windowImpl: win });
+  editor.focus();
+  win.innerHeight = 436;
+  Object.assign(viewport, { height: 415, offsetTop: 376 });
+  root.scrollTop = 376;
+  viewport.dispatchEvent(new Event('resize'));
+  expect(root.scrollTop).toBe(0);
+  expect(win.scrollTo).toHaveBeenCalledTimes(1);
+  expect(document.activeElement).toBe(editor);
+
+  viewport.dispatchEvent(new Event('scroll'));
+  expect(win.scrollTo).toHaveBeenCalledTimes(1);
+  win.innerHeight = 812;
+  viewport.height = 812;
+  viewport.dispatchEvent(new Event('resize'));
+  expect(document.documentElement.style.getPropertyValue('--pi-visual-height')).toBe('812px');
+  expect(document.documentElement.classList.contains('pi-keyboard-open')).toBe(false);
+  expect(document.activeElement).toBe(editor);
+  expect(editor.value).toBe('Draft');
+
+  dispose();
+  form.remove();
+  if (scroller) Object.defineProperty(document, 'scrollingElement', scroller);
+  else delete document.scrollingElement;
 });
 
 it('blocks native zoom gestures without intercepting taps or scrolling', async () => {

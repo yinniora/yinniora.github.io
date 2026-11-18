@@ -171,9 +171,9 @@ survives reloads and clears when the conversation is viewed in the foreground.
 Read state is kept in the current browser.
 
 `trackVisualViewport` is installed once per document. The whole mobile session,
-model picker, sheets and BTW window use one height. A browser resize takes
-precedence. When the keyboard overlays an editor, the visual viewport height is
-the fallback. Focus-scroll offsets never translate the app shell.
+model picker, sheets and BTW window use one height. While the keyboard is
+visible, the app fits the smaller valid window or visual viewport height. The
+outer document and the composer use the same height throughout the transition.
 Editable controls use at least 16px text. Model selection and BTW opening do
 not automatically focus a text field on mobile. Viewport metadata, CSS touch
 behavior and WebKit zoom events lock page zoom while single-finger touch
@@ -187,8 +187,8 @@ browser history. Sheets unmount on close and never traverse history.
 Navigation clears the old view's input focus. Conversation follow-scroll
 updates the transcript's scroll position. The remote connection view leaves
 document flow as soon as the workspace renders. Installed iOS clients use
-manual history scroll restoration and reset a stale full-screen visual pan
-when the keyboard is closed.
+manual history scroll restoration. A stale full-screen pan or an unwanted
+document pan while editing in the composer is corrected at the current height.
 
 `ImageModal` handles transcript/Markdown images and gallery images/SVGs in a
 native modal with an explicit close button, blank/letterbox dismissal, zoom and reset controls.

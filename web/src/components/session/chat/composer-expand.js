@@ -36,7 +36,8 @@ export function setupComposerExpansion({
     } catch {
       // Ignore storage availability errors; expansion still works for this page.
     }
-    if (willExpand && textarea && typeof textarea.focus === 'function') textarea.focus();
+    if (willExpand && textarea && typeof textarea.focus === 'function')
+      textarea.focus({ preventScroll: true });
   });
 
   return { apply, storageKey };

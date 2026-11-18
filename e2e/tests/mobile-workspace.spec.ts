@@ -411,9 +411,11 @@ test("mobile workspace collapses projects, returns home and fits the keyboard vi
   await collapseScratchpad(page);
   await page.addInitScript(
     ({ height }) => {
+      Object.defineProperty(navigator, "standalone", { value: true });
       const viewport = new EventTarget();
       Object.assign(viewport, {
         height,
+        layoutHeight: height,
         offsetTop: 0,
         scale: 1,
       });
@@ -421,6 +423,18 @@ test("mobile workspace collapses projects, returns home and fits the keyboard vi
         value: viewport,
         configurable: true,
       });
+      Object.defineProperty(window, "innerHeight", {
+        get: () => (viewport as any).layoutHeight,
+      });
+      const scrollTo = window.scrollTo.bind(window);
+      window.scrollTo = (options: ScrollToOptions | number, y?: number) => {
+        if (typeof options === "object" && options.top === 0) {
+          (viewport as any).offsetTop = 0;
+          viewport.dispatchEvent(new Event("scroll"));
+        }
+        if (typeof options === "object") scrollTo(options);
+        else scrollTo(options, y ?? 0);
+      };
       (window as any).__testViewport = viewport;
     },
     { height: page.viewportSize()!.height },
@@ -475,6 +489,33 @@ test("mobile workspace collapses projects, returns home and fits the keyboard vi
   const picker = await page.locator("#pi-chat-model-popup").boundingBox();
   expect(picker!.y + picker!.height).toBeLessThanOrEqual(421);
   await page.locator(".mobile-model-heading button").click();
+  const message = page.locator("#pi-chat-message");
+  await message.tap();
+  await page.evaluate(() => {
+    const viewport = (window as any).__testViewport;
+    Object.assign(viewport, { layoutHeight: 436, height: 415, offsetTop: 376 });
+    viewport.dispatchEvent(new Event("resize"));
+  });
+  await expect(page.locator("html")).toHaveCSS("height", "415px");
+  await expect(page.locator("body")).toHaveCSS("height", "415px");
+  await expect
+    .poll(() => page.evaluate(() => visualViewport?.offsetTop))
+    .toBe(0);
+  await expect(message).toBeFocused();
+  await expect(message).toHaveValue("A draft");
+  const dock = (await page.locator("#pi-chat-composer").boundingBox())!;
+  expect(dock.y + dock.height).toBeCloseTo(415, 0);
+
+  const fullHeight = page.viewportSize()!.height;
+  await page.evaluate((height) => {
+    const viewport = (window as any).__testViewport;
+    Object.assign(viewport, { layoutHeight: height, height, offsetTop: 0 });
+    viewport.dispatchEvent(new Event("resize"));
+  }, fullHeight);
+  await expect(page.locator("html")).toHaveCSS("height", `${fullHeight}px`);
+  await expect(page.locator("html")).not.toHaveClass(/pi-keyboard-open/);
+  await expect(message).toHaveValue("A draft");
+  await expect(page.locator(".session-header-back")).toBeInViewport();
   await page.locator(".session-header-back").click();
   await expect(page.locator(".mobile-home")).toBeVisible();
   await expect(page.locator(".home-project").first()).toBeVisible();
