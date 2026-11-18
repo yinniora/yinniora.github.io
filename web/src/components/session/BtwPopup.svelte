@@ -453,6 +453,8 @@
               error={r.message.errorMessage || t('activity.failed')}
               model={[r.message.provider, r.message.model].filter(Boolean).join('/')}
             />
+          {:else if r.message?.stopReason === 'aborted'}
+            <ReplyError interrupted />
           {/if}
           {#if r.role === 'user'}
             <CopyMessageButton text={btwContentText(r.message?.content)} iconOnly />

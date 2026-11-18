@@ -30,6 +30,7 @@
     {#if status}<span
         class="activity-status"
         class:pending={status === 'pending'}
+        class:failed={status === 'error'}
         title={t(
           `activity.${status === 'pending' ? 'running' : status === 'error' ? 'failed' : 'done'}`,
         )}

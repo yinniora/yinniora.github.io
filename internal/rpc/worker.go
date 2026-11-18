@@ -539,8 +539,10 @@ func (w *piRPCWorker) consume(r io.Reader) {
 
 func (w *piRPCWorker) handleRPCLine(line string) {
 	var meta struct {
-		Type  string `json:"type"`
-		Level string `json:"level"`
+		Type       string                `json:"type"`
+		Level      string                `json:"level"`
+		ToolCallID string                `json:"toolCallId"`
+		Message    struct{ Role string } `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(line), &meta); err != nil {
 		return
@@ -573,23 +575,31 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		w.writeMu.Lock()
 		_ = WriteCommand(w.stdin, map[string]any{"type": "abort_retry"})
 		w.writeMu.Unlock()
-	case "message_end", "turn_end":
+	case "message_end":
 		w.noteStreamActivity()
-		w.completeStreamPreview()
+		if meta.Message.Role == "assistant" || meta.Message.Role == "" {
+			w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
+		}
+	case "turn_end":
+		w.noteStreamActivity()
+	case "tool_execution_start", "tool_execution_end":
+		w.noteStreamActivity()
+		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type, ToolCallID: meta.ToolCallID})
 	case "agent_start":
 		w.mu.Lock()
 		w.agentRevision++
 		w.status.State = workers.WorkerStateRunning
 		w.status.Error = ""
 		w.mu.Unlock()
+		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
 	case "agent_end":
-		w.completeStreamPreview()
 		w.mu.Lock()
 		w.agentRevision++
 		w.status = workers.WorkerStatus{State: workers.WorkerStateIdle}
 		clear(w.computerRequests)
 		w.mu.Unlock()
 		w.lastStreamActivity.Store(0)
+		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
 	case "thinking_level_changed":
 		if meta.Level != "" {
 			w.mu.Lock()
@@ -607,18 +617,26 @@ func (w *piRPCWorker) emitStreamPreview(event assistantMessageEvent) {
 	if w.streamSink == nil || w.streamPreview == nil {
 		return
 	}
-	if preview, ok := w.streamPreview.handleAssistantEvent(event); ok {
+	w.mu.Lock()
+	preview, ok := w.streamPreview.handleAssistantEvent(event)
+	w.mu.Unlock()
+	if ok {
 		w.streamSink(preview)
 	}
 }
 
-func (w *piRPCWorker) completeStreamPreview() {
-	if w.streamSink == nil || w.streamPreview == nil {
-		return
+func (w *piRPCWorker) ChatPreview() (workers.LivePreview, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.streamPreview != nil && w.status.State != workers.WorkerStateError {
+		if w.streamPreview.phase != "" {
+			return w.streamPreview.snapshot(), true
+		}
+		if w.status.State == workers.WorkerStateRunning {
+			return workers.LivePreview{Phase: "working"}, true
+		}
 	}
-	if preview, ok := w.streamPreview.complete(); ok {
-		w.streamSink(preview)
-	}
+	return workers.LivePreview{}, false
 }
 
 func (w *piRPCWorker) hasRecentStreamActivityLocked(now time.Time) bool {
@@ -638,7 +656,6 @@ func (w *piRPCWorker) wait() {
 func (w *piRPCWorker) setError(err error) {
 	err = w.withStderr(err)
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.status.State != workers.WorkerStateError {
 		w.status = workers.WorkerStatus{State: workers.WorkerStateError, Error: err.Error()}
 	}
@@ -646,6 +663,8 @@ func (w *piRPCWorker) setError(err error) {
 		delete(w.pending, id)
 		ch <- response{ID: id, Type: "response", Success: false, Error: err.Error()}
 	}
+	w.mu.Unlock()
+	w.emitStreamPreview(assistantMessageEvent{Type: "agent_end"})
 }
 
 func (w *piRPCWorker) withStderr(err error) error {

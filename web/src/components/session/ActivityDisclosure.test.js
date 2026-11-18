@@ -45,9 +45,10 @@ it('individually toggles and remembers thinking and tool disclosures across rend
     },
   });
   controller.setAllExpanded(true);
-  expect([...document.querySelectorAll('details')].every((el) => el.open)).toBe(true);
+  const disclosures = [...document.querySelectorAll('.activity-disclosure')];
+  expect(disclosures.every((el) => el.open)).toBe(true);
   controller.setAllExpanded(false);
-  expect([...document.querySelectorAll('details')].some((el) => el.open)).toBe(false);
+  expect(disclosures.some((el) => el.open)).toBe(false);
 });
 it('keeps a pending user question open by default', () => {
   const { container } = render(ToolCall, {

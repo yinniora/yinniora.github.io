@@ -22,10 +22,12 @@
   import { ChatToolbarState } from './chat/chat-toolbar-state.svelte.js';
   import { QueueStore } from './chat/queue-store.svelte.js';
   import { createQueueApi } from './chat/queue-api.js';
+  import { progressLabel } from '../../session/live/chat-preview.js';
 
   let {
     sessionId = '',
     chatAvailable = true,
+    sessionRunning = false,
     chatDisabledReason = '',
     cwd = '',
     modelLabel = '',
@@ -34,6 +36,7 @@
   // Reactive toolbar state owned here so the live runtime can mutate it while
   // <ChatToolbar> renders from it.
   const toolbar = new ChatToolbarState();
+  let previewPhase = $state('');
   // Reactive queue panel state — shared with chat-composer-runtime so its
   // steer/queue glue mutates the same items <QueuePanel> renders. The queued
   // items live on the server (chat_queue table); we hydrate on mount and
@@ -100,10 +103,15 @@
       /* Draft recovery is optional when browser storage is unavailable. */
     }
     const onQueueEvent = () => queueStore.refresh?.();
+    const onChatPhase = (event) => {
+      if (event.detail?.sessionId === sessionId) previewPhase = event.detail.phase;
+    };
     target.addEventListener('pi-queue-event', onQueueEvent);
+    target.addEventListener('pi:chat-phase', onChatPhase);
     return () => {
       disposeComposer();
       target.removeEventListener('pi-queue-event', onQueueEvent);
+      target.removeEventListener('pi:chat-phase', onChatPhase);
     };
   });
 </script>
@@ -134,6 +142,12 @@
   />
   <input id="pi-chat-files" type="file" multiple hidden disabled={!chatAvailable} />
   <QueuePanel store={queueStore} />
+  {#if toolbar.isRunning || previewPhase || (!chatAvailable && sessionRunning)}
+    <div class="session-progress" role="status">
+      <span class="session-progress-spinner" aria-hidden="true"></span>
+      <span>{toolbar.compacting ? t('piSession.compacting') : progressLabel(previewPhase)}</span>
+    </div>
+  {/if}
   <div class="pi-chat-shell">
     <ChatExpandButton {chatAvailable} />
     {#if cwd}<div class="pi-chat-toolbar pi-chat-cwd-bar">

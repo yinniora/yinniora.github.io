@@ -10,12 +10,19 @@ export function setupBtwSessionEvents({
 } = {}) {
   if (!sessionId || !EventSourceImpl) return null;
   const source = createBtwEventSource(sessionId, { EventSourceImpl });
+  let lastRevision = 0;
+  source.addEventListener('open', () => (lastRevision = 0));
   source.onmessage = (event) => {
     if (event.data === 'reload') onReload();
   };
   source.addEventListener('chat-preview', (event) => {
     try {
-      onChatPreview(JSON.parse(event.data));
+      const payload = JSON.parse(event.data);
+      if (payload?.revision) {
+        if (payload.revision <= lastRevision) return;
+        lastRevision = payload.revision;
+      }
+      onChatPreview(payload);
     } catch {
       // Ignore malformed preview events; they are best-effort.
     }

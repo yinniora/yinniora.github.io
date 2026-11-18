@@ -621,6 +621,7 @@ export default {
   'activity.collapseAll': '全部收起',
   'activity.done': '已完成',
   'activity.failed': '失败',
+  'activity.interrupted': '回复已中止',
   'activity.running': '运行中',
   'projects.confirmFilesTitle': '删除该文件夹及其所有文件？',
   'projects.confirmFilesBody':

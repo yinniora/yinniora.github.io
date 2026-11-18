@@ -91,8 +91,43 @@ function writeTurn(userText, reply) {
   appendEntry(messageEntry("assistant", reply, user.id).entry);
 }
 
+let heldPreview = null;
+
 function handlePrompt(cmd) {
   const raw = typeof cmd.message === "string" ? cmd.message : JSON.stringify(cmd.message ?? "");
+  if (raw === "[[hold-preview]]") {
+    respond(cmd.id, "prompt", { disposition: "started" });
+    const user = messageEntry("user", "Track preview state", lastEntryId());
+    appendEntry(user.entry);
+    heldPreview = { last: user.id, tool: false };
+    send({ type: "agent_start" });
+    send({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "Fixture thinking before reconnect." } });
+    return;
+  }
+  if (heldPreview && raw === "[[preview-tool]]") {
+    respond(cmd.id, "prompt", { disposition: "queued" });
+    const assistant = messageEntry("assistant", "", heldPreview.last);
+    assistant.entry.message.content = [
+      { type: "thinking", thinking: "Fixture thinking before reconnect." },
+      { type: "toolCall", id: "fixture-live-tool", name: "read", arguments: { path: "fixture.txt" } },
+    ];
+    assistant.entry.message.stopReason = "toolUse";
+    appendEntry(assistant.entry);
+    heldPreview = { last: assistant.id, tool: true };
+    send({ type: "message_end", message: { role: "assistant" } });
+    send({ type: "tool_execution_start", toolCallId: "fixture-live-tool", toolName: "read" });
+    return;
+  }
+  if (heldPreview && raw === "[[complete-preview]]") {
+    respond(cmd.id, "prompt", { disposition: "queued" });
+    if (heldPreview.tool) send({ type: "tool_execution_end", toolCallId: "fixture-live-tool" });
+    appendEntry(messageEntry("assistant", "Fixture final answer.", heldPreview.last).entry);
+    heldPreview = null;
+    send({ type: "message_update", assistantMessageEvent: { type: "text_end", content: "Fixture final answer." } });
+    send({ type: "message_end", message: { role: "assistant" } });
+    send({ type: "agent_end" });
+    return;
+  }
   if (/^\/fixture-picker(?:\s|$)/.test(raw)) {
     extensionPrompt = cmd.id;
     send({ type: "extension_ui_request", id: "fixture-choice", method: "select", title: "Pick a fixture option", options: ["Alpha", "Beta"] });
@@ -156,6 +191,15 @@ function handle(cmd) {
       respond(cmd.id, "set_thinking_level", { thinkingLevel });
       break;
     case "abort":
+      if (heldPreview) {
+        const stopped = messageEntry("assistant", "", heldPreview.last);
+        Object.assign(stopped.entry.message, {
+          content: [], stopReason: "aborted", provider: model.provider, model: model.id,
+        });
+        appendEntry(stopped.entry);
+        heldPreview = null;
+        send({ type: "message_end", message: stopped.entry.message });
+      }
       respond(cmd.id, "abort", {});
       send({ type: "agent_end" });
       break;

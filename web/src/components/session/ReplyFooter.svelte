@@ -2,15 +2,16 @@
   import CopyMessageButton from './CopyMessageButton.svelte';
   import { formatTimestamp } from '../../session/render/entry-format.js';
 
-  let { text, model, timestamp } = $props();
+  let { text, model, timestamp, menu } = $props();
   const date = $derived(timestamp ? new Date(timestamp) : null);
   const time = $derived(date && Number.isFinite(date.getTime()) ? formatTimestamp(date) : '');
 </script>
 
 <div class="reply-footer">
   <div class="reply-actions">
-    <CopyMessageButton {text} />
+    {#if text?.trim()}<CopyMessageButton {text} />{/if}
     {#if time}<time datetime={date.toISOString()} title={date.toLocaleString()}>{time}</time>{/if}
+    {@render menu?.()}
   </div>
   {#if model}<span class="reply-model" title={model}>{model}</span>{/if}
 </div>

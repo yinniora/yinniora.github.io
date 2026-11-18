@@ -317,6 +317,7 @@ export default {
   'activity.collapseAll': 'Collapse all',
   'activity.done': 'Completed',
   'activity.failed': 'Failed',
+  'activity.interrupted': 'Reply stopped',
   'activity.running': 'Running',
   'index.removeProject': 'Remove',
   'index.enterPath': 'Please enter a path',

@@ -5,7 +5,7 @@
   // keeps its `entry-<id>` anchor so annotation offsets + scroll/toggle survive.
   // Shared by the live app and the static export (model passed as a prop).
   import { marked } from 'marked';
-  import { icon, GitFork, Link2, Tag } from '../../shared/icons.js';
+  import { icon, Ellipsis, GitFork, Link2, Tag } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { safeMarkedParse } from '../../session/render/markdown.js';
   import { formatTimestamp } from '../../session/render/entry-format.js';
@@ -37,6 +37,15 @@
   const msg = $derived(entry?.type === 'message' ? entry.message : null);
   const assistantContent = $derived(
     typeof msg?.content === 'string' ? [{ type: 'text', text: msg.content }] : msg?.content || [],
+  );
+  const activityOnly = $derived(
+    live &&
+      !reply &&
+      !outputs?.length &&
+      msg?.stopReason !== 'error' &&
+      msg?.stopReason !== 'aborted' &&
+      assistantContent.some((block) => block.type === 'toolCall' || block.thinking?.trim()) &&
+      !assistantContent.some((block) => block.type === 'text' && block.text?.trim()),
   );
   const userText = $derived.by(() => {
     if (!msg || msg.role !== 'user') return '';
@@ -78,11 +87,25 @@
     >{@html icon(Link2, { size: 14 })}</button
   >
 {/snippet}
+{#snippet entryMenu(id)}
+  <details class="entry-actions-menu" name="entry-actions">
+    <summary aria-label={t('palette.actions')}>{@html icon(Ellipsis, { size: 16 })}</summary>
+    <div
+      class="entry-action-buttons"
+      role="presentation"
+      onclick={(event) => {
+        if (event.target.closest('button')) event.currentTarget.closest('details').open = false;
+      }}
+    >
+      {@render actions(id)}
+    </div>
+  </details>
+{/snippet}
 {#snippet timestamp()}{#if ts}<div class="message-timestamp">{ts}</div>{/if}{/snippet}
 
 {#if msg && msg.role === 'user'}
   <div class="user-message" id={`entry-${entry.id}`}>
-    {@render actions(entry.id)}{@render timestamp()}
+    {#if !live}{@render actions(entry.id)}{/if}{@render timestamp()}
     {#if userImages.length > 0}<div class="message-images">
         {#each userImages as img, imgIndex (imgIndex)}<img
             src={`data:${img.mimeType || 'image/png'};base64,${img.data}`}
@@ -92,12 +115,19 @@
       </div>{/if}
     {#if userText.trim()}<div class="markdown-content">{@html md(userText)}</div>{/if}
   </div>
-  {#if live && userText.trim()}
-    <div class="message-copy-row"><CopyMessageButton text={userText} iconOnly /></div>
+  {#if live}
+    <div class="message-copy-row">
+      {#if userText.trim()}<CopyMessageButton text={userText} iconOnly />{/if}
+      {@render entryMenu(entry.id)}
+    </div>
   {/if}
 {:else if msg && msg.role === 'assistant'}
-  <div class="assistant-message" id={`entry-${entry.id}`}>
-    {@render actions(entry.id)}
+  <div
+    class="assistant-message"
+    class:assistant-activity-only={activityOnly}
+    id={`entry-${entry.id}`}
+  >
+    {#if !live}{@render actions(entry.id)}{/if}
     {#if !reply}{@render timestamp()}{/if}
     {#each assistantContent as block, blockIndex (blockIndex)}
       {#if block.type === 'text' && block.text.trim()}<div class="assistant-text markdown-content">
@@ -122,9 +152,13 @@
           {model}
           {live}
         />{/if}{/each}
-    {#if msg.stopReason === 'aborted'}<div class="error-text">
-        Aborted
-      </div>{:else if msg.stopReason === 'error'}
+    {#if msg.stopReason === 'aborted'}
+      {#if live}
+        <ReplyError interrupted onRetry={chatAvailable && retryContent ? retry : null} />
+      {:else}
+        <div class="error-text">{t('activity.interrupted')}</div>
+      {/if}
+    {:else if msg.stopReason === 'error'}
       {#if live}
         <ReplyError
           error={msg.errorMessage || t('activity.failed')}
@@ -139,7 +173,13 @@
     {#if outputs?.length}
       {@render renderOutputs?.(outputs)}
     {/if}
-    {#if reply}<ReplyFooter {...reply} />{/if}
+    {#if reply}
+      <ReplyFooter {...reply}>
+        {#snippet menu()}{#if live}{@render entryMenu(entry.id)}{/if}{/snippet}
+      </ReplyFooter>
+    {:else if live}
+      {@render entryMenu(entry.id)}
+    {/if}
   </div>
 {:else if msg && msg.role === 'bashExecution'}
   <div

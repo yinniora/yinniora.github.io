@@ -42,7 +42,8 @@ export function entriesWithReplyDetails(entries) {
             .filter((block) => block.type === 'text' && block.text?.trim())
             .map((block) => block.text)
             .join('\n\n');
-    if (!text.trim()) return { entry, reply: null };
+    const interrupted = message.stopReason === 'aborted';
+    if (!text.trim() && !interrupted) return { entry, reply: null };
 
     const model = message.model
       ? [message.provider, message.model].filter(Boolean).join('/')
@@ -50,6 +51,7 @@ export function entriesWithReplyDetails(entries) {
     return {
       entry,
       reply: { text, model, timestamp: entry.timestamp || message.timestamp },
+      retryContent: interrupted ? prompt : null,
     };
   });
 }

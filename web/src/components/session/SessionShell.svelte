@@ -270,7 +270,14 @@
         </OutputGallery>
       </div>
     </main>
-    <ChatComposer {sessionId} {chatAvailable} {chatDisabledReason} {cwd} {modelLabel} />
+    <ChatComposer
+      {sessionId}
+      {chatAvailable}
+      {chatDisabledReason}
+      {cwd}
+      {modelLabel}
+      sessionRunning={runningSessionIds.has(sessionId)}
+    />
   </div>
   <RightSidebar {scratchpad} projectPath={cwd} {annotationConfig} />
   <ImageModal />

@@ -22,7 +22,7 @@ func TestStreamPreviewAccumulatorBuildsFullContentFromTextDeltas(t *testing.T) {
 	}
 }
 
-func TestStreamPreviewAccumulatorUsesTextEndContentAndMarksDone(t *testing.T) {
+func TestStreamPreviewAccumulatorUsesTextEndContentUntilTheMessageCommits(t *testing.T) {
 	acc := &streamPreviewAccumulator{}
 	_, _ = acc.handleAssistantEvent(assistantMessageEvent{Type: "text_delta", Delta: "draft"})
 
@@ -30,15 +30,32 @@ func TestStreamPreviewAccumulatorUsesTextEndContentAndMarksDone(t *testing.T) {
 	if !ok {
 		t.Fatalf("text_end did not emit preview")
 	}
-	if preview.Content != "final" || !preview.Done {
-		t.Fatalf("preview = %+v, want final done preview", preview)
+	if preview.Content != "final" || preview.Done {
+		t.Fatalf("preview = %+v, want final block content", preview)
+	}
+	checkpoint, ok := acc.handleAssistantEvent(assistantMessageEvent{Type: "message_end"})
+	if !ok || !checkpoint.Done || checkpoint.Phase != "working" || checkpoint.Content != "" {
+		t.Fatalf("message checkpoint = %+v, want continuing progress", checkpoint)
 	}
 }
 
-func TestStreamPreviewAccumulatorIgnoresNonTextEvents(t *testing.T) {
+func TestStreamPreviewRestoresLatestThinkingUntilCommit(t *testing.T) {
 	acc := &streamPreviewAccumulator{}
-	if preview, ok := acc.handleAssistantEvent(assistantMessageEvent{Type: "thinking_end"}); ok {
-		t.Fatalf("thinking event emitted preview: %+v", preview)
+	for _, event := range []assistantMessageEvent{
+		{Type: "thinking_start"},
+		{Type: "thinking_delta", Delta: "Brief progress"},
+		{Type: "thinking_end", Content: "Final thinking block"},
+	} {
+		if _, ok := acc.handleAssistantEvent(event); !ok {
+			t.Fatalf("event %s did not emit progress", event.Type)
+		}
+	}
+	if snapshot := acc.snapshot(); snapshot.Thinking != "Final thinking block" || snapshot.Phase != "thinking" {
+		t.Fatalf("snapshot = %+v", snapshot)
+	}
+	_, _ = acc.handleAssistantEvent(assistantMessageEvent{Type: "message_end"})
+	if snapshot := acc.snapshot(); snapshot.Thinking != "" || snapshot.Phase != "working" {
+		t.Fatalf("committed snapshot = %+v", snapshot)
 	}
 }
 

@@ -1,3 +1,12 @@
+import { t } from '../../shared/i18n.js';
+import { icon, ChevronRight } from '../../shared/icons.js';
+
+export function progressLabel(phase) {
+  if (phase === 'thinking') return t('activity.thinking');
+  if (phase === 'tool') return t('activity.tools');
+  return t('btw.working');
+}
+
 export function getSpinnerConfig(windowImpl = typeof window !== 'undefined' ? window : null) {
   let style = 'runcat';
   try {
@@ -37,31 +46,21 @@ export function clearChatPreviewState(state, { keepAssistant = false } = {}) {
       state.chatPreviewEl.parentNode.removeChild(state.chatPreviewEl);
     }
     state.chatPreviewEl = null;
+    state.phase = '';
     stopWorkingAnimation(state);
   }
 }
 
 export function finishChatPreviewState(state) {
   if (!state?.chatPreviewEl) return false;
+  state.phase = '';
   state.chatPreviewEl.classList.remove('chat-preview-waiting');
   state.chatPreviewEl.classList.add('done');
-  const label = state.chatPreviewEl.querySelector('.preview-label');
-  if (label && label.parentNode) label.parentNode.removeChild(label);
+  state.chatPreviewEl.querySelector('.preview-progress')?.remove();
   stopWorkingAnimation(state);
   return true;
 }
 // Test placeholder for TestSessionViteSourceShowsAnimatedWorkingPreviewLabel: working<span class="working-dots"
-
-const CREATIVE_MESSAGES = [
-  'Working...',
-  'Thinking...',
-  'Analyzing codebase...',
-  'Synthesizing answer...',
-  'Consulting model...',
-  'Formulating solution...',
-  'Checking files...',
-  'Drafting response...',
-];
 
 export function startWorkingAnimation(
   state,
@@ -71,46 +70,18 @@ export function startWorkingAnimation(
   } = {},
 ) {
   stopWorkingAnimation(state);
-
+  if (windowImpl?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
   const config = getSpinnerConfig(windowImpl);
   let frameIdx = 0;
-  let msgIdx = 0;
-  let lastMsgChange = Date.now();
-  state.activePreviewMessage = null;
-
-  // Sync initial spinner properties if spinner element is already present
-  if (state.chatPreviewEl) {
-    const spinnerEl = state.chatPreviewEl.querySelector('.preview-spinner');
-    if (spinnerEl) {
-      spinnerEl.style.fontFamily = config.fontFamily;
-      spinnerEl.style.width = config.width;
-      spinnerEl.textContent = config.frames[0];
-    }
-  }
-
   state.spinnerInterval = setIntervalImpl(() => {
     if (!state.chatPreviewEl) {
       stopWorkingAnimation(state);
       return;
     }
 
-    const spinnerEl = state.chatPreviewEl.querySelector('.preview-spinner');
-    if (spinnerEl) {
-      if (spinnerEl.style.fontFamily !== config.fontFamily) {
-        spinnerEl.style.fontFamily = config.fontFamily;
-        spinnerEl.style.width = config.width;
-      }
-      frameIdx = (frameIdx + 1) % config.frames.length;
+    frameIdx = (frameIdx + 1) % config.frames.length;
+    for (const spinnerEl of state.chatPreviewEl.querySelectorAll('.preview-spinner')) {
       spinnerEl.textContent = config.frames[frameIdx];
-    }
-
-    if (!state.activePreviewMessage && Date.now() - lastMsgChange >= 2000) {
-      const textEl = state.chatPreviewEl.querySelector('.preview-text');
-      if (textEl) {
-        msgIdx = (msgIdx + 1) % CREATIVE_MESSAGES.length;
-        textEl.textContent = CREATIVE_MESSAGES[msgIdx];
-        lastMsgChange = Date.now();
-      }
     }
   }, config.interval);
 }
@@ -120,28 +91,6 @@ export function stopWorkingAnimation(state, { clearIntervalImpl = clearInterval 
     clearIntervalImpl(state.spinnerInterval);
     state.spinnerInterval = null;
   }
-  if (state) {
-    state.activePreviewMessage = null;
-  }
-}
-
-function getActiveMessage(content) {
-  if (!content) return null;
-
-  // Check if there is an active/open thinking block
-  const openThoughtIdx = content.lastIndexOf('<thought>');
-  const closeThoughtIdx = content.lastIndexOf('</thought>');
-  if (openThoughtIdx !== -1 && openThoughtIdx > closeThoughtIdx) {
-    return 'Thinking...';
-  }
-
-  // Check if there is an active/open code block
-  const codeBlockCount = (content.match(/```/g) || []).length;
-  if (codeBlockCount % 2 === 1) {
-    return 'Writing code...';
-  }
-
-  return 'Generating response...';
 }
 
 function setMarkdownContent(el, html) {
@@ -157,22 +106,26 @@ function createMarkdownBlock(documentImpl, className) {
   return el;
 }
 
-function createPreviewLabel(documentImpl, config) {
-  const label = documentImpl.createElement('div');
+function createPreviewLabel(documentImpl, config, phase = '', tag = 'div') {
+  const label = documentImpl.createElement(tag);
   label.className = 'preview-label';
+  if (tag === 'summary') {
+    const chevron = documentImpl.createElement('span');
+    chevron.className = 'activity-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.innerHTML = icon(ChevronRight, { size: 14 });
+    label.appendChild(chevron);
+  }
   const spinner = documentImpl.createElement('span');
   spinner.className = 'preview-spinner';
-  spinner.style.color = 'var(--accent)';
-  spinner.style.marginRight = '6px';
+  spinner.setAttribute('aria-hidden', 'true');
   spinner.style.fontFamily = config.fontFamily;
-  spinner.style.display = 'inline-block';
   spinner.style.width = config.width;
   spinner.style.textAlign = 'center';
   spinner.textContent = config.frames[0];
   const text = documentImpl.createElement('span');
   text.className = 'preview-text';
-  text.style.color = 'var(--muted)';
-  text.textContent = 'Working...';
+  text.textContent = progressLabel(phase);
   label.append(spinner, text);
   return label;
 }
@@ -182,9 +135,19 @@ function createAssistantPreview(documentImpl, { waiting = false, windowImpl = nu
   const el = documentImpl.createElement('div');
   el.id = 'chat-preview-stream';
   el.className = 'assistant-message chat-preview-stream' + (waiting ? ' chat-preview-waiting' : '');
+  const thinking = documentImpl.createElement('details');
+  thinking.className = 'preview-thinking';
+  thinking.hidden = true;
+  thinking.append(
+    createPreviewLabel(documentImpl, config, 'thinking', 'summary'),
+    createMarkdownBlock(documentImpl, 'activity-thinking-text'),
+  );
+  const progress = createPreviewLabel(documentImpl, config);
+  progress.classList.add('preview-progress');
   el.append(
+    thinking,
     createMarkdownBlock(documentImpl, 'message-content assistant-text markdown-content'),
-    createPreviewLabel(documentImpl, config),
+    progress,
   );
   return el;
 }
@@ -208,7 +171,8 @@ export function renderPendingChatState(
     documentImpl.getElementById('messages') ||
     documentImpl.getElementById('content') ||
     documentImpl.body;
-  clearChatPreviewState(state);
+  const keepAssistant = !!state.phase && !state.chatPreviewEl?.classList.contains('done');
+  clearChatPreviewState(state, { keepAssistant });
 
   state.pendingUserEl = documentImpl.createElement('div');
   state.pendingUserEl.id = 'chat-pending-user';
@@ -216,12 +180,13 @@ export function renderPendingChatState(
   const userContent = createMarkdownBlock(documentImpl, 'markdown-content');
   setMarkdownContent(userContent, renderMarkdown(text));
   state.pendingUserEl.appendChild(userContent);
-  container.appendChild(state.pendingUserEl);
+  container.insertBefore(state.pendingUserEl, state.chatPreviewEl);
 
-  state.chatPreviewEl = createAssistantPreview(documentImpl, { waiting: true, windowImpl });
-  container.appendChild(state.chatPreviewEl);
-
-  startWorkingAnimation(state, { setIntervalImpl, windowImpl });
+  if (!keepAssistant) {
+    state.chatPreviewEl = createAssistantPreview(documentImpl, { waiting: true, windowImpl });
+    container.appendChild(state.chatPreviewEl);
+    startWorkingAnimation(state, { setIntervalImpl, windowImpl });
+  }
 
   if (shouldFollow()) {
     forceFollowToBottom(false);
@@ -248,23 +213,34 @@ export function renderChatPreviewState(
     documentImpl.getElementById('messages') ||
     documentImpl.getElementById('content') ||
     documentImpl.body;
+  if (state.chatPreviewEl?.classList.contains('done') && !payload.done) {
+    clearChatPreviewState(state);
+  }
   if (!state.chatPreviewEl) {
     state.chatPreviewEl = createAssistantPreview(documentImpl, { windowImpl });
     container.appendChild(state.chatPreviewEl);
     startWorkingAnimation(state, { setIntervalImpl, windowImpl });
   }
 
-  const activeMsg = getActiveMessage(payload.content);
-  if (activeMsg) {
-    state.activePreviewMessage = activeMsg;
-    const textEl = state.chatPreviewEl.querySelector('.preview-text');
-    if (textEl) textEl.textContent = activeMsg;
+  const phase = payload.phase || (payload.done ? '' : 'working');
+  const thoughts = typeof payload.thinking === 'string' ? payload.thinking : '';
+  const thinking = state.chatPreviewEl.querySelector('.preview-thinking');
+  const hasThoughts = Boolean(thoughts.trim());
+  if (phase !== state.phase || thinking.hidden) thinking.open = phase === 'thinking';
+  thinking.hidden = !hasThoughts;
+  thinking.classList.toggle('is-thinking', phase === 'thinking');
+  thinking.querySelector('.activity-thinking-text').textContent = thoughts;
+  const progress = state.chatPreviewEl.querySelector('.preview-progress');
+  if (progress) {
+    progress.hidden = phase === 'thinking' && hasThoughts;
+    progress.querySelector('.preview-text').textContent = progressLabel(phase);
   }
+  state.phase = phase;
 
   state.chatPreviewEl.classList.remove('chat-preview-waiting');
   const content = state.chatPreviewEl.querySelector('.message-content');
   setMarkdownContent(content, renderMarkdown(payload.content));
-  if (payload.done) finishChatPreviewState(state);
+  if (!phase) finishChatPreviewState(state);
   else state.chatPreviewEl.classList.remove('done');
   if (shouldFollow()) {
     forceFollowToBottom(false);

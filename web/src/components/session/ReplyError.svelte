@@ -1,22 +1,45 @@
 <script>
-  import { icon, CircleAlert, ChevronRight, Layers, RotateCcw } from '../../shared/icons.js';
+  import {
+    icon,
+    CircleAlert,
+    ChevronRight,
+    Layers,
+    RotateCcw,
+    Square,
+  } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
 
-  let { error, model = '', onChooseModel = null, onRetry = null } = $props();
+  let {
+    error = '',
+    model = '',
+    interrupted = false,
+    onChooseModel = null,
+    onRetry = null,
+  } = $props();
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- Lucide icons -->
-<details class="reply-error">
-  <summary>
-    {@html icon(CircleAlert, { size: 14 })}
-    <span>{t('activity.failed')}</span>
-    {#if model}<small>{model}</small>{/if}
-    <span class="reply-error-chevron" aria-hidden="true"
-      >{@html icon(ChevronRight, { size: 14 })}</span
-    >
-  </summary>
-  {#if error}<div class="reply-error-detail">{error}</div>{/if}
-</details>
+{#snippet label()}
+  {@html icon(interrupted ? Square : CircleAlert, { size: 14 })}
+  <span>{t(interrupted ? 'activity.interrupted' : 'activity.failed')}</span>
+  {#if model}<small>{model}</small>{/if}
+{/snippet}
+
+{#if error}
+  <details class="reply-error" class:reply-interrupted={interrupted}>
+    <summary>
+      {@render label()}
+      <span class="reply-error-chevron" aria-hidden="true"
+        >{@html icon(ChevronRight, { size: 14 })}</span
+      >
+    </summary>
+    <div class="reply-error-detail">{error}</div>
+  </details>
+{:else}
+  <div class="reply-error" class:reply-interrupted={interrupted}>
+    <div class="reply-error-label">{@render label()}</div>
+  </div>
+{/if}
 {#if onChooseModel || onRetry}
   <div class="reply-error-actions">
     {#if onChooseModel}<button
@@ -39,7 +62,7 @@
 {/if}
 
 <style>
-  details {
+  .reply-error {
     max-width: 100%;
     width: fit-content;
     border: 1px solid var(--dim);
@@ -48,15 +71,21 @@
     font-size: 12px;
     margin: 8px 0;
   }
-  summary {
+  summary,
+  .reply-error-label {
     display: flex;
     align-items: center;
     gap: 7px;
     list-style: none;
     padding: 9px 10px;
     min-height: 38px;
-    cursor: pointer;
     color: var(--error);
+  }
+  summary {
+    cursor: pointer;
+  }
+  .reply-interrupted :is(summary, .reply-error-label) {
+    color: var(--warning);
   }
   summary::-webkit-details-marker {
     display: none;

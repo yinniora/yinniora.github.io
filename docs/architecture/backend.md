@@ -480,6 +480,12 @@ The server maintains a slice of `sseClient` structs. Each client subscribes to a
 - `__all__` — index page subscribes here; receives `new-session`, `status-snapshot`, `status-delta`
 - Specific session ID — session page subscribes here; receives `reload` when the file changes, `chat-preview` during streaming, and `annotations` (a full annotation snapshot) whenever a note is created/deleted for that session
 
+For a live Pi worker, `chat-preview` starts with its session's current phase and
+buffered provider-supplied response and thinking text. The worker holds that
+transient snapshot in memory, replacing it with a phase-only snapshot when an
+assistant message commits and discarding it when the run ends. Revisions keep a
+reconnect snapshot ahead of older events that may already be queued.
+
 Broadcasting is fire-and-forget with a buffered channel (16). If the client is slow, keyless events are dropped rather than blocking. Duplicate `reload` and `new-session` events are coalesced per-client while pending.
 
 ## Running-Status Computation

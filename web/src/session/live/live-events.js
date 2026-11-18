@@ -107,6 +107,8 @@ export function wireSessionEvents({
   CustomEventImpl = typeof CustomEvent !== 'undefined' ? CustomEvent : null,
   isActive = () => true,
 } = {}) {
+  let lastPreviewRevision = 0;
+  eventSource.addEventListener('open', () => (lastPreviewRevision = 0));
   const dispatchReloadedEvent = () => {
     if (!isActive() || !windowImpl || !CustomEventImpl) return;
     try {
@@ -132,6 +134,10 @@ export function wireSessionEvents({
     if (!isActive()) return;
     try {
       const payload = JSON.parse(event.data);
+      if (payload?.revision) {
+        if (payload.revision <= lastPreviewRevision) return;
+        lastPreviewRevision = payload.revision;
+      }
       onChatPreview(payload);
       // The file-watch 'reload' event is dropped for a brand-new session's first
       // write (the watcher treats it as an initial observation, not a change), so

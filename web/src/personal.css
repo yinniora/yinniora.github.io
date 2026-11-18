@@ -214,6 +214,7 @@
   width: 100%;
   max-width: 800px;
   margin: 0 auto;
+  gap: 0;
 }
 #spa-root .messages-list {
   font-size: var(--font-content-size);
@@ -229,8 +230,8 @@
   color: var(--text);
 }
 #spa-root .assistant-message {
-  padding: 0 0 26px;
-  margin: 0 0 8px;
+  padding: 0 0 16px;
+  margin: 0;
   border: 0;
   background: transparent;
 }
@@ -243,7 +244,9 @@
 #spa-root .message-copy-row {
   display: flex;
   justify-content: flex-end;
-  margin: 0 2px 12px 0;
+  align-items: center;
+  gap: 3px;
+  margin: 1px 3px 10px 0;
   color: var(--text-soft);
 }
 #spa-root .message-timestamp {
@@ -1036,7 +1039,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 24px;
+  margin: 0 0 12px;
   color: var(--muted);
   font-size: 12px;
 }
@@ -1044,7 +1047,8 @@
   margin-right: auto;
 }
 #spa-root .activity-controls button {
-  padding: 5px 10px;
+  padding: 5px 9px;
+  min-height: 34px;
   border: 1px solid var(--dim);
   border-radius: 7px;
   background: transparent;
@@ -1052,22 +1056,26 @@
   cursor: pointer;
 }
 #spa-root .activity-disclosure {
-  margin: 10px 0;
-  border: 1px solid var(--dim);
-  border-radius: 11px;
+  margin: 6px 0;
+  border: 1px solid color-mix(in srgb, var(--dim) 70%, transparent);
+  border-radius: 9px;
   overflow: hidden;
-  background: var(--body-bg);
+  background: color-mix(in srgb, var(--surface) 45%, var(--body-bg));
 }
-#spa-root .activity-disclosure summary {
+#spa-root .activity-disclosure > summary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 11px 13px;
+  min-height: 40px;
+  gap: 7px;
+  padding: 5px 10px;
   cursor: pointer;
   list-style: none;
   font-size: 12px;
   color: var(--text-soft);
   user-select: none;
+}
+#spa-root .activity-disclosure > summary:hover {
+  background: color-mix(in srgb, var(--surface) 65%, transparent);
 }
 #spa-root .activity-disclosure summary::-webkit-details-marker {
   display: none;
@@ -1083,7 +1091,11 @@
 }
 #spa-root .activity-label {
   font-weight: 600;
-  flex: none;
+  max-width: 56%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 #spa-root .activity-summary {
   white-space: nowrap;
@@ -1102,8 +1114,11 @@
   color: var(--muted);
   font-size: 11px;
 }
+#spa-root .activity-status.failed {
+  color: var(--danger-fg);
+}
 #spa-root .activity-body {
-  padding: 2px 14px 14px;
+  padding: 2px 11px 8px;
   border-top: 1px solid var(--dim-2);
 }
 #spa-root .activity-thinking-text {
@@ -1111,13 +1126,156 @@
   font-size: 13px;
   line-height: 1.7;
   color: var(--text-soft);
-  padding: 10px 0;
+  padding: 8px 0;
 }
 #spa-root .activity-body > .tool-execution {
   border: 0;
   margin: 0;
   padding: 10px 0;
   background: none;
+}
+
+#spa-root .assistant-activity-only {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px;
+  padding: 0 0 4px;
+}
+#spa-root .assistant-activity-only > .activity-disclosure {
+  grid-column: 1;
+  margin: 0;
+}
+#spa-root .assistant-activity-only > .entry-actions-menu {
+  grid-area: 1 / 2;
+  align-self: start;
+}
+#spa-root .assistant-activity-only + .assistant-message:not(.assistant-activity-only) {
+  margin-top: 10px;
+}
+#spa-root .entry-actions-menu {
+  position: relative;
+  flex: none;
+  width: max-content;
+  margin-inline-start: auto;
+  color: var(--text-soft);
+}
+#spa-root .entry-actions-menu > summary {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  list-style: none;
+  cursor: pointer;
+}
+#spa-root .assistant-activity-only .entry-actions-menu > summary {
+  height: 40px;
+}
+#spa-root .entry-actions-menu > summary::-webkit-details-marker,
+#spa-root .preview-thinking > summary::-webkit-details-marker {
+  display: none;
+}
+#spa-root .entry-actions-menu:is([open], :hover) > summary {
+  background: var(--surface-2);
+}
+#spa-root .entry-actions-menu[open] {
+  z-index: 25;
+}
+#spa-root .entry-action-buttons {
+  position: absolute;
+  inset-inline-end: 0;
+  top: 100%;
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--workspace-edge);
+  border-radius: 9px;
+  box-shadow: 0 8px 24px #0004;
+}
+#spa-root .entry-action-buttons > button {
+  position: static;
+  width: 34px;
+  height: 34px;
+  opacity: 1;
+  color: var(--text);
+}
+
+#spa-root .session-progress {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto 6px;
+  padding-inline: 10px;
+  box-sizing: border-box;
+  min-height: 22px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+#spa-root .session-progress-spinner {
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--dim);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+}
+#spa-root .chat-preview-stream {
+  padding-bottom: 6px;
+}
+#spa-root .chat-preview-stream .message-content:empty,
+#spa-root:has(.session-progress) .chat-preview-stream .preview-progress,
+#spa-root:has(.session-progress)
+  .chat-preview-stream:not(:has(.preview-thinking:not([hidden]), .message-content:not(:empty))) {
+  display: none;
+}
+#spa-root .preview-thinking:not([hidden]) {
+  border-inline-start: 2px solid var(--dim);
+  margin: 2px 0 8px;
+  padding-inline: 10px;
+  min-width: 0;
+}
+#spa-root .preview-thinking > summary,
+#spa-root .chat-preview-stream .preview-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-soft);
+  padding: 5px 0;
+}
+#spa-root .preview-thinking > summary {
+  cursor: pointer;
+  list-style: none;
+}
+#spa-root .preview-thinking[open] > summary .activity-chevron {
+  transform: rotate(90deg);
+}
+#spa-root .preview-thinking:not(.is-thinking) .preview-spinner,
+#spa-root .chat-preview-stream .preview-progress[hidden],
+#spa-root .chat-preview-stream.done .preview-spinner {
+  display: none;
+}
+#spa-root .preview-thinking .activity-thinking-text {
+  max-height: 160px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+#spa-root .preview-spinner {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #spa-root .session-progress-spinner,
+  #spa-root .activity-status.pending svg {
+    animation: session-activity-spin 1s linear infinite;
+  }
+}
+@keyframes session-activity-spin {
+  to {
+    rotate: 360deg;
+  }
 }
 #spa-root .project-folder-name {
   display: flex;

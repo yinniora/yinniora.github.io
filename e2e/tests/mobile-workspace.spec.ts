@@ -794,7 +794,7 @@ test("a failed turn has a single expandable error and can copy or retry its prom
     };
   });
   await page.goto("/session?id=" + encodeURIComponent(id));
-  const copy = page.locator(`#entry-${prompt.id} + .message-copy-row button`);
+  const copy = page.locator(`#entry-${prompt.id} + .message-copy-row`).getByRole("button", { name: "Copy", exact: true });
   await copy.click();
   await expect(page.locator("html")).toHaveAttribute("data-copied", "Initial prompt.");
   await expect(page.locator(".reply-error")).toHaveCount(1);

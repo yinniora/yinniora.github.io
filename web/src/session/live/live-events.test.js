@@ -150,7 +150,9 @@ describe('live events', () => {
     eventSource.onmessage({ data: 'noop' });
     eventSource.onmessage({ data: 'reload' });
     expect(onReload).toHaveBeenCalledTimes(1);
-    const previewHandler = eventSource.addEventListener.mock.calls[0][1];
+    const previewHandler = eventSource.addEventListener.mock.calls.find(
+      ([event]) => event === 'chat-preview',
+    )[1];
     previewHandler({ data: JSON.stringify({ content: 'x' }) });
     expect(onChatPreview).toHaveBeenCalledWith({ content: 'x' });
     previewHandler({ data: '{bad' });
@@ -162,7 +164,9 @@ describe('live events', () => {
     const onReload = vi.fn();
     const onChatPreview = vi.fn();
     wireSessionEvents({ eventSource, onReload, onChatPreview });
-    const previewHandler = eventSource.addEventListener.mock.calls[0][1];
+    const previewHandler = eventSource.addEventListener.mock.calls.find(
+      ([event]) => event === 'chat-preview',
+    )[1];
 
     previewHandler({ data: JSON.stringify({ content: 'streaming', done: false }) });
     expect(onReload).not.toHaveBeenCalled();

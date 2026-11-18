@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"pi-web/internal/workers"
 )
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +37,15 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if sessID == globalSessID {
 		s.writeStatusSnapshot(w)
 		flusher.Flush()
+	} else if source, ok := s.chatSender.(interface {
+		ChatPreview(string) (workers.LivePreview, bool)
+	}); ok {
+		if preview, active := source.ChatPreview(sessID); active {
+			if msg, err := formatSSEJSONEvent("chat-preview", preview); err == nil {
+				fmt.Fprint(w, msg+"\n\n")
+				flusher.Flush()
+			}
+		}
 	}
 
 	for {

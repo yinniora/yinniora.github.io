@@ -128,14 +128,21 @@
       const hasDoneClass =
         CHAT_PREVIEW_STATE.chatPreviewEl &&
         CHAT_PREVIEW_STATE.chatPreviewEl.classList.contains('done');
-      const keepAssistant = !!(isChatRunning && !hasDoneClass);
+      const keepAssistant = !!((CHAT_PREVIEW_STATE.phase || isChatRunning) && !hasDoneClass);
       return clearChatPreviewState(CHAT_PREVIEW_STATE, { keepAssistant });
+    }
+    let lastPhase = '';
+    function publishPhase(phase) {
+      if (lastPhase === phase) return;
+      lastPhase = phase;
+      windowImpl.dispatchEvent(new CustomEvent('pi:chat-phase', { detail: { sessionId, phase } }));
     }
     function finishChatPreview() {
       finishChatPreviewState(CHAT_PREVIEW_STATE);
+      publishPhase('');
     }
     function renderChatPreview(payload) {
-      return renderChatPreviewState(payload, CHAT_PREVIEW_STATE, {
+      const rendered = renderChatPreviewState(payload, CHAT_PREVIEW_STATE, {
         documentImpl,
         windowImpl,
         renderMarkdown,
@@ -143,6 +150,8 @@
         forceFollowToBottom,
         scrollAfterLayout,
       });
+      if (rendered) publishPhase(CHAT_PREVIEW_STATE.phase);
+      return rendered;
     }
     function renderPendingChat(message) {
       return renderPendingChatState(message, CHAT_PREVIEW_STATE, {

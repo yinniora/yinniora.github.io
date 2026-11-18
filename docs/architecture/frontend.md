@@ -102,7 +102,8 @@ Export rules:
 The session route listens to `/events?id=<sessionId>` via `web/src/session/live/` helpers for:
 
 - `reload` / canonical session updates
-- `chat-preview` streaming preview updates
+- `chat-preview` phase and streaming updates, with the worker's current preview replayed
+  when the session connects or reconnects
 - annotation snapshots
 
 The index route listens to `/events?id=__all__` for `new-session`, `status-snapshot`, and `status-delta`.
@@ -110,6 +111,10 @@ The index route listens to `/events?id=__all__` for `new-session`, `status-snaps
 Leaving a session stops its worker-status poll and aborts pending transcript
 reloads. A session load has a deadline and keeps a way back to the index.
 If it fails, retry remounts only that session at the current URL.
+Within the session a composer progress strip stays visible while Pi is working,
+even before any text arrives. Streaming thought blocks can be expanded
+independently. Consecutive tool-only entries use tighter rows and move message
+actions to a separate menu so they do not cover the call.
 
 ## Shared Frontend Modules
 
