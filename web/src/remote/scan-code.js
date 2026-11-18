@@ -1,6 +1,6 @@
 import jsQR from 'jsqr';
 
-export function readQRCode(frame) {
+export function readQRCode(frame, { invert = true } = {}) {
   if (
     !frame ||
     frame.width < 1 ||
@@ -10,6 +10,8 @@ export function readQRCode(frame) {
   )
     return '';
   return (
-    jsQR(frame.data, frame.width, frame.height, { inversionAttempts: 'attemptBoth' })?.data || ''
+    jsQR(frame.data, frame.width, frame.height, {
+      inversionAttempts: invert ? 'attemptBoth' : 'dontInvert',
+    })?.data || ''
   );
 }

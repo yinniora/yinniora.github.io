@@ -78,7 +78,7 @@
     pairLink = '';
     copied = false;
     try {
-      const data = await postJSON('/api/devices', { action: 'pair', name });
+      const data = await postJSON('/api/devices', { action: 'pair', name, qrVersion: 2 });
       pairLink = data.url;
       qr = await QRCode.toDataURL(data.url, { width: 640, margin: 2, errorCorrectionLevel: 'M' });
       expires = Date.parse(data.expiresAt);

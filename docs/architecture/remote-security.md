@@ -21,6 +21,23 @@ in memory. The QR's URL fragment carries the ticket, pinned Mac fingerprint and
 public connection metadata. It is not transmitted to the static host. Treat the
 visible QR as a temporary credential and scan it only on your own device.
 
+New desktop clients request compact v2 QR payloads (the same 256-bit pin/ticket,
+expiry, relay capability and routes encoded without duplicate field names).
+Nonstandard routes and older desktop clients retain v1; phone clients accept
+both. No private key is encoded, and URL fragments/tickets are never persisted.
+Camera decoding prefers a supported native QR detector, with a local jsQR
+fallback, central higher-resolution crops and periodic full-frame/inverted scans.
+
+Connection UI reports identity, ICE credentials, signaling, candidate gathering,
+Mac answer, encrypted-channel, device-proof and initial-sync stages separately.
+Copyable diagnostics contain build/mode/time, stage, HTTP status and candidate
+counts/state only; no URL, key, ticket, fingerprint or user content. Relay-only
+connections fail promptly when credentials are unavailable instead of attempting
+an impossible ICE session. Offer/answer and channel/auth timers have independent
+budgets; usable TURN candidates can be sent before all interfaces finish gathering.
+Authentication denial is allowed to drain before DTLS closes. Mac signaling has
+bounded heartbeat/reconnect and periodic authoritative-whitelist synchronization.
+
 The Mac's persistent self-signed DTLS **leaf** key lives in
 `~/.pi/agent/remote/identity.pem`, mode 0600. It is never sent to the VPS; there is
 no custom CA or iPhone certificate profile to install. Backing up or replacing

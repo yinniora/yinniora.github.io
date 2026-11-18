@@ -55,7 +55,7 @@ async function start() {
       initialConfig: config,
       initialError,
       autoConnect: !repairOnly,
-      onConnect: async (next, preference) => {
+      onConnect: async (next, preference, reportProgress) => {
         try {
           saveRemoteConfig(next);
         } catch {
@@ -64,10 +64,16 @@ async function start() {
           throw error;
         }
         const client = new RemoteClient(next, { preference });
+        client.addEventListener('phase', (event) => reportProgress?.(event.detail));
         try {
           await client.connect();
           await launchWorkspace(client);
         } catch (error) {
+          error.diagnostics ||= {
+            ...client.diagnostics,
+            peerState: client.peer?.connectionState,
+            iceState: client.peer?.iceConnectionState,
+          };
           client.peer?.close();
           client.socket?.close();
           throw error;

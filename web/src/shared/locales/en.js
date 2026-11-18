@@ -1,6 +1,23 @@
 // English — the source of truth for pi-web UI strings and the fallback for every
 // other locale. Keys are dot-namespaced by area. Add new strings here first.
 export default {
+  'remote.copyDiagnostics': 'Copy connection diagnostics',
+  'remote.iceUnavailable':
+    'Relay connection credentials could not be obtained. Check the network or scan a fresh Mac-approved code.',
+  'remote.signalTimeout':
+    'The signaling server did not return a Mac response. Retry Automatic mode.',
+  'remote.channelTimeout':
+    'The encrypted P2P/relay channel could not connect. Retry Automatic or Relay mode; the Mac may still be online.',
+  'remote.authIncomplete':
+    'Device authentication did not finish. Generate a fresh code on the Mac and scan it inside this app.',
+  'remote.phase.identity': 'Reading this device’s identity…',
+  'remote.phase.ice': 'Obtaining relay connection credentials…',
+  'remote.phase.signal': 'Connecting to the signaling server…',
+  'remote.phase.gathering': 'Finding a P2P or relay route…',
+  'remote.phase.answer': 'Waiting for the Mac handshake…',
+  'remote.phase.channel': 'Establishing the encrypted channel…',
+  'remote.phase.auth': 'Verifying this device on the Mac…',
+  'remote.phase.sync': 'Connected. Synchronizing the workspace…',
   'models.title': 'Models',
   'models.noMatches': 'No models match',
   'models.noneInPicker': 'No models applied. Open Settings → Models to add them.',

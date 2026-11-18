@@ -4,6 +4,8 @@
   import { t } from '../../shared/i18n.js';
   import { icon, Camera, Link2, X, Loader } from '../../shared/icons.js';
   import { parsePairingLink, normalizeTransport, TRANSPORT_KEY } from '../../remote/config.js';
+  import { copyToClipboard } from '../../shared/clipboard.js';
+  import { createCameraScanner } from '../../remote/camera-scanner.js';
 
   let {
     initialConfig = null,
@@ -21,6 +23,9 @@
   let video = $state(null);
   let stream;
   let animation;
+  let phase = $state('identity');
+  let diagnostics = $state(null);
+  let copied = $state(false);
   let scanGeneration = 0;
 
   function stopCamera() {
@@ -38,14 +43,20 @@
     config = next;
     busy = true;
     error = '';
+    diagnostics = null;
+    copied = false;
     try {
       try {
         localStorage.setItem(TRANSPORT_KEY, preference);
       } catch {}
-      await onConnect(next, preference);
+      await onConnect(next, preference, (value) => (phase = value));
       link = '';
     } catch (failure) {
-      error = failure.code ? t(`remote.${failure.code}`) : failure.message || t('remote.failed');
+      diagnostics = failure.diagnostics || null;
+      error =
+        typeof failure.code === 'string'
+          ? t(`remote.${failure.code}`)
+          : failure.message || t('remote.failed');
     } finally {
       busy = false;
     }
@@ -65,6 +76,7 @@
     error = '';
     scanning = true;
     const generation = scanGeneration;
+    const scanner = createCameraScanner();
     try {
       const devices = mediaDevices || navigator.mediaDevices;
       if (!devices?.getUserMedia) throw new Error();
@@ -84,19 +96,38 @@
       stream = camera;
       video.srcObject = camera;
       await video.play();
-      const { readQRCode } = await import('../../remote/scan-code.js');
+      const readFrame = await scanner;
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d', { willReadFrequently: true });
       let last = 0;
-      const scan = (time) => {
+      let frames = 0;
+      const scan = async (time) => {
         if (generation !== scanGeneration) return;
-        if (time - last >= 150 && video?.videoWidth) {
+        if (time - last >= 100 && video?.videoWidth) {
           last = time;
-          const scale = Math.min(1, 960 / Math.max(video.videoWidth, video.videoHeight));
-          canvas.width = Math.round(video.videoWidth * scale);
-          canvas.height = Math.round(video.videoHeight * scale);
-          context.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const text = readQRCode(context.getImageData(0, 0, canvas.width, canvas.height));
+          const full = ++frames % 4 === 0;
+          const side = Math.min(video.videoWidth, video.videoHeight);
+          const width = full ? video.videoWidth : side,
+            height = full ? video.videoHeight : side;
+          const scale = Math.min(1, (full ? 960 : 720) / Math.max(width, height));
+          canvas.width = Math.round(width * scale);
+          canvas.height = Math.round(height * scale);
+          context.drawImage(
+            video,
+            (video.videoWidth - width) / 2,
+            (video.videoHeight - height) / 2,
+            width,
+            height,
+            0,
+            0,
+            canvas.width,
+            canvas.height,
+          );
+          let text = '';
+          try {
+            text = await readFrame(canvas, context, full);
+          } catch {}
+          if (generation !== scanGeneration) return;
           if (text) {
             try {
               const next = parsePairingLink(text);
@@ -153,8 +184,15 @@
   </fieldset>
   <p class="connect-hint">{t(`remote.${preference}Hint`)}</p>
   {#if error}<p class="connect-error" role="alert">{error}</p>{/if}
+  {#if diagnostics}<button
+      type="button"
+      class="connect-retry"
+      onclick={async () => {
+        copied = await copyToClipboard(JSON.stringify(diagnostics, null, 2));
+      }}>{t(copied ? 'common.copied' : 'remote.copyDiagnostics')}</button
+    >{/if}
   {#if busy}<div class="connect-progress" role="status">
-      {@html icon(Loader, { size: 18 })}{t('remote.connecting')}
+      {@html icon(Loader, { size: 18 })}{t(`remote.phase.${phase}`)}
     </div>{/if}
   {#if scanning}
     <div class="connect-camera">

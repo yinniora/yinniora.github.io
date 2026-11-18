@@ -33,7 +33,19 @@ it.each([
 ])(
   'keeps %s routing usable without changing network settings',
   async (preference, directUrl, expected, policy, needsIce) => {
-    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ iceServers: [] })));
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          iceServers: [
+            {
+              urls: 'turn:relay.example:3478?transport=udp',
+              username: 'fixture',
+              credential: 'fixture',
+            },
+          ],
+        }),
+      ),
+    );
     vi.stubGlobal('fetch', fetch);
     const endpoints = [],
       peers = [];

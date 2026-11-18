@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import QRCode from 'qrcode';
 import {
   parsePairingLink,
@@ -30,6 +30,31 @@ it('accepts a Mac pairing link but rejects external origins and expired codes', 
   expect(() =>
     parsePairingLink(link({ ...config, expiresAt: '2000-01-01T00:00:00Z' }), { origin }),
   ).toThrow('remote.expiredPairing');
+});
+it('decodes a smaller v2 QR without changing the pinned identity, ticket or routing', () => {
+  const compact = [
+    2,
+    btoa(String.fromCharCode(...Array(32).fill(0xab))),
+    btoa(String.fromCharCode(...Array(32).fill(0xee))),
+    'https://relay.example',
+    'r'.repeat(32),
+    'signed-relay-capability',
+    Math.floor(Date.now() / 1000) + 180,
+    'zh',
+    '',
+  ];
+  const parsed = parsePairingLink(link(compact), { origin });
+  expect(parsed.fingerprint).toBe(config.fingerprint);
+  expect(parsed.ticket).toBe(config.ticket);
+  expect(parsed.signalUrl).toBe('wss://relay.example/signal?room=' + 'r'.repeat(32));
+  expect(parsed.iceUrl).toBe('https://relay.example/ice?room=' + 'r'.repeat(32));
+  expect(parsed.relayTicket).toBe(compact[5]);
+  const storage = { setItem: vi.fn() };
+  saveRemoteConfig(parsed, storage);
+  expect(storage.setItem.mock.calls[0][1]).not.toContain(parsed.ticket);
+  expect(storage.setItem.mock.calls[0][1]).not.toContain(parsed.relayTicket);
+  compact[6] = 1;
+  expect(() => parsePairingLink(link(compact), { origin })).toThrow('remote.expiredPairing');
 });
 it('persists public connection data only and does not assume browser storage exists in the Home Screen app', () => {
   const values = new Map();

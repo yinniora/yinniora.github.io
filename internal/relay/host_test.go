@@ -25,6 +25,7 @@ func TestEncryptedHTTPRequiresDeviceProof(t *testing.T) {
 			defer host.Close()
 			key, raw := testDevice(t)
 			var calls atomic.Int32
+			var sawDenial atomic.Bool
 			host.Authorize = func(context.Context, string, json.RawMessage, string) error {
 				if !allowed {
 					return fmt.Errorf("not approved")
@@ -74,6 +75,9 @@ func TestEncryptedHTTPRequiresDeviceProof(t *testing.T) {
 					dc.SendText(`{"type":"body-end","id":"media"}`)
 					return
 				}
+				if kind == "denied" {
+					sawDenial.Store(true)
+				}
 				var p packet
 				json.Unmarshal(m.Data, &p)
 				events <- p
@@ -122,7 +126,7 @@ func TestEncryptedHTTPRequiresDeviceProof(t *testing.T) {
 						return
 					}
 				case <-closed:
-					if !allowed && calls.Load() == 0 {
+					if !allowed && calls.Load() == 0 && sawDenial.Load() {
 						return
 					}
 					t.Fatal("unexpected close")

@@ -33,6 +33,7 @@ it('can pair inside the current app using a copied Mac link', async () => {
     expect(onConnect).toHaveBeenCalledWith(
       expect.objectContaining({ ticket: config.ticket }),
       'auto',
+      expect.any(Function),
     ),
   );
 });

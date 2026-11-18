@@ -81,6 +81,7 @@ func (h *Host) Answer(ctx context.Context, id, offer string) (string, error) {
 		}
 	})
 	authenticated := atomic.Bool{}
+	rejected := atomic.Bool{}
 	channelClaimed := atomic.Bool{}
 	timeout := time.AfterFunc(40*time.Second, func() {
 		if !authenticated.Load() {
@@ -106,6 +107,9 @@ func (h *Host) Answer(ctx context.Context, id, offer string) (string, error) {
 			_ = writer.send(map[string]any{"type": "challenge", "nonce": nonce, "fingerprint": h.Fingerprint})
 		})
 		channel.OnMessage(func(message webrtc.DataChannelMessage) {
+			if rejected.Load() {
+				return
+			}
 			if len(message.Data) > 64*1024 {
 				_ = pc.Close()
 				return
@@ -131,8 +135,10 @@ func (h *Host) Answer(ctx context.Context, id, offer string) (string, error) {
 				err = errors.New("device approval is not configured")
 			}
 			if err != nil {
+				rejected.Store(true)
 				_ = writer.send(map[string]string{"type": "denied", "error": "Device is not approved. Pair again from the Mac."})
-				_ = pc.Close()
+				// Allow the denial frame to leave SCTP before tearing down DTLS.
+				time.AfterFunc(250*time.Millisecond, func() { _ = pc.Close() })
 				return
 			}
 			bridge = newHTTPBridge(sessionCtx, writer, deviceID, h.Handler)
@@ -221,6 +227,8 @@ func (h *Host) ConnectBroker(ctx context.Context, endpoint, token string) {
 			h.brokerConn = conn
 			h.brokerMu.Unlock()
 			h.SyncDevices()
+			keepCtx, stopKeepAlive := context.WithCancel(ctx)
+			go h.keepBrokerAlive(keepCtx, conn, 20*time.Second, 8*time.Second)
 			for {
 				var signal Signal
 				if err := wsjson.Read(ctx, conn, &signal); err != nil {
@@ -239,6 +247,7 @@ func (h *Host) ConnectBroker(ctx context.Context, endpoint, token string) {
 					}(signal)
 				}
 			}
+			stopKeepAlive()
 			_ = conn.CloseNow()
 			h.brokerMu.Lock()
 			if h.brokerConn == conn {
@@ -269,5 +278,27 @@ func (h *Host) SyncDevices() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_ = wsjson.Write(ctx, conn, Signal{Type: "devices", Devices: devices})
+	if wsjson.Write(ctx, conn, Signal{Type: "devices", Devices: devices}) != nil {
+		_ = conn.CloseNow()
+	}
+}
+
+func (h *Host) keepBrokerAlive(ctx context.Context, conn *websocket.Conn, interval, timeout time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			pingCtx, cancel := context.WithTimeout(ctx, timeout)
+			err := conn.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				_ = conn.CloseNow()
+				return
+			}
+			h.SyncDevices()
+		}
+	}
 }

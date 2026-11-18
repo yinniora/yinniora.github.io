@@ -26,7 +26,47 @@ export function parsePairingLink(input, { origin = location.origin, now = Date.n
     const url = new URL(text, origin);
     if (url.origin !== origin || url.protocol !== 'https:' || !url.hash.startsWith('#pair='))
       throw new Error();
-    const config = JSON.parse(new TextDecoder().decode(base64ToBytes(url.hash.slice(6))));
+    let config = JSON.parse(new TextDecoder().decode(base64ToBytes(url.hash.slice(6))));
+    if (Array.isArray(config)) {
+      if (
+        config.length !== 9 ||
+        config[0] !== 2 ||
+        !Number.isSafeInteger(config[6]) ||
+        [1, 2, 3, 4, 5, 7, 8].some((index) => typeof config[index] !== 'string')
+      )
+        throw new Error();
+      const pin = base64ToBytes(config[1]),
+        ticket = base64ToBytes(config[2]);
+      const relay = new URL(config[3]);
+      if (
+        pin.length !== 32 ||
+        ticket.length !== 32 ||
+        relay.protocol !== 'https:' ||
+        relay.username ||
+        relay.password ||
+        relay.pathname !== '/' ||
+        relay.search ||
+        relay.hash ||
+        config[4].length < 20 ||
+        config[4].length > 128
+      )
+        throw new Error();
+      const hex = (bytes) => Array.from(bytes, (value) => value.toString(16).padStart(2, '0'));
+      const room = new URLSearchParams({ room: config[4] }).toString();
+      config = {
+        version: 1,
+        fingerprint: hex(pin).join(':'),
+        ticket: hex(ticket).join(''),
+        clientUrl: origin + '/',
+        signalUrl: 'wss://' + relay.host + '/signal?' + room,
+        iceUrl: relay.origin + '/ice?' + room,
+        relayTicket: config[5],
+        relayAuth: !!config[5],
+        expiresAt: new Date(config[6] * 1000).toISOString(),
+        locale: config[7],
+        directUrl: config[8],
+      };
+    }
     if (
       config.version !== 1 ||
       !/^[a-f0-9]{64}$/i.test(config.ticket || '') ||

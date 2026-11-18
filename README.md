@@ -37,7 +37,7 @@ relay credentials or certificates are distributed with the source.
 git clone https://github.com/yinniora/yugo-pi.git
 cd yugo-pi
 make check
-make build remote-build VERSION=0.1.0-yugo.3
+make build remote-build VERSION=0.1.0-yugo.4
 python3 scripts/collect_notices.py
 python3 scripts/build_macos.py
 python3 scripts/install_remote_macos.py --client https://YOUR-INDEPENDENT-CLIENT/

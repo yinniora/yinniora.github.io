@@ -266,6 +266,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Action, Name, ID string
+		QRVersion        int            `json:"qrVersion"`
 		Features         deviceFeatures `json:"features"`
 	}
 	if !decodeJSONBody(w, r, &body) {
@@ -371,6 +372,11 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	}
 	metadata["expiresAt"] = expires.UTC().Format(time.RFC3339)
 	data, _ := json.Marshal(metadata)
+	if body.QRVersion == 2 {
+		if compact, err := compactPairingData(metadata, expires); err == nil {
+			data = compact
+		}
+	}
 	client.Fragment = "pair=" + base64.RawURLEncoding.EncodeToString(data)
 	writeJSON(w, 200, map[string]any{"url": client.String(), "expiresAt": expires})
 }
