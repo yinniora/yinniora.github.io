@@ -1,7 +1,7 @@
 // The independently hosted client sends HTTP over the authenticated page's
 // DTLS channel. Media Range requests stream through the same encrypted path.
-const CACHE = 'pi-remote-0.1.0-yugo.25';
-const SHELL = ['/', '/icon.svg', '/manifest.webmanifest' , "/assets/main-B-y_AHe6.css", "/assets/main-CV74l75D.js", "/assets/remote-index-BO3sxneF.css", "/assets/remote-index-DOwYwcKv.js", "/assets/rolldown-runtime-XKyaHtl9.js"];
+const CACHE = 'pi-remote-0.1.0-yugo.26';
+const SHELL = ['/', '/icon.svg', '/manifest.webmanifest' , "/assets/main-C0ft1OlY.js", "/assets/main-N2ED8NFs.css", "/assets/remote-index-BO3sxneF.css", "/assets/remote-index-DU7-hQSD.js", "/assets/rolldown-runtime-XKyaHtl9.js"];
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
