@@ -4,4 +4,8 @@
     <string name="offline">无法连接 YuGo Pi，请检查网络。</string>
     <string name="retry">重试</string>
     <string name="camera_denied">未授予相机权限，可以改为粘贴配对链接。</string>
+    <string name="link_open">在浏览器中打开</string>
+    <string name="link_copy">复制链接</string>
+    <string name="link_copied">已复制链接</string>
+    <string name="link_share">分享链接</string>
 </resources>

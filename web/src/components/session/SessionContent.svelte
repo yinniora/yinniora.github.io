@@ -23,6 +23,11 @@
     const failed = section.failures ? t('activity.failed') + ' ' + section.failures : '';
     if (section.running)
       return { label: t('activity.working'), summary: failed || section.latestTool };
+    if (section.unfinished)
+      return {
+        label: t(section.lastStop === 'length' ? 'activity.truncated' : 'activity.unfinished'),
+        summary: [formatElapsed(section.durationMs), tools, failed].filter(Boolean).join(' · '),
+      };
     if (section.durationMs >= 1000)
       return {
         label: t('activity.worked', { duration: formatElapsed(section.durationMs) }),
@@ -93,7 +98,14 @@
         summary={activityText(section).summary}
         required={section.required}
         running={section.running}
-        status={section.running ? 'pending' : section.failures ? 'error' : 'success'}
+        unfinished={section.unfinished}
+        status={section.running
+          ? 'pending'
+          : section.unfinished
+            ? 'stopped'
+            : section.failures
+              ? 'error'
+              : 'success'}
       >
         {#each section.items as item (item.entry.id)}
           {#if item.blocks}

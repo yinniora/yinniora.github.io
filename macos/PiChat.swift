@@ -12,7 +12,11 @@ final class PiWindow: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
         window.title = "YuGo Pi"
         window.minSize = NSSize(width: 640, height: 480)
         window.center()
-        web = WKWebView(frame: .zero)
+        let configuration = WKWebViewConfiguration()
+        // Let script-opened windows (window.open after an await) reach
+        // createWebViewWith instead of being silently blocked.
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        web = WKWebView(frame: .zero, configuration: configuration)
         web.navigationDelegate = self
         web.uiDelegate = self
         web.allowsBackForwardNavigationGestures = true
@@ -73,7 +77,7 @@ final class PiWindow: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if action.shouldPerformDownload { decisionHandler(.download); return }
-        if action.targetFrame?.isMainFrame == true, let url = action.request.url, !["127.0.0.1", "localhost"].contains(url.host ?? ""), ["http", "https"].contains(url.scheme ?? "") {
+        if action.targetFrame?.isMainFrame == true, let url = action.request.url, !(["127.0.0.1", "localhost"].contains(url.host ?? "") && url.port == 31415), ["http", "https", "mailto"].contains(url.scheme ?? "") {
             NSWorkspace.shared.open(url); decisionHandler(.cancel); return
         }
         decisionHandler(.allow)
@@ -93,11 +97,39 @@ final class PiWindow: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
         panel.beginSheetModal(for: window) { result in completionHandler(result == .OK ? panel.urls : nil) }
     }
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url {
-            if ["127.0.0.1", "localhost"].contains(url.host ?? "") { webView.load(action.request) }
-            else if ["http", "https"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
+        if let url = action.request.url, url.absoluteString != "about:blank", !url.absoluteString.isEmpty {
+            openRequested(url)
+            return nil
         }
-        return nil
+        // window.open() with no URL, navigated afterwards: hand back an
+        // offscreen view and forward its first real navigation.
+        let catcher = PopupCatcher { [weak self] url in self?.openRequested(url) }
+        let popup = WKWebView(frame: .zero, configuration: configuration)
+        popup.navigationDelegate = catcher
+        catcher.view = popup
+        popups.append(catcher)
+        catcher.onDone = { [weak self, weak catcher] in self?.popups.removeAll { $0 === catcher } }
+        return popup
+    }
+    var popups: [PopupCatcher] = []
+
+    func openRequested(_ url: URL) {
+        if ["127.0.0.1", "localhost"].contains(url.host ?? "") && url.port == 31415 { web.load(URLRequest(url: url)) }
+        else if ["http", "https", "mailto"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
+    }
+}
+
+final class PopupCatcher: NSObject, WKNavigationDelegate {
+    let open: (URL) -> Void
+    var view: WKWebView?
+    var onDone: (() -> Void)?
+    init(open: @escaping (URL) -> Void) { self.open = open }
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = action.request.url, url.absoluteString != "about:blank" else { decisionHandler(.allow); return }
+        decisionHandler(.cancel)
+        open(url)
+        view = nil
+        onDone?()
     }
 }
 

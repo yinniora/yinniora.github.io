@@ -13,6 +13,67 @@ export function questionNeedsResponse(name, result) {
   );
 }
 
+const toolKinds = [
+  ['command', /^(bash|shell|exec|run_command|terminal)$/],
+  ['read', /^(read|read_file|view|cat)$/],
+  ['edit', /^(edit|write|multi_edit|apply_patch|str_replace|create_file)$/],
+  ['search', /^(grep|find|ls|glob|search|list_files|rg)$/],
+  ['web', /^(web_search|web_fetch|fetch|search_web|browse)$/],
+  [
+    'ui',
+    /^(find_roots|observe_ui|search_ui|expand_ui|inspect_ui|act_ui|read_text|wait_for|launch_browser|navigate_browser|evaluate_browser|computer)$/,
+  ],
+];
+
+export function toolKind(name) {
+  const plain = String(name || '')
+    .toLowerCase()
+    .replace(/^.*__/, '');
+  for (const [kind, pattern] of toolKinds) if (pattern.test(plain)) return kind;
+  return 'other';
+}
+
+// The activity in reading order: text and thinking as written, consecutive
+// tool calls merged into one run (one summary line), and questions on their
+// own so they stay visible.
+function appendTimeline(timeline, item, results) {
+  const id = item.entry.id;
+  const blocks =
+    item.blocks || (Array.isArray(item.entry.message?.content) ? item.entry.message.content : []);
+  blocks.forEach((block, index) => {
+    const key = `${id}:${index}`;
+    if (block.type === 'text' && block.text?.trim() && !item.blocks) {
+      timeline.push({ kind: 'text', key, text: block.text });
+    } else if (block.type === 'thinking' && block.thinking?.trim()) {
+      timeline.push({ kind: 'thinking', key, text: block.thinking });
+    } else if (block.type === 'toolCall' && isQuestionTool(block.name)) {
+      timeline.push({ kind: 'question', key, call: block });
+    } else if (block.type === 'toolCall') {
+      let run = timeline.at(-1);
+      if (run?.kind !== 'tools') {
+        run = {
+          kind: 'tools',
+          key: 'tools:' + key,
+          calls: [],
+          counts: {},
+          failures: 0,
+          pending: null,
+        };
+        timeline.push(run);
+      }
+      const result = results.get(block.id);
+      const kind = toolKind(block.name);
+      run.calls.push(block);
+      if (!result) run.pending = block;
+      else {
+        run.counts[kind] = (run.counts[kind] || 0) + 1;
+        if (result.isError) run.failures++;
+      }
+      if (kind === 'other') (run.others ||= new Set()).add(block.name);
+    }
+  });
+}
+
 export function groupConversationActivity(entries, outputsByEntry, running = false) {
   const results = new Map();
   for (const { entry } of entries) {
@@ -33,6 +94,7 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
         failures: 0,
         latestTool: '',
         outputs: [],
+        timeline: [],
         needsResponse: false,
         startedAt: turnStartedAt || entryTime(item.entry),
         endedAt: 0,
@@ -40,6 +102,7 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
       sections.push(activity);
     }
     activity.items.push(item);
+    appendTimeline(activity.timeline, item, results);
     activity.endedAt = Math.max(activity.endedAt, entryTime(item.entry));
     activity.thinking += thoughts;
     activity.toolCount += tools.length;
@@ -60,6 +123,9 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
     )
       continue;
     if (message?.role === 'user') {
+      // The previous turn never reached a reply: it was cut off, stopped or
+      // lost its runner. Say so instead of looking finished.
+      if (activity) activity.unfinished = true;
       activity = null;
       turnStartedAt = entryTime(entry);
     }
@@ -72,6 +138,7 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
       const final = item.reply || ['aborted', 'error'].includes(message.stopReason);
       if (!final && (tools.length || thoughtCount || message.stopReason === 'toolUse')) {
         addActivity(item, thoughtCount, tools);
+        activity.lastStop = message.stopReason || '';
         activity.outputs.push(...(outputsByEntry?.get(entry.id) || []));
         activity.needsResponse ||= tools.some((tool) =>
           questionNeedsResponse(tool.name, results.get(tool.id)),
@@ -94,7 +161,20 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
   }
   if (activity) {
     activity.running = running;
-    activity.required = activity.needsResponse;
+    // Not running and still no reply: the turn ended without finishing.
+    if (!running) activity.unfinished = true;
+  }
+  // A truncated output can't be followed by a reply in the same turn.
+  for (const section of sections) {
+    if (section.items && section.lastStop === 'length') section.unfinished = true;
+  }
+  // A question the user has not answered yet keeps its group open even after
+  // the turn's closing reply, until the next user message. Otherwise a reload
+  // (or returning to the page) folds the question away.
+  for (let index = sections.length - 1; index >= 0; index--) {
+    const section = sections[index];
+    if (!section.items && section.item.entry.message?.role === 'user') break;
+    if (section.items) section.required = section.needsResponse;
   }
   return sections;
 }

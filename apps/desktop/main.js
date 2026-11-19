@@ -1,7 +1,7 @@
 // YuGo Pi desktop client: a window around the published encrypted remote
 // client. It never stores host credentials itself; pairing keys live in the
 // web client's storage inside this app's profile, exactly as in a browser.
-const { app, BrowserWindow, Menu, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, clipboard, session, shell } = require('electron');
 const path = require('node:path');
 
 const CLIENT_URL = process.env.YUGO_PI_CLIENT_URL || 'https://yinniora.github.io/';
@@ -69,6 +69,21 @@ function createWindow(initialUrl) {
       event.preventDefault();
       openExternal(url);
     }
+  });
+  // Right-click / long-press: link and text actions.
+  win.webContents.on('context-menu', (_event, params) => {
+    const items = [];
+    if (params.linkURL && /^(https?|mailto):/i.test(params.linkURL)) {
+      items.push(
+        { label: '在浏览器中打开链接', click: () => openExternal(params.linkURL) },
+        { label: '复制链接', click: () => clipboard.writeText(params.linkURL) },
+        { type: 'separator' },
+      );
+    }
+    if (params.isEditable) items.push({ role: 'cut', label: '剪切' }, { role: 'copy', label: '复制' }, { role: 'paste', label: '粘贴' });
+    else if (params.selectionText) items.push({ role: 'copy', label: '复制' });
+    while (items.at(-1)?.type === 'separator') items.pop();
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
   win.webContents.on('did-fail-load', (_event, code, _desc, url, isMainFrame) => {
     if (!isMainFrame || code === -3 /* aborted */) return;

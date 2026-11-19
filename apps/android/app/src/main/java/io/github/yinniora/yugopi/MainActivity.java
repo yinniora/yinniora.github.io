@@ -3,12 +3,16 @@ package io.github.yinniora.yugopi;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.ContextMenu;
+import android.view.MenuItem;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
@@ -94,6 +98,9 @@ public class MainActivity extends Activity {
             }
         });
 
+        // Long-press a link: open in the browser, copy or share it.
+        registerForContextMenu(web);
+
         if (savedInstanceState != null) {
             web.restoreState(savedInstanceState);
         } else {
@@ -116,6 +123,41 @@ public class MainActivity extends Activity {
         } catch (ActivityNotFoundException ignored) {
             // nothing can handle it
         }
+    }
+
+    @Override
+    public void onCreateContextMenu(ContextMenu menu, View view, ContextMenu.ContextMenuInfo info) {
+        super.onCreateContextMenu(menu, view, info);
+        WebView.HitTestResult hit = web.getHitTestResult();
+        int type = hit.getType();
+        if (type != WebView.HitTestResult.SRC_ANCHOR_TYPE
+                && type != WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) return;
+        String link = hit.getExtra();
+        if (link == null || !(link.startsWith("https://") || link.startsWith("http://"))) return;
+        // For image links getExtra() is the image; ask WebView for the href.
+        if (type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+            android.os.Message message = new android.os.Handler(getMainLooper()).obtainMessage();
+            web.requestFocusNodeHref(message);
+            String href = message.getData().getString("url");
+            if (href != null) link = href;
+        }
+        final String url = link;
+        menu.setHeaderTitle(url);
+        menu.add(R.string.link_open).setOnMenuItemClickListener((MenuItem item) -> {
+            openExternal(Uri.parse(url));
+            return true;
+        });
+        menu.add(R.string.link_copy).setOnMenuItemClickListener((MenuItem item) -> {
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            clipboard.setPrimaryClip(ClipData.newPlainText("link", url));
+            Toast.makeText(this, R.string.link_copied, Toast.LENGTH_SHORT).show();
+            return true;
+        });
+        menu.add(R.string.link_share).setOnMenuItemClickListener((MenuItem item) -> {
+            Intent share = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url);
+            startActivity(Intent.createChooser(share, null));
+            return true;
+        });
     }
 
     private void showOffline() {

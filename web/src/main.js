@@ -4,8 +4,12 @@ import './personal.css';
 import './interaction.css';
 import { prepareStartupSettings } from './shared/startup-settings.js';
 import { lockPageZoom } from './shared/visual-viewport.js';
+import { installExternalLinks } from './shared/external-links.js';
 
-if (typeof document !== 'undefined') lockPageZoom();
+if (typeof document !== 'undefined') {
+  lockPageZoom();
+  installExternalLinks();
+}
 
 function defaultTarget() {
   if (typeof document === 'undefined') return null;

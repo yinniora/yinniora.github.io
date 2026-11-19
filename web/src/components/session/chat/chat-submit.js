@@ -31,6 +31,16 @@ export function setupChatSubmission({
         cancelButton.disabled = false;
       }
     });
+    // Esc in an empty composer stops the running task, like the Stop button.
+    // Popups (slash commands, mentions, selectors) handle Esc first.
+    textarea?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+      if (textarea.value.trim() || cancelButton.disabled || cancelButton.style.display === 'none')
+        return;
+      if (form?.querySelector?.('[aria-expanded="true"]')) return;
+      event.preventDefault();
+      cancelButton.click();
+    });
   }
 
   async function sendChatMessage(message, files = attachments.files()) {

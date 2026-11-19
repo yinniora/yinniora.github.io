@@ -2579,3 +2579,54 @@ body .pi-btw-input {
     filter: brightness(0.82);
   }
 }
+
+/* Stop button: a clear square-stop control while a task runs. With an empty
+   draft it takes the primary slot; disabled Queue/Steer step aside. */
+#spa-root .pi-chat-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 5px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--text);
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 650;
+}
+#spa-root .pi-chat-cancel:is(:hover, :focus-visible):not(:disabled) {
+  background: color-mix(in srgb, var(--text) 82%, var(--bg));
+  color: var(--bg);
+  border-color: color-mix(in srgb, var(--text) 82%, var(--bg));
+}
+#spa-root .pi-chat-cancel .pi-chat-stop-glyph {
+  fill: currentColor;
+  stroke: none;
+  border-radius: 2px;
+}
+#spa-root .actions.running:has(.pi-chat-send:disabled) :is(.pi-chat-send, .pi-chat-queue) {
+  display: none !important;
+}
+
+/* Turn state at a glance: running groups pulse, unfinished ones warn. */
+#spa-root .activity-group[data-running='true'] > summary .activity-label {
+  color: var(--text);
+}
+#spa-root .activity-group[data-running='true'] > summary .activity-status.pending svg {
+  animation: activity-spin 1.1s linear infinite;
+}
+@keyframes activity-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+#spa-root .activity-group[data-unfinished='true'] > summary .activity-label {
+  color: var(--warning);
+}
+#spa-root .activity-group:not([open]) > summary .activity-status.stopped {
+  display: inline-flex;
+}
+#spa-root .activity-status.stopped {
+  color: var(--warning);
+}

@@ -1,5 +1,14 @@
 <script>
-  import { icon, ChevronRight, ChevronUp, Clock, Loader, Check, X } from '../../shared/icons.js';
+  import {
+    icon,
+    ChevronRight,
+    ChevronUp,
+    CircleAlert,
+    Clock,
+    Loader,
+    Check,
+    X,
+  } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { sessionRuntime } from '../../session/session-runtime.js';
   let {
@@ -11,6 +20,7 @@
     status = '',
     required = false,
     running = false,
+    unfinished = false,
     children,
   } = $props();
   const indicators = {
@@ -18,6 +28,7 @@
     success: { glyph: Check, label: 'activity.done' },
     error: { glyph: X, label: 'activity.failed' },
     timeout: { glyph: Clock, label: 'activity.timedOut' },
+    stopped: { glyph: CircleAlert, label: 'activity.stopped' },
   };
   const indicator = $derived(indicators[status]);
   let element;
@@ -50,6 +61,7 @@
   data-collapse-key={id}
   data-requires-response={required ? 'true' : undefined}
   data-running={running ? 'true' : undefined}
+  data-unfinished={unfinished ? 'true' : undefined}
   open={required || running}
 >
   <summary onclick={toggle}>
@@ -63,6 +75,7 @@
         class:pending={status === 'pending'}
         class:failed={status === 'error'}
         class:timed-out={status === 'timeout'}
+        class:stopped={status === 'stopped'}
         title={t(indicator.label)}
       >
         {@html icon(indicator.glyph, { size: 14 })}

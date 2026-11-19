@@ -6,6 +6,7 @@
     Gauge,
     Paperclip,
     Plus,
+    Square,
     Terminal,
   } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
@@ -86,7 +87,7 @@
       >
       <ContextUsage />
     </div>
-    <div class="actions">
+    <div class="actions" class:running={toolbar.isRunning}>
       {@render permissionControl?.()}
       <div class="thinking-control" hidden={!chatAvailable || !toolbar.canAdjustThinking}>
         <button
@@ -116,10 +117,12 @@
         id="pi-chat-cancel"
         class="pi-chat-cancel"
         style:display={toolbar.isRunning ? '' : 'none'}
-        title={t('composer.cancelRunning')}
+        title={t('composer.stopHint')}
         aria-label={t('composer.cancelRunning')}
         disabled={toolbar.statusText === 'cancelling' || toolbar.compacting || !chatAvailable}
-        >{t('composer.cancel')}</button
+        >{@html icon(Square, { size: 13, class: 'pi-chat-stop-glyph' })}<span
+          >{t('composer.stop')}</span
+        ></button
       >
       <button
         type="button"

@@ -25,6 +25,29 @@ describe('conversation activity duration', () => {
     expect(activity.toolCount).toBe(1);
     expect(activity.durationMs).toBe(72000);
   });
+
+  it('marks a turn that ended without a reply as unfinished', () => {
+    const tool = (id, s) =>
+      msg(id, s, {
+        role: 'assistant',
+        stopReason: 'toolUse',
+        content: [{ type: 'toolCall', id: 't' + id, name: 'bash', arguments: {} }],
+      });
+    const cut = msg('cut', 9, {
+      role: 'assistant',
+      stopReason: 'length',
+      content: [{ type: 'thinking', thinking: 'long' }],
+    });
+    const turn = [msg('u', 0, { role: 'user', content: 'go' }), tool('a', 1)];
+    const groups = (entries, running) =>
+      groupConversationActivity(entries, new Map(), running).filter((section) => section.items);
+
+    expect(groups(turn, true)[0]).toMatchObject({ running: true });
+    expect(groups(turn, true)[0].unfinished).toBeFalsy();
+    expect(groups(turn, false)[0].unfinished).toBe(true);
+    const [truncated] = groups([...turn, cut, msg('u2', 20, { role: 'user', content: 'x' })]);
+    expect(truncated).toMatchObject({ unfinished: true, lastStop: 'length' });
+  });
 });
 
 describe('entry formatting', () => {
