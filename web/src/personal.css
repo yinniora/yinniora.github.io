@@ -2423,3 +2423,65 @@ body .pi-btw-input {
   content: '·';
   margin-inline-end: 6px;
 }
+
+/* Fold a long activity group from its end, not only from its summary. */
+#spa-root .activity-collapse-end {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 36px;
+  margin-top: 4px;
+  border: 0;
+  border-top: 1px solid var(--dim-2);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+#spa-root .activity-collapse-end:hover {
+  color: var(--text-soft);
+}
+
+/* Touch screens: keyboard hints are meaningless. Show touch actions instead. */
+#spa-root .pi-queue-item-touch-actions,
+#spa-root .pi-queue-touch-hint {
+  display: none;
+}
+@media (hover: none), (pointer: coarse) {
+  #spa-root .pi-queue-shortcuts,
+  #spa-root .pi-chat-focus-shortcut,
+  #spa-root button > kbd,
+  #spa-root [role='menuitem'] > kbd {
+    display: none;
+  }
+  #spa-root .pi-queue-touch-hint {
+    display: block;
+    padding-top: 6px;
+    border-top: 1px solid color-mix(in srgb, var(--dim) 60%, transparent);
+    color: var(--muted);
+    font-size: 12px;
+  }
+  #spa-root .pi-queue-item-touch-actions {
+    display: inline-flex;
+    gap: 6px;
+    flex: none;
+  }
+  #spa-root .pi-queue-item-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 30px;
+    padding: 0 9px;
+    border: 1px solid var(--dim);
+    border-radius: 7px;
+    background: var(--body-bg);
+    color: var(--text-soft);
+    font-size: 12px;
+  }
+  #spa-root .pi-queue-item-remove {
+    width: 32px;
+    height: 32px;
+  }
+}

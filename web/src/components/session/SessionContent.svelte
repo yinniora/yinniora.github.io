@@ -92,6 +92,7 @@
         count={section.running ? section.toolCount : 0}
         summary={activityText(section).summary}
         required={section.required}
+        running={section.running}
         status={section.running ? 'pending' : section.failures ? 'error' : 'success'}
       >
         {#each section.items as item (item.entry.id)}

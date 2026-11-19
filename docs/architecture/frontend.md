@@ -84,7 +84,15 @@ User messages have their send time, a copy control and the actions menu below
 the bubble. Pi's image resize notes (`[Image: original …]`) are for the model
 and are hidden from the bubble and the copied text. The activity group that
 collects a turn's thinking and tool calls is titled with the turn's duration
-("Worked for 1m 12s") and shows the tool count as its summary. Errors show a
+("Worked for 1m 12s") and shows the tool count as its summary. While the turn
+runs the group is open so finished thinking and tool calls (each folded) stream
+in above the live preview; when the turn ends it folds, leaving only the final
+reply. Folding a running group is remembered in memory for that run only, and
+every open group also has a collapse control at its end for long runs.
+
+Keyboard hints are hidden on touch screens (`hover: none` or `pointer: coarse`).
+The queue and steer panel shows a touch hint there instead, and tapping a queued
+row reveals Edit and Send now buttons that replace the E and ↩ keys. Errors show a
 collapsed detail card. Consecutive rejections for the same model in a turn
 share one visible card. Pi web workers cancel automatic retry backoff for
 provider rejections, but let Pi retry transport drops such as a reset TLS

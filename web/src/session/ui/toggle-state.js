@@ -84,12 +84,18 @@ export function saveToggleState(state, { sessionId = '', storage = globalThis.lo
   } catch (_) {}
 }
 
-export function applyToggleStateToNode(node, state, overrides = {}) {
+export function applyToggleStateToNode(node, state, overrides = {}, running = {}) {
   if (!node) return;
   node.querySelectorAll('[data-display-kind]').forEach((el) => {
     const key = el.dataset.collapseKey;
     const kind = el.dataset.displayKind;
     const inGroup = el.parentElement?.closest('[data-display-kind="group"]');
+    // A running turn's activity group streams open; once the turn ends it folds
+    // into "Worked for …" unless the reader opens it again afterwards.
+    if (el.dataset.running === 'true') {
+      el.open = el.dataset.requiresResponse === 'true' || (running[key] ?? true);
+      return;
+    }
     el.open =
       el.dataset.requiresResponse === 'true' ||
       (key in overrides
@@ -167,7 +173,9 @@ export function createToggleController({
       storage?.setItem(DISCLOSURE_KEY, JSON.stringify(map));
     } catch {}
   };
-  const applyToNode = (node) => applyToggleStateToNode(node, state, overrides);
+  // Choices made while a turn runs stay in memory: the finished group folds.
+  const running = {};
+  const applyToNode = (node) => applyToggleStateToNode(node, state, overrides, running);
   const syncButtons = () => syncToggleButtons(documentImpl, state);
   const save = () => saveToggleState(state, { sessionId, storage });
   const toggle = (key) => {
@@ -184,7 +192,11 @@ export function createToggleController({
 
   return {
     state,
-    setDisclosure(key, open) {
+    setDisclosure(key, open, { transient = false } = {}) {
+      if (transient) {
+        running[key] = open;
+        return;
+      }
       overrides[key] = open;
       saveDisclosures();
     },
@@ -193,9 +205,10 @@ export function createToggleController({
       state.thinkingExpanded = open;
       state.toolsVisible = open;
       state.toolOutputsExpanded = open;
-      documentImpl
-        .querySelectorAll('[data-collapse-key]')
-        .forEach((el) => (overrides[el.dataset.collapseKey] = open));
+      documentImpl.querySelectorAll('[data-collapse-key]').forEach((el) => {
+        if (el.dataset.running === 'true') running[el.dataset.collapseKey] = open;
+        else overrides[el.dataset.collapseKey] = open;
+      });
       saveDisclosures();
       save();
       applyToNode(documentImpl);

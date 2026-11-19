@@ -107,8 +107,8 @@ func TestLiveReloadEntriesInheritCurrentToggleState(t *testing.T) {
 	runnerSrc := readSrc(t, "web/src/session/ui/session-ui-runner.js")
 	hookChecks := map[string][]string{
 		toggleSrc: {
-			"export function applyToggleStateToNode(node, state, overrides = {}) {",
-			"const applyToNode = (node) => applyToggleStateToNode(node, state, overrides);",
+			"export function applyToggleStateToNode(node, state, overrides = {}, running = {}) {",
+			"const applyToNode = (node) => applyToggleStateToNode(node, state, overrides, running);",
 		},
 		runnerSrc: {"sessionRuntime.toggleState = toggleController;"},
 	}

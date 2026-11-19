@@ -336,6 +336,7 @@ export default {
   'activity.collapse': 'Collapse {name}',
   'activity.expandAll': 'Expand all',
   'activity.collapseAll': 'Collapse all',
+  'activity.collapseShort': 'Collapse',
   'activity.done': 'Completed',
   'activity.failed': 'Failed',
   'activity.timedOut': 'Timed out',
@@ -568,6 +569,7 @@ export default {
   'composer.queueDelete': 'delete',
   'composer.queueSendNow': 'send now',
   'composer.queueExit': 'exit',
+  'composer.queueTouchHint': 'Tap a message to edit or send it now; tap × to remove',
   'composer.queueSavedLocally': 'auto-sending',
   'composer.queueSavedLocallyHint':
     'Queued messages are saved on the server and will be sent automatically when the worker is idle — even if you close the browser',

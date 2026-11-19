@@ -313,6 +313,25 @@ test.describe("steer / queue (stubbed pi)", () => {
     await expect(page.locator(".pi-queue-item-text", { hasText: items[1] })).toHaveCount(0);
   });
 
+  test("touch screens edit or send a queued row with buttons instead of keys", async ({
+    page,
+    sessionsDir,
+  }, testInfo) => {
+    test.skip(!testInfo.project.use.hasTouch, "touch-only controls");
+    const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "touch", {
+      slowMs: 30000,
+    });
+    const items = await queueThree(page, textarea, testInfo, "touch");
+    await expect(page.locator(".pi-queue-shortcuts")).toBeHidden();
+    await expect(page.locator(".pi-queue-touch-hint")).toBeVisible();
+
+    const rows = page.locator(".pi-queue-item");
+    await rows.nth(1).locator(".pi-queue-item-text").click();
+    await rows.nth(1).getByRole("button", { name: /edit|编辑/i }).click();
+    await expect(textarea).toHaveValue(items[1]);
+    await expect(page.locator(".pi-queue-item-text", { hasText: items[1] })).toHaveCount(0);
+  });
+
   test("Esc unfocuses the panel and refocuses the textarea", async ({
     page,
     sessionsDir,

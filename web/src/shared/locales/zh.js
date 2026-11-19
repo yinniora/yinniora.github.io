@@ -195,6 +195,7 @@ export default {
   'composer.queueDelete': '删除',
   'composer.queueSendNow': '立即发送',
   'composer.queueExit': '退出',
+  'composer.queueTouchHint': '点按消息可编辑或立即发送，点 × 删除',
   'composer.queueSavedLocally': '自动发送',
   'composer.queueSavedLocallyHint':
     '排队的消息保存在服务器上，当工作器空闲时会自动发送——即使您关闭浏览器',
@@ -619,6 +620,7 @@ export default {
   'activity.collapse': '收起 {name}',
   'activity.expandAll': '全部展开',
   'activity.collapseAll': '全部收起',
+  'activity.collapseShort': '收起',
   'activity.done': '已完成',
   'activity.failed': '失败',
   'activity.timedOut': '已超时',

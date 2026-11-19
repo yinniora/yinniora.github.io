@@ -94,9 +94,21 @@ test("returning to a running session restores its thinking and progress before t
   await expect(preview.locator(".preview-duration")).toHaveText(/^0:0[1-9]$/);
   await expect(page.locator("#messages-list .activity-thinking")).toHaveCount(1);
   await expect(thinking).toBeHidden();
+  // While the turn runs its thinking and tools stream into an open group that
+  // can also be folded from its end.
+  const group = page.locator("#messages-list .activity-group").last();
+  await expect(group).toHaveAttribute("data-running", "true");
+  await expect(group).toHaveJSProperty("open", true);
+  await group.locator(".activity-collapse-end").click();
+  await expect(group).toHaveJSProperty("open", false);
+  await group.locator("summary").first().click();
+  await expect(group).toHaveJSProperty("open", true);
   expect(await send("[[complete-preview]]")).toBe(202);
   await expect(page.locator("#messages-list")).toContainText("Fixture final answer.");
   await expect(progress).toHaveCount(0);
+  // The finished turn folds into "Worked for …" and leaves only the reply.
+  await expect(group).not.toHaveAttribute("data-running", "true");
+  await expect(group).toHaveJSProperty("open", false);
   const timedOut = page.locator('[data-collapse-key="tool:fixture-live-tool"]');
   await expect(timedOut.locator(".activity-status.timed-out")).toHaveText("Timed out");
   await timedOut.locator('xpath=ancestor::details[@data-display-kind="group"]/summary').click();

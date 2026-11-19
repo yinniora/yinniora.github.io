@@ -1,6 +1,15 @@
 <script>
   import { onMount } from 'svelte';
-  import { icon, Play, Pause, X, CornerDownRight, Layers } from '../../../shared/icons.js';
+  import {
+    icon,
+    Play,
+    Pause,
+    X,
+    CornerDownRight,
+    Layers,
+    Pencil,
+    Send,
+  } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
 
   let { store } = $props();
@@ -222,6 +231,27 @@
           {#if item.kind === 'steer'}
             <span class="pi-queue-item-tag">{t('composer.steerTag')}</span>
           {/if}
+          {#if item.kind === 'queued' && store.focusIndex === i}
+            <!-- Touch screens have no ↩ / E keys: offer the same actions as buttons. -->
+            <span class="pi-queue-item-touch-actions">
+              <button
+                type="button"
+                class="pi-queue-item-action"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  store.actions.edit?.(item.id);
+                }}>{@html icon(Pencil, { size: 13 })}<span>{t('composer.queueEdit')}</span></button
+              >
+              <button
+                type="button"
+                class="pi-queue-item-action"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  store.actions.sendNow?.(item.id);
+                }}>{@html icon(Send, { size: 13 })}<span>{t('composer.queueSendNow')}</span></button
+              >
+            </span>
+          {/if}
           <button
             type="button"
             class="pi-queue-item-remove"
@@ -237,6 +267,7 @@
       {/each}
     </ul>
 
+    <footer class="pi-queue-touch-hint">{t('composer.queueTouchHint')}</footer>
     <footer class="pi-queue-shortcuts" aria-hidden="true">
       <span class="pi-queue-shortcut"><kbd>↑↓</kbd>{t('composer.queueNavigate')}</span>
       <span class="pi-queue-shortcut"><kbd>E</kbd>{t('composer.queueEdit')}</span>

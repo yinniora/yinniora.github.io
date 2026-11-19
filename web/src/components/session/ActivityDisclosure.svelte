@@ -1,5 +1,5 @@
 <script>
-  import { icon, ChevronRight, Clock, Loader, Check, X } from '../../shared/icons.js';
+  import { icon, ChevronRight, ChevronUp, Clock, Loader, Check, X } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { sessionRuntime } from '../../session/session-runtime.js';
   let {
@@ -10,6 +10,7 @@
     summary = '',
     status = '',
     required = false,
+    running = false,
     children,
   } = $props();
   const indicators = {
@@ -20,11 +21,22 @@
   };
   const indicator = $derived(indicators[status]);
   let element;
+  function setOpen(open) {
+    element.open = open;
+    sessionRuntime.toggleState?.setDisclosure?.(id, open, { transient: running });
+  }
   function toggle(event) {
     event.preventDefault();
-    const open = !element.open;
-    element.open = open;
-    sessionRuntime.toggleState?.setDisclosure?.(id, open);
+    setOpen(!element.open);
+  }
+  // Long thinking and tool runs push the summary off screen; fold from the end
+  // and bring the summary back into view.
+  function collapseFromEnd() {
+    setOpen(false);
+    const summary = element.querySelector(':scope > summary');
+    if (summary && summary.getBoundingClientRect().top < 0) {
+      summary.scrollIntoView({ block: 'start' });
+    }
   }
 </script>
 
@@ -37,7 +49,8 @@
   data-display-kind={kind}
   data-collapse-key={id}
   data-requires-response={required ? 'true' : undefined}
-  open={required}
+  data-running={running ? 'true' : undefined}
+  open={required || running}
 >
   <summary onclick={toggle}>
     <span class="activity-chevron" aria-hidden="true">{@html icon(ChevronRight, { size: 15 })}</span
@@ -56,5 +69,16 @@
         {t(indicator.label)}
       </span>{/if}
   </summary>
-  <div class="activity-body">{@render children()}</div>
+  <div class="activity-body">
+    {@render children()}
+    {#if kind === 'group'}
+      <button
+        type="button"
+        class="activity-collapse-end"
+        aria-label={t('activity.collapse', { name: label })}
+        onclick={collapseFromEnd}
+        >{@html icon(ChevronUp, { size: 15 })}<span>{t('activity.collapseShort')}</span></button
+      >
+    {/if}
+  </div>
 </details>

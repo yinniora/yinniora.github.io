@@ -203,6 +203,29 @@ describe('toggle state helpers', () => {
     expect(controller.toolOutputsExpanded).toBe(true);
   });
 
+  it('streams a running activity group open and folds it once the turn ends', () => {
+    const dom = new JSDOM(
+      `<details data-display-kind="group" data-collapse-key="activity:a" data-running="true"></details>`,
+    );
+    const doc = dom.window.document;
+    const storage = makeStorage();
+    const controller = createToggleController({ documentImpl: doc, storage, sessionId: 's' });
+    const group = doc.querySelector('details');
+    controller.applyToNode(doc);
+    expect(group.open).toBe(true);
+    // Folding a running group is remembered for the run but not persisted.
+    controller.setDisclosure('activity:a', false, { transient: true });
+    controller.applyToNode(doc);
+    expect(group.open).toBe(false);
+    expect(storage.getItem('pi.sessionDetail.disclosures') || '').not.toContain('activity:a');
+    delete group.dataset.running;
+    controller.applyToNode(doc);
+    expect(group.open).toBe(false);
+    controller.setDisclosure('activity:a', true);
+    controller.applyToNode(doc);
+    expect(group.open).toBe(true);
+  });
+
   it('hides the tool-call placeholder when tools are visible', () => {
     const dom = new JSDOM(
       `<div><div class="tool-call-collapsed"></div><div class="tool-execution"></div></div>`,
