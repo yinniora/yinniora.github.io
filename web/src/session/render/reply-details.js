@@ -46,7 +46,12 @@ export function entriesWithReplyDetails(entries) {
             .map((block) => block.text)
             .join('\n\n');
     const interrupted = message.stopReason === 'aborted';
-    if (!text.trim() && !interrupted) return { entry, reply: null };
+    if (!text.trim() && !interrupted) {
+      const emptyReply =
+        message.stopReason === 'stop' &&
+        !blocks.some((block) => ['image', 'toolCall'].includes(block.type));
+      return { entry, reply: null, emptyReply, retryContent: emptyReply ? prompt : null };
+    }
 
     const model = message.model
       ? [message.provider, message.model].filter(Boolean).join('/')

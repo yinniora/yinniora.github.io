@@ -31,6 +31,7 @@
     live = false,
     chatAvailable = false,
     retryContent = null,
+    emptyReply = false,
     skipActivity = false,
     outputs,
     renderOutputs = null,
@@ -175,6 +176,14 @@
       {:else}
         <div class="error-text">{t('activity.truncated')}</div>
       {/if}
+    {:else if emptyReply && !outputs?.length}
+      <ReplyError
+        interrupted
+        labelKey="activity.unfinished"
+        error={msg.rawStopReason || ''}
+        onChooseModel={chatAvailable ? chooseModel : null}
+        onRetry={chatAvailable && retryContent ? retry : null}
+      />
     {:else if msg.stopReason === 'error'}
       {#if live}
         <ReplyError
@@ -194,7 +203,7 @@
       <ReplyFooter {...reply}>
         {#snippet menu()}{#if live}{@render entryMenu(entry.id)}{/if}{/snippet}
       </ReplyFooter>
-    {:else if live}
+    {:else if live && !emptyReply && !['error', 'aborted', 'length'].includes(msg.stopReason)}
       {@render entryMenu(entry.id)}
     {/if}
   </div>

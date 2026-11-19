@@ -373,6 +373,11 @@ including native retry and recovery work. Older workers can still finish with
 an `agent_end` event that lacks the `willRetry` field.
 Native compaction events update the live progress preview. The context meter
 waits for a fresh provider measurement after a persisted compaction.
+With auto-compaction enabled, a fresh prompt first checks the active branch's
+last measured provider usage against the selected model's output headroom.
+This can invoke Pi's native compact RPC before a stale projection estimate
+would allow a prompt that has almost no output budget. A failed preflight
+leaves an existing queued message available for retry.
 Model settings use Pi's `modelThinkingLevels` for per-model defaults. For known
 Claude IDs on the native Messages API, discovery distinguishes adaptive effort
 from legacy thinking budgets. A fixed-effort alias keeps its own behavior.

@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { groupConversationActivity } from './conversation-activity.js';
+import { entriesWithReplyDetails } from './reply-details.js';
 import { formatElapsed, formatShortTime, stripImageNotes } from './entry-format.js';
 
 const at = (s) => new Date(Date.UTC(2026, 10, 19, 2, 0, s)).toISOString();
 const msg = (id, s, message) => ({ entry: { id, type: 'message', timestamp: at(s), message } });
 
 describe('conversation activity duration', () => {
+  it('keeps a no-text final response visible as an unsuccessful reply', () => {
+    const user = msg('u', 0, { role: 'user', content: 'go' });
+    const empty = msg('empty', 4, {
+      role: 'assistant',
+      stopReason: 'stop',
+      content: [{ type: 'thinking', thinking: 'A thought without a reply.' }],
+    });
+    const entries = entriesWithReplyDetails([user.entry, empty.entry]);
+    const sections = groupConversationActivity(entries, new Map());
+    expect(sections.at(-1).item).toMatchObject({ emptyReply: true, retryContent: 'go' });
+  });
   it('measures a turn from the prompt to its final reply', () => {
     const entries = [
       msg('u', 0, { role: 'user', content: 'go' }),

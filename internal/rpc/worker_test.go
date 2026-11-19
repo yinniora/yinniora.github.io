@@ -1,8 +1,10 @@
 package rpc
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"slices"
@@ -11,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"pi-web/internal/chat"
 	"pi-web/internal/workers"
 )
 
@@ -31,6 +34,54 @@ func waitForPending(t *testing.T, w *piRPCWorker, id string) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("pending request %q never registered", id)
+}
+
+func TestPromptCompactsAfterMeasuredLengthStopEvenWhenPiArchivedIt(t *testing.T) {
+	path := t.TempDir() + "/session.jsonl"
+	fixture := `{"type":"session","version":3}
+{"type":"message","id":"user","parentId":null,"message":{"role":"user","content":"task"}}
+{"type":"message","id":"limited","parentId":"user","message":{"role":"assistant","model":"opus","provider":"local","content":[],"stopReason":"length","usage":{"totalTokens":124552,"output":1}}}
+{"type":"context_edit","id":"omit","parentId":"limited","replacement":null,"targetId":"limited"}
+{"type":"session_info","name":"diagnostic"}
+`
+	if err := os.WriteFile(path, []byte(fixture), 0600); err != nil {
+		t.Fatal(err)
+	}
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	limits := model{ID: "opus", Provider: "local", ContextWindow: 128000, MaxTokens: 32000}
+	w := &piRPCWorker{stdin: writer, sessionPath: path, modelLimits: limits, autoCompaction: true, pending: make(map[string]chan response)}
+	result := make(chan error, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go func() {
+		defer writer.Close()
+		result <- w.Prompt(ctx, chat.Request{Message: "Resume this task"})
+	}()
+	scan := bufio.NewScanner(reader)
+	for _, command := range []string{"compact", "prompt"} {
+		if !scan.Scan() {
+			t.Fatalf("expected %s: %v", command, scan.Err())
+		}
+		var sent map[string]any
+		if err := json.Unmarshal(scan.Bytes(), &sent); err != nil || sent["type"] != command {
+			t.Fatalf("expected %s, got %s", command, scan.Text())
+		}
+		if (command == "compact") != w.Status().Compacting {
+			t.Fatalf("unexpected compaction state at %s: %+v", command, w.Status())
+		}
+		w.handleRPCLine(`{"type":"response","id":` + strconv.Quote(sent["id"].(string)) + `,"success":true}`)
+	}
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(fixture+`{"type":"compaction","id":"new","parentId":"omit"}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if needsCompaction(path, limits) {
+		t.Fatal("old usage triggered compaction again after a saved compaction")
+	}
 }
 
 func TestWorkerDirUsesSessionCWD(t *testing.T) {

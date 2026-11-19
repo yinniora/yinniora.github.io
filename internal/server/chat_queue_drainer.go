@@ -52,7 +52,7 @@ func newQueueDrainer(s *Server) *queueDrainer {
 		doneCh:          make(chan struct{}),
 		tickPeriod:      5 * time.Second,
 		nowFn:           time.Now,
-		dispatchTimeout: 30 * time.Second,
+		dispatchTimeout: queueSendTimeout,
 	}
 }
 

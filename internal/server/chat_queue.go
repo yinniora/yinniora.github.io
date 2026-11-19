@@ -13,6 +13,8 @@ import (
 	"pi-web/internal/workers"
 )
 
+const queueSendTimeout = 5 * time.Minute
+
 // /api/chat/queue: single endpoint that demuxes on method.
 //
 //   GET    /api/chat/queue?id=<sessionID>             — list items + paused
@@ -136,7 +138,7 @@ func (s *Server) handleQueueSendNow(w http.ResponseWriter, r *http.Request, sess
 		writeJSONError(w, http.StatusNotFound, "queued message no longer exists")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), queueSendTimeout)
 	defer cancel()
 	if err = s.sendQueued(ctx, resolved.Path, item, false); err != nil {
 		if errors.Is(err, workers.ErrPiSessionBusy) {

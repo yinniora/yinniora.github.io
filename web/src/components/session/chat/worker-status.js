@@ -1,3 +1,5 @@
+import { t } from '../../../shared/i18n.js';
+
 export function setupWorkerStatusPolling({
   windowImpl = window,
   chatApi,
@@ -47,10 +49,19 @@ export function setupWorkerStatusPolling({
       if (data.thinkingLevel) setKnownThinkingLevel(data.thinkingLevel);
       setCompacting(Boolean(data.compacting));
       if (data.state === 'running') setStatus('running', 'running');
-      if (data.state === 'idle') setStatus('idle', '');
-      if (data.state === 'error') setStatus(data.error || 'worker error', 'error');
+      if (data.state === 'idle') {
+        if (data.compactionFailed) setStatus(t('piSession.compactFailed'), 'error');
+        else setStatus('idle', '');
+      }
+      if (data.state === 'error')
+        setStatus(
+          data.error === 'context compaction failed'
+            ? t('piSession.compactFailed')
+            : data.error || 'worker error',
+          'error',
+        );
       if (
-        data.state === 'idle' &&
+        (data.state === 'idle' || data.state === 'error') &&
         (lastWorkerState === 'running' ||
           (data.handledPrompt && lastHandledPrompt !== data.handledPrompt))
       ) {

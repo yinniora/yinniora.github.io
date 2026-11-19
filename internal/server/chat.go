@@ -72,6 +72,14 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.startTask(func(ctx context.Context) {
 		if err := s.chatSender.Send(ctx, sessionID, sessionPath, chatReq); err != nil && !errors.Is(err, context.Canceled) {
+			if errors.Is(err, workers.ErrPiContextCompaction) && s.chatQueue != nil && len(chatReq.Images) == 0 {
+				// Pi never received this prompt. Keep it available for a manual retry.
+				if pauseErr := s.chatQueue.SetPaused(sessionID, true); pauseErr == nil {
+					if _, addErr := s.chatQueue.Add(sessionID, chatReq.Message, chatReq.Message); addErr == nil {
+						s.notifyQueueChanged(sessionID)
+					}
+				}
+			}
 			fmt.Fprintf(os.Stderr, "chat send failed for %s: %v\n", sessionID, err)
 		}
 	}) {
@@ -173,6 +181,10 @@ func (s *Server) handleWorkerStatus(w http.ResponseWriter, r *http.Request) {
 		status.ThinkingLevel = state.ThinkingLevel
 		status.ThinkingLevels = state.ThinkingLevels
 		status.Compacting = state.Compacting
+		status.CompactionFailed = state.CompactionFailed
+		if !running && state.Error == workers.ErrPiContextCompaction.Error() {
+			status.State, status.Error = workers.WorkerStateError, state.Error
+		}
 		status.HandledPrompt = state.HandledPrompt
 	}
 	if pi, ok := s.chatSender.(extensionUIHandler); ok {

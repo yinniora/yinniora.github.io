@@ -17,9 +17,11 @@ type response struct {
 }
 
 type model struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Provider string `json:"provider"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Provider      string `json:"provider"`
+	ContextWindow int    `json:"contextWindow"`
+	MaxTokens     int    `json:"maxTokens"`
 }
 
 func WriteCommand(w io.Writer, cmd map[string]any) error {

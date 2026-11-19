@@ -140,7 +140,10 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
       const thoughtCount = blocks.filter(
         (block) => block.type === 'thinking' && block.thinking?.trim(),
       ).length;
-      const final = item.reply || ['aborted', 'error', 'length'].includes(message.stopReason);
+      const final =
+        item.reply ||
+        item.emptyReply ||
+        ['aborted', 'error', 'length'].includes(message.stopReason);
       if (!final && (tools.length || thoughtCount || message.stopReason === 'toolUse')) {
         addActivity(item, thoughtCount, tools);
         activity.outputs.push(...(outputsByEntry?.get(entry.id) || []));

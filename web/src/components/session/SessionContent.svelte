@@ -73,7 +73,7 @@
 </script>
 
 {#snippet renderEntry(
-  { entry, reply, repeatedError, retryContent, skipActivity },
+  { entry, reply, repeatedError, retryContent, skipActivity, emptyReply },
   inActivity = false,
 )}
   {#if repeatedError}
@@ -86,6 +86,7 @@
       {live}
       {chatAvailable}
       {retryContent}
+      {emptyReply}
       {skipActivity}
       outputs={inActivity ? undefined : groups?.byEntry.get(entry.id)}
       {renderOutputs}

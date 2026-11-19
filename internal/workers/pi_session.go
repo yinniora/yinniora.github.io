@@ -15,6 +15,7 @@ const (
 )
 
 var ErrPiSessionBusy = errors.New("session is busy")
+var ErrPiContextCompaction = errors.New("context compaction failed")
 
 type piSessionWorker interface {
 	PiSessionAction(context.Context, PiSessionAction, string) (json.RawMessage, error)

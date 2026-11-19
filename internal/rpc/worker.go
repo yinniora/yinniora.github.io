@@ -35,6 +35,8 @@ type piRPCWorker struct {
 	pending              map[string]chan response
 	currentModel         string
 	currentProvider      string
+	modelLimits          model
+	autoCompaction       bool
 	currentThinkingLevel string
 	thinkingLevels       []string
 	thinkingLevelsLoaded bool
@@ -49,6 +51,7 @@ type piRPCWorker struct {
 	computerRequests     map[string]workers.ComputerRequest
 	computerDenied       bool
 	compacting           bool
+	compactionFailed     bool
 	agentRevision        uint64
 	handledPrompt        string
 	extensionDialogs     map[string]*pendingExtensionDialog
@@ -201,9 +204,32 @@ func (w *piRPCWorker) Prompt(ctx context.Context, chat chat.Request) error {
 		return workers.ErrPiSessionBusy
 	}
 	revision := w.agentRevision
+	limits := w.modelLimits
+	checkContext := !streaming && w.autoCompaction && limits.ContextWindow > 0 && limits.MaxTokens > 0 &&
+		!strings.HasPrefix(strings.TrimSpace(chat.Message), "/")
+	w.compacting = checkContext
+	if !streaming {
+		w.compactionFailed = false
+	}
 	w.status.State = workers.WorkerStateRunning
 	w.status.Error = ""
 	w.mu.Unlock()
+	if checkContext {
+		var compactErr error
+		if needsCompaction(w.sessionPath, limits) {
+			compactErr = w.compactContext(ctx)
+		}
+		w.mu.Lock()
+		w.compacting = false
+		if compactErr != nil {
+			w.status.State = workers.WorkerStateError
+			w.status.Error = workers.ErrPiContextCompaction.Error()
+		}
+		w.mu.Unlock()
+		if compactErr != nil {
+			return fmt.Errorf("%w: %w", workers.ErrPiContextCompaction, compactErr)
+		}
+	}
 	id := w.nextID()
 	data, err := w.request(ctx, BuildPromptCommand(id, chat, streaming))
 	if err != nil {
@@ -276,6 +302,7 @@ func (w *piRPCWorker) SetModel(ctx context.Context, provider, modelID string) er
 	w.currentThinkingLevel = ""
 	w.currentModel = m.ID
 	w.currentProvider = m.Provider
+	w.modelLimits = m
 	w.status.ModelName = m.Name
 	if w.status.State != workers.WorkerStateRunning {
 		w.status.State = workers.WorkerStateIdle
@@ -315,9 +342,10 @@ func (w *piRPCWorker) GetState(ctx context.Context) (workers.WorkerStatus, error
 		return workers.WorkerStatus{}, err
 	}
 	var state struct {
-		ThinkingLevel string `json:"thinkingLevel"`
-		Model         model  `json:"model"`
-		SessionFile   string `json:"sessionFile"`
+		ThinkingLevel         string `json:"thinkingLevel"`
+		Model                 model  `json:"model"`
+		SessionFile           string `json:"sessionFile"`
+		AutoCompactionEnabled bool   `json:"autoCompactionEnabled"`
 	}
 	if err := json.Unmarshal(data, &state); err != nil {
 		return workers.WorkerStatus{}, err
@@ -329,6 +357,7 @@ func (w *piRPCWorker) GetState(ctx context.Context) (workers.WorkerStatus, error
 	}
 	w.mu.Lock()
 	w.currentThinkingLevel = state.ThinkingLevel
+	w.autoCompaction = state.AutoCompactionEnabled
 	if state.Model.ID != "" {
 		if state.Model.ID != w.currentModel || state.Model.Provider != w.currentProvider {
 			w.thinkingLevels = nil
@@ -336,6 +365,7 @@ func (w *piRPCWorker) GetState(ctx context.Context) (workers.WorkerStatus, error
 		}
 		w.currentModel = state.Model.ID
 		w.currentProvider = state.Model.Provider
+		w.modelLimits = state.Model
 		w.status.ModelName = state.Model.Name
 	}
 	currentID, currentProvider := w.currentModel, w.currentProvider
@@ -430,6 +460,7 @@ func (w *piRPCWorker) Status() workers.WorkerStatus {
 	s.ThinkingLevel = w.currentThinkingLevel
 	s.ThinkingLevels = w.thinkingLevels
 	s.HandledPrompt = w.handledPrompt
+	s.CompactionFailed = w.compactionFailed
 	if w.compacting {
 		s.Compacting = true
 		s.State = workers.WorkerStateRunning
@@ -550,12 +581,14 @@ func (w *piRPCWorker) consume(r io.Reader) {
 
 func (w *piRPCWorker) handleRPCLine(line string) {
 	var meta struct {
-		Type       string          `json:"type"`
-		Level      string          `json:"level"`
-		ToolCallID string          `json:"toolCallId"`
-		ToolName   string          `json:"toolName"`
-		WillRetry  *bool           `json:"willRetry"`
-		Message    json.RawMessage `json:"message"`
+		Type         string          `json:"type"`
+		Level        string          `json:"level"`
+		ToolCallID   string          `json:"toolCallId"`
+		ToolName     string          `json:"toolName"`
+		Reason       string          `json:"reason"`
+		ErrorMessage string          `json:"errorMessage"`
+		WillRetry    *bool           `json:"willRetry"`
+		Message      json.RawMessage `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(line), &meta); err != nil {
 		return
@@ -611,8 +644,16 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 	case "turn_end":
 		w.noteStreamActivity()
 	case "compaction_start", "compaction_end":
-		w.noteStreamActivity()
-		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
+		w.mu.Lock()
+		w.compactionFailed = meta.Type == "compaction_end" && meta.ErrorMessage != ""
+		w.mu.Unlock()
+		if meta.Type == "compaction_end" && meta.Reason == "manual" {
+			w.lastStreamActivity.Store(0)
+			w.emitStreamPreview(assistantMessageEvent{Type: "agent_end"})
+		} else {
+			w.noteStreamActivity()
+			w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
+		}
 	case "tool_execution_start", "tool_execution_end":
 		w.noteStreamActivity()
 		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type, ToolCallID: meta.ToolCallID, ToolName: meta.ToolName})
