@@ -64,6 +64,7 @@ test("returning to a running session restores its thinking and progress before t
   await page.goto(url(current));
   const progress = page.locator(".session-progress");
   const thinking = page.locator(".preview-thinking .activity-thinking-text");
+  const preview = page.locator("#chat-preview-stream .preview-progress");
   await page.locator("#pi-chat-message").fill("[[hold-preview]]");
   await page.locator("#pi-chat-send").click();
   await expect(thinking).toHaveText("Fixture thinking before reconnect.");
@@ -78,20 +79,19 @@ test("returning to a running session restores its thinking and progress before t
   await go(url(current));
   await expect(thinking).toBeVisible();
   await expect(thinking).toHaveText("Fixture thinking before reconnect.");
-  await expect(progress).toContainText("Thinking");
-  await expect(progress.locator(".session-progress-spinner")).toHaveCSS("animation-name", "session-activity-spin");
+  // The transcript preview owns progress; the composer line stays hidden.
+  await expect(progress).toHaveCount(0);
   const spinner = page.locator(".preview-thinking .preview-spinner");
   const first = await spinner.textContent();
   await expect.poll(() => spinner.textContent()).not.toBe(first);
 
   expect(await send("[[preview-tool]]")).toBe(202);
-  await expect(progress).toContainText("Tool calls");
-  await expect(progress.locator(".session-progress-tool")).toHaveText("bash");
-  await expect(progress.locator(".session-progress-duration")).toHaveText(/^0:0[1-9]$/);
+  await expect(preview.locator(".preview-tool")).toHaveText("bash");
+  await expect(preview.locator(".preview-duration")).toHaveText(/^0:0[1-9]$/);
   await go("/");
   await expect(page.locator(".personal-home-main")).toBeVisible();
   await go(url(current));
-  await expect(progress.locator(".session-progress-duration")).toHaveText(/^0:0[1-9]$/);
+  await expect(preview.locator(".preview-duration")).toHaveText(/^0:0[1-9]$/);
   await expect(page.locator("#messages-list .activity-thinking")).toHaveCount(1);
   await expect(thinking).toBeHidden();
   expect(await send("[[complete-preview]]")).toBe(202);
@@ -121,7 +121,12 @@ test("stopping an empty reply keeps its status, model, time and retry action on 
   await page.goto(url);
   await page.locator("#pi-chat-message").fill("[[hold-preview]]");
   await page.locator("#pi-chat-send").click();
-  await expect(page.locator(".session-progress")).toContainText("思考");
+  // The transcript preview is the only progress line while a reply runs.
+  // Wait for server thinking: the local placeholder appears before the run starts.
+  await expect(page.locator("#chat-preview-stream .activity-thinking-text")).toHaveText(
+    "Fixture thinking before reconnect.",
+  );
+  await expect(page.locator(".session-progress")).toHaveCount(0);
   await page.locator("#pi-chat-cancel").click();
 
   const stopped = page.locator(".assistant-message").last();
@@ -131,7 +136,6 @@ test("stopping an empty reply keeps its status, model, time and retry action on 
   const footer = stopped.locator(".reply-footer");
   await expect(stopped.locator(".reply-interrupted")).toHaveText("回复已中止");
   await expect(footer.locator(".reply-model")).not.toBeEmpty();
-  await expect(footer.locator("time")).toBeVisible();
   await expect(footer.locator(".reply-copy")).toHaveCount(0);
   await stopped.getByRole("button", { name: "重试", exact: true }).click();
   await expect(page.locator(".assistant-message").last()).toContainText("Stub reply: Track preview state");
@@ -163,7 +167,7 @@ test("successive tool messages stay in one folded group above the reply", async 
   await collapseScratchpad(page);
   await page.goto("/session?id=" + encodeURIComponent(id));
   const group = page.locator('details[data-collapse-key="activity:first"]');
-  await expect(group.locator(":scope > summary")).toHaveText(/Thinking.*Tool calls.*2.*Completed/);
+  await expect(group.locator(":scope > summary")).toHaveText(/2 tool calls/);
   const first = page.locator("#entry-first .activity-disclosure > summary");
   const second = page.locator("#entry-second .activity-disclosure > summary");
   const answer = page.locator("#entry-finished").getByText("Visible reply after tools.", { exact: true });
@@ -226,7 +230,7 @@ test("computer approval stays visible without opening the permission menu", asyn
   await approval.getByRole("button", { name: "Deny", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-approval-rejected", "true");
   await expect(approval).toHaveCount(0);
-  await expect(page.locator(".session-progress")).toBeVisible();
+  await expect(page.locator("#chat-preview-stream")).toBeVisible();
 });
 
 test("one activity summary holds interleaved tool calls and commentary", async ({ page, sessionsDir }, info) => {
@@ -256,7 +260,7 @@ test("one activity summary holds interleaved tool calls and commentary", async (
   await page.goto("/session?id=" + encodeURIComponent(id));
   const group = page.locator(".activity-group");
   await expect(group).toHaveCount(1);
-  await expect(group.locator(":scope > summary")).toContainText("Tool calls");
+  await expect(group.locator(":scope > summary")).toContainText("2 tool calls");
   await expect(group.getByText("Intermediate note one", { exact: true })).toBeHidden();
   await expect(page.locator("#entry-answer").getByText("Final answer")).toBeVisible();
   await group.locator(":scope > summary").click();

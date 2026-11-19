@@ -1,43 +1,42 @@
 <script>
   import CopyMessageButton from './CopyMessageButton.svelte';
-  import { formatTimestamp } from '../../session/render/entry-format.js';
 
+  // The reply time lives beside the prompt (when it was asked); the turn's
+  // duration is on the activity summary. The footer keeps copy, model and menu.
   let { text, model, timestamp, menu } = $props();
+  // Provider ids can be long opaque hashes; the model name is what people read.
+  const modelName = $derived(model ? model.split('/').filter(Boolean).pop() : '');
   const date = $derived(timestamp ? new Date(timestamp) : null);
-  const time = $derived(date && Number.isFinite(date.getTime()) ? formatTimestamp(date) : '');
+  const title = $derived(
+    [model, date && Number.isFinite(date.getTime()) ? date.toLocaleString() : '']
+      .filter(Boolean)
+      .join('\n'),
+  );
 </script>
 
 <div class="reply-footer">
-  <div class="reply-actions">
-    {#if text?.trim()}<CopyMessageButton {text} />{/if}
-    {#if time}<time datetime={date.toISOString()} title={date.toLocaleString()}>{time}</time>{/if}
-    {@render menu?.()}
-  </div>
-  {#if model}<span class="reply-model" title={model}>{model}</span>{/if}
+  {#if text?.trim()}<CopyMessageButton {text} />{/if}
+  {#if modelName}<span class="reply-model" {title}>{modelName}</span>{/if}
+  {@render menu?.()}
 </div>
 
 <style>
   .reply-footer {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 4px 10px;
-    margin-top: 8px;
+    gap: 6px;
+    min-width: 0;
+    margin-top: 6px;
     color: var(--text-soft);
     font-size: 11px;
     line-height: 1.4;
   }
 
-  .reply-actions {
-    display: flex;
-    flex: none;
-    align-items: center;
-    gap: 8px;
-    white-space: nowrap;
-  }
-
   .reply-model {
-    max-width: 100%;
-    overflow-wrap: anywhere;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
   }
 </style>

@@ -2354,3 +2354,72 @@ body .pi-btw-input {
 #spa-root .chat-preview-stream .preview-duration[hidden] {
   display: none;
 }
+
+/* --line-height is unitless in this theme, but the base message styles use it
+   as a length (padding: var(--line-height), calc(var(--line-height) * 2)).
+   Depending on cascade order those become invalid and fall back to 0, so text
+   sits flush and list markers hang off the screen edge. Use explicit lengths;
+   reply text, the activity summary and the footer share one left edge. */
+#spa-root .assistant-text {
+  padding: 0;
+}
+#spa-root .assistant-message > .assistant-text + .assistant-text,
+#spa-root .activity-group + .assistant-message .assistant-text {
+  padding-top: 2px;
+}
+#spa-root .markdown-content ul,
+#spa-root .markdown-content ol {
+  margin: 0.5em 0;
+  padding-inline-start: 1.5em;
+}
+#spa-root .markdown-content ol {
+  padding-inline-start: 2.3em;
+}
+#spa-root .markdown-content li + li {
+  margin-top: 0.25em;
+}
+#spa-root .markdown-content li > ul,
+#spa-root .markdown-content li > ol {
+  margin: 0.25em 0;
+}
+#spa-root .markdown-content li::marker {
+  font-family: var(--font-content);
+}
+#spa-root .markdown-content blockquote {
+  margin: 0.75em 0;
+  padding-inline-start: 0.9em;
+}
+
+/* Message actions: compact rows that sit with their message, ChatGPT-style. */
+#spa-root .message-copy-row {
+  gap: 2px;
+  margin: 4px 2px 18px 0;
+}
+#spa-root .message-copy-row .entry-actions-menu,
+#spa-root .reply-footer .entry-actions-menu {
+  margin-inline-start: 0;
+}
+#spa-root .message-copy-time {
+  padding-inline: 6px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+#spa-root .reply-footer {
+  margin-inline-start: -6px;
+}
+#spa-root .reply-footer .reply-model::before {
+  content: '·';
+  margin-inline-end: 6px;
+  color: var(--dim);
+}
+
+/* Activity summary reads like "Worked for 1m 12s · 3 tool calls". */
+#spa-root .activity-group > summary .activity-summary {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+#spa-root .activity-group > summary .activity-summary::before {
+  content: '·';
+  margin-inline-end: 6px;
+}

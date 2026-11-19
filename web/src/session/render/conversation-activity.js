@@ -1,3 +1,5 @@
+import { entryTime } from './entry-format.js';
+
 const questionTools = new Set(['ask_user_question', 'pi_web_ask_user_question', 'ask_question']);
 
 export function isQuestionTool(name) {
@@ -20,6 +22,7 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
 
   const sections = [];
   let activity = null;
+  let turnStartedAt = 0;
   function addActivity(item, thoughts, tools) {
     if (!activity) {
       activity = {
@@ -31,10 +34,13 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
         latestTool: '',
         outputs: [],
         needsResponse: false,
+        startedAt: turnStartedAt || entryTime(item.entry),
+        endedAt: 0,
       };
       sections.push(activity);
     }
     activity.items.push(item);
+    activity.endedAt = Math.max(activity.endedAt, entryTime(item.entry));
     activity.thinking += thoughts;
     activity.toolCount += tools.length;
     for (const tool of tools) {
@@ -53,7 +59,10 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
       (entry.type === 'model_change' && entry.implicit)
     )
       continue;
-    if (message?.role === 'user') activity = null;
+    if (message?.role === 'user') {
+      activity = null;
+      turnStartedAt = entryTime(entry);
+    }
     if (message?.role === 'assistant' && !item.repeatedError) {
       const blocks = Array.isArray(message.content) ? message.content : [];
       const tools = blocks.filter((block) => block.type === 'toolCall');
@@ -73,11 +82,16 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
         addActivity({ entry, blocks }, thoughtCount, tools);
         item = { ...item, skipActivity: true };
       }
+      // The turn ends with this reply; count its time in the activity duration.
+      if (activity) activity.endedAt = Math.max(activity.endedAt, entryTime(entry));
       activity = null;
     }
     sections.push({ key: entry.id, item });
   }
 
+  for (const section of sections) {
+    if (section.items) section.durationMs = Math.max(0, section.endedAt - section.startedAt);
+  }
   if (activity) {
     activity.running = running;
     activity.required = activity.needsResponse;

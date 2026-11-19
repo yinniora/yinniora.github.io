@@ -75,14 +75,20 @@ The message pane is rendered by Svelte components (no string-building renderer):
 The index + settings Phase 4 migration is complete: those routes are Svelte-orchestrated too, with only pure/API helpers left outside components.
 
 Each visible final assistant reply in the live conversation or BTW shows a
-copy control and its local reply time on one line, followed by the recorded
-model, which can wrap below them. The footer follows the output cards associated
+copy control, the recorded model name (provider id and reply time in its
+tooltip) and the actions menu on one line. The footer follows the output cards associated
 with that reply. Older replies can use a preceding model change from the
 displayed path. The copy action writes the reply's Markdown text and skips
 internal thinking and tool blocks.
-User messages with text have a copy control below the bubble. Errors show a
+User messages have their send time, a copy control and the actions menu below
+the bubble. Pi's image resize notes (`[Image: original …]`) are for the model
+and are hidden from the bubble and the copied text. The activity group that
+collects a turn's thinking and tool calls is titled with the turn's duration
+("Worked for 1m 12s") and shows the tool count as its summary. Errors show a
 collapsed detail card. Consecutive rejections for the same model in a turn
-share one visible card, while Pi web workers cancel automatic retry backoff.
+share one visible card. Pi web workers cancel automatic retry backoff for
+provider rejections, but let Pi retry transport drops such as a reset TLS
+handshake (ECONNRESET, timeouts, fetch failures), which usually succeed again.
 The card can open the conversation's model picker or resend the original
 prompt, including images, without modifying the current draft.
 

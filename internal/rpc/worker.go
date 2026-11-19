@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -573,10 +574,19 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		}
 		w.noteStreamActivity()
 	case "auto_retry_start":
-		// Cancel Pi's pending backoff for this web turn without rewriting CLI settings.
-		w.writeMu.Lock()
-		_ = WriteCommand(w.stdin, map[string]any{"type": "abort_retry"})
-		w.writeMu.Unlock()
+		// Provider rejections (model routing, quota, 5xx) are shown at once with
+		// a resend card instead of waiting through Pi's backoff. Transport drops
+		// such as a reset TLS handshake usually succeed on the next attempt, so
+		// Pi keeps retrying those. CLI retry settings are never rewritten.
+		var retry struct {
+			ErrorMessage string `json:"errorMessage"`
+		}
+		_ = json.Unmarshal([]byte(line), &retry)
+		if !isTransientTransportError(retry.ErrorMessage) {
+			w.writeMu.Lock()
+			_ = WriteCommand(w.stdin, map[string]any{"type": "abort_retry"})
+			w.writeMu.Unlock()
+		}
 	case "message_end":
 		w.noteStreamActivity()
 		var message struct {
@@ -616,6 +626,14 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 			w.mu.Unlock()
 		}
 	}
+}
+
+// transientTransportPattern matches network failures below the provider API:
+// the request never got an HTTP answer, so a retry is likely to succeed.
+var transientTransportPattern = regexp.MustCompile(`(?i)\b(ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|ENETUNREACH|EHOSTUNREACH|EAI_AGAIN|UND_ERR_[A-Z_]+)\b|socket hang up|socket disconnected|secure TLS connection|network socket|fetch failed|terminated|other side closed`)
+
+func isTransientTransportError(message string) bool {
+	return message != "" && transientTransportPattern.MatchString(message)
 }
 
 func (w *piRPCWorker) noteStreamActivity() {

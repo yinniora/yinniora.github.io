@@ -14,6 +14,22 @@
   import { groupOutputsByReply } from '../../session/artifacts/outputs.js';
   import { groupConversationActivity } from '../../session/render/conversation-activity.js';
   import { t } from '../../shared/i18n.js';
+  import { formatElapsed } from '../../session/render/entry-format.js';
+
+  // Titled like "Worked for 1m 12s · 3 tool calls": the turn's duration says
+  // more than a generic "Tool calls" label.
+  function activityText(section) {
+    const tools = section.toolCount ? t('activity.toolCount', { count: section.toolCount }) : '';
+    const failed = section.failures ? t('activity.failed') + ' ' + section.failures : '';
+    if (section.running)
+      return { label: t('activity.working'), summary: failed || section.latestTool };
+    if (section.durationMs >= 1000)
+      return {
+        label: t('activity.worked', { duration: formatElapsed(section.durationMs) }),
+        summary: failed || tools,
+      };
+    return { label: tools || t('activity.thinking'), summary: failed };
+  }
 
   let {
     model = getSessionModel(),
@@ -72,16 +88,10 @@
       <ActivityDisclosure
         kind="group"
         id={section.key}
-        label={section.thinking && section.toolCount
-          ? t('activity.thinking') + ' · ' + t('activity.tools')
-          : t(section.thinking ? 'activity.thinking' : 'activity.tools')}
-        count={section.toolCount}
+        label={activityText(section).label}
+        count={section.running ? section.toolCount : 0}
+        summary={activityText(section).summary}
         required={section.required}
-        summary={section.failures
-          ? t('activity.failed') + ' ' + section.failures
-          : section.running
-            ? section.latestTool
-            : ''}
         status={section.running ? 'pending' : section.failures ? 'error' : 'success'}
       >
         {#each section.items as item (item.entry.id)}

@@ -95,6 +95,32 @@ func TestWorkerCancelsAutomaticRetry(t *testing.T) {
 	}
 }
 
+func TestWorkerKeepsRetryingTransientNetworkErrors(t *testing.T) {
+	var sent bytes.Buffer
+	w := &piRPCWorker{
+		stdin:  nopWriteCloser{w: &sent},
+		status: workers.WorkerStatus{State: workers.WorkerStateRunning},
+	}
+	w.handleRPCLine(`{"type":"auto_retry_start","attempt":1,"errorMessage":"Connection error.: Client network socket disconnected before secure TLS connection was established (ECONNRESET)"}`)
+	if sent.Len() != 0 {
+		t.Fatalf("transient network error retry was cancelled: %q", sent.String())
+	}
+	w.handleRPCLine(`{"type":"auto_retry_start","attempt":1,"errorMessage":"503 {\"error\":{\"type\":\"model_not_found\"}}"}`)
+	if sent.String() != "{\"type\":\"abort_retry\"}\n" {
+		t.Fatalf("provider rejection retry was not cancelled: %q", sent.String())
+	}
+	for _, message := range []string{"fetch failed", "socket hang up", "read ETIMEDOUT", "UND_ERR_SOCKET"} {
+		if !isTransientTransportError(message) {
+			t.Fatalf("%q should be transient", message)
+		}
+	}
+	for _, message := range []string{"", "429 rate limited", "500 internal error", "403 quota exceeded"} {
+		if isTransientTransportError(message) {
+			t.Fatalf("%q should not be transient", message)
+		}
+	}
+}
+
 func TestStatusDoesNotStayRunningAfterStreamActivityExpires(t *testing.T) {
 	w := &piRPCWorker{
 		status:  workers.WorkerStatus{State: workers.WorkerStateIdle},

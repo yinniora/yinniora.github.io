@@ -856,11 +856,10 @@ test("finished replies show their own model and time and copy only reply text", 
   await page.goto("/session?id=" + encodeURIComponent(id));
   const older = page.locator(`#entry-${lastId} .reply-footer`);
   const newer = page.locator(`#entry-${reply.id} .reply-footer`);
-  await expect(older.locator(".reply-model")).toHaveText("earlier-provider/earlier-model");
+  await expect(older.locator(".reply-model")).toHaveText("earlier-model");
   await expect(page.locator(`#entry-${prelude.id} .reply-footer`)).toHaveCount(0);
-  await expect(newer.locator(".reply-model")).toHaveText("saved-provider/saved-model");
-  await expect(newer.locator("time")).toBeVisible();
-  await expect(newer.locator("time")).toHaveAttribute("datetime", now);
+  await expect(newer.locator(".reply-model")).toHaveText("saved-model");
+  await expect(newer.locator(".reply-model")).toHaveAttribute("title", /^saved-provider\/saved-model\n/);
   await newer.getByRole("button", { name: "Copy", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute(
     "data-copied-reply",
@@ -1055,18 +1054,17 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
   await expect(mediaReply.locator(".output-card")).toHaveCount(2);
   await expect(page.locator(".output-gallery")).toHaveCount(1);
   await expect(page.locator(`#entry-${nextReply.id} .reply-footer`)).toBeVisible();
-  await expect(mediaReply.locator(".reply-model")).toHaveText("test/" + model);
+  await expect(mediaReply.locator(".reply-model")).toHaveText(model);
   if (await isMobileLayout(page)) {
     const layout = await mediaReply.locator(".reply-footer").evaluate((footer) => {
       const copy = footer.querySelector(".reply-copy")!.getBoundingClientRect();
-      const time = footer.querySelector("time")!.getBoundingClientRect();
       const model = footer.querySelector(".reply-model")!.getBoundingClientRect();
       return {
-        copyAndTimeShareRow: Math.abs((copy.top + copy.bottom - time.top - time.bottom) / 2) < 1,
-        longModelWrapsBelow: model.top >= copy.bottom && model.right <= footer.getBoundingClientRect().right,
+        copyAndModelShareRow: Math.abs((copy.top + copy.bottom - model.top - model.bottom) / 2) < 1,
+        modelStaysInside: model.right <= footer.getBoundingClientRect().right,
       };
     });
-    expect(layout).toEqual({ copyAndTimeShareRow: true, longModelWrapsBelow: true });
+    expect(layout).toEqual({ copyAndModelShareRow: true, modelStaysInside: true });
   }
   await expect(page.locator(".output-gallery iframe")).toHaveCount(0);
   await page

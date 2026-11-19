@@ -624,6 +624,12 @@ export default {
   'activity.timedOut': '已超时',
   'activity.interrupted': '回复已中止',
   'activity.running': '运行中',
+  'activity.worked': '已处理 {duration}',
+  'activity.working': '处理中',
+  'activity.toolCount': '{count} 次工具调用',
+  'activity.seconds': '{s} 秒',
+  'activity.minutes': '{m} 分 {s} 秒',
+  'activity.hours': '{h} 小时 {m} 分',
   'projects.confirmFilesTitle': '删除该文件夹及其所有文件？',
   'projects.confirmFilesBody':
     '上述文件夹及其所有子文件夹和文件将移到 Mac 废纸篓。请再次确认以继续。',

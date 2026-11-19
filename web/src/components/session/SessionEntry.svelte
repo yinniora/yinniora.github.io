@@ -8,7 +8,11 @@
   import { icon, Ellipsis, GitFork, Link2, Tag } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { safeMarkedParse } from '../../session/render/markdown.js';
-  import { formatTimestamp } from '../../session/render/entry-format.js';
+  import {
+    formatTimestamp,
+    formatShortTime,
+    stripImageNotes,
+  } from '../../session/render/entry-format.js';
   import ToolCall from './ToolCall.svelte';
   import AssistantThinking from './AssistantThinking.svelte';
   import ReplyFooter from './ReplyFooter.svelte';
@@ -58,6 +62,8 @@
           .map((b) => b.text)
           .join('\n');
   });
+  const userDisplayText = $derived(stripImageNotes(userText));
+  const userTime = $derived(live && msg?.role === 'user' ? formatShortTime(entry?.timestamp) : '');
   const userImages = $derived(
     Array.isArray(msg?.content) ? msg.content.filter((b) => b.type === 'image') : [],
   );
@@ -114,11 +120,16 @@
             alt=""
           />{/each}
       </div>{/if}
-    {#if userText.trim()}<div class="markdown-content">{@html md(userText)}</div>{/if}
+    {#if userDisplayText.trim()}<div class="markdown-content">{@html md(userDisplayText)}</div>{/if}
   </div>
   {#if live}
     <div class="message-copy-row">
-      {#if userText.trim()}<CopyMessageButton text={userText} iconOnly />{/if}
+      {#if userTime}<time
+          class="message-copy-time"
+          datetime={new Date(entry.timestamp).toISOString()}
+          title={new Date(entry.timestamp).toLocaleString()}>{userTime}</time
+        >{/if}
+      {#if userDisplayText.trim()}<CopyMessageButton text={userDisplayText} iconOnly />{/if}
       {@render entryMenu(entry.id)}
     </div>
   {/if}
