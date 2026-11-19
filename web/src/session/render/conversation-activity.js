@@ -23,12 +23,14 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
   function addActivity(item, thoughts, tools) {
     if (!activity) {
       activity = {
-        key: 'activity:' + item.entry.id + (item.toolBlocks ? ':tools' : ''),
+        key: 'activity:' + item.entry.id,
         items: [],
         thinking: 0,
         toolCount: 0,
         failures: 0,
         latestTool: '',
+        outputs: [],
+        needsResponse: false,
       };
       sections.push(activity);
     }
@@ -41,9 +43,7 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
     }
   }
 
-  for (const row of entries) {
-    let item = row;
-    let followingTools = [];
+  for (let item of entries) {
     const { entry } = item;
     const message = entry.type === 'message' && entry.message;
     if (
@@ -53,54 +53,34 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
       (entry.type === 'model_change' && entry.implicit)
     )
       continue;
-    if (message?.role === 'assistant' && Array.isArray(message.content) && !item.repeatedError) {
-      const tools = message.content.filter((block) => block.type === 'toolCall');
-      const thoughts = message.content.filter(
+    if (message?.role === 'user') activity = null;
+    if (message?.role === 'assistant' && !item.repeatedError) {
+      const blocks = Array.isArray(message.content) ? message.content : [];
+      const tools = blocks.filter((block) => block.type === 'toolCall');
+      const thoughtCount = blocks.filter(
         (block) => block.type === 'thinking' && block.thinking?.trim(),
-      );
-      const hasText = message.content.some((block) => block.type === 'text' && block.text?.trim());
-      const hasBody =
-        item.reply ||
-        outputsByEntry?.get(entry.id)?.length ||
-        ['aborted', 'error'].includes(message.stopReason) ||
-        hasText;
-      const requiresAnswer = tools.some((tool) =>
-        questionNeedsResponse(tool.name, results.get(tool.id)),
-      );
-      if (!hasBody && !requiresAnswer && (tools.length || thoughts.length)) {
-        addActivity(item, thoughts.length, tools);
+      ).length;
+      const final = item.reply || ['aborted', 'error'].includes(message.stopReason);
+      if (!final && (tools.length || thoughtCount || message.stopReason === 'toolUse')) {
+        addActivity(item, thoughtCount, tools);
+        activity.outputs.push(...(outputsByEntry?.get(entry.id) || []));
+        activity.needsResponse ||= tools.some((tool) =>
+          questionNeedsResponse(tool.name, results.get(tool.id)),
+        );
         continue;
       }
-      // Leading thinking belongs with the adjacent activity, even when Pi
-      // stores it in the same entry as the visible reply.
-      const leading = message.content.findIndex(
-        (block) => block.type !== 'thinking' && !(block.type === 'text' && !block.text?.trim()),
-      );
-      const blockCount = leading < 0 ? message.content.length : leading;
-      const visibleThoughts = message.content
-        .slice(0, blockCount)
-        .filter((block) => block.type === 'thinking' && block.thinking?.trim());
-      if (visibleThoughts.length) {
-        addActivity({ ...item, leadingThinking: blockCount }, visibleThoughts.length, []);
-        item = { ...item, skipThinking: blockCount };
+      if (tools.length || thoughtCount) {
+        addActivity({ entry, blocks }, thoughtCount, tools);
+        item = { ...item, skipActivity: true };
       }
-      if (tools.length && !requiresAnswer) {
-        item = { ...item, skipTools: true };
-        if (hasText && !item.reply && message.stopReason !== 'error') {
-          followingTools = tools;
-        } else {
-          addActivity({ entry, toolBlocks: tools }, 0, tools);
-        }
-      }
+      activity = null;
     }
-    activity = null;
     sections.push({ key: entry.id, item });
-    if (followingTools.length) {
-      addActivity({ entry, toolBlocks: followingTools }, 0, followingTools);
-    }
   }
 
-  const tail = sections.at(-1);
-  if (tail?.items) tail.running = running;
+  if (activity) {
+    activity.running = running;
+    activity.required = activity.needsResponse;
+  }
   return sections;
 }

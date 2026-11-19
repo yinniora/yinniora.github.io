@@ -228,3 +228,73 @@ test("computer approval stays visible without opening the permission menu", asyn
   await expect(approval).toHaveCount(0);
   await expect(page.locator(".session-progress")).toBeVisible();
 });
+
+test("one activity summary holds interleaved tool calls and commentary", async ({ page, sessionsDir }, info) => {
+  const { entries, lastId } = buildSession({ cwd: realWorkingDir() });
+  const timestamp = new Date().toISOString();
+  const id = writeSession(sessionsDir, uniqueSessionName(info, "reply-activity"), [
+    ...entries,
+    ...["one", "two"].flatMap((name, i) => [{
+      type: "message", id: name, parentId: i ? "result-one" : lastId, timestamp,
+      message: { role: "assistant", stopReason: "toolUse", content: [
+        { type: "text", text: "Intermediate note " + name },
+        { type: "toolCall", id: "call-" + name, name: "read", arguments: { path: name + ".txt" } },
+      ] },
+    }, {
+      type: "message", id: "result-" + name, parentId: name, timestamp,
+      message: { role: "toolResult", toolCallId: "call-" + name, content: [{ type: "text", text: name }] },
+    }]),
+    {
+      type: "message", id: "answer", parentId: "result-two", timestamp,
+      message: { role: "assistant", stopReason: "stop", content: [
+        { type: "text", text: "Final answer" },
+        { type: "thinking", thinking: "Model summary after a text block." },
+      ] },
+    },
+  ]);
+  await collapseScratchpad(page);
+  await page.goto("/session?id=" + encodeURIComponent(id));
+  const group = page.locator(".activity-group");
+  await expect(group).toHaveCount(1);
+  await expect(group.locator(":scope > summary")).toContainText("Tool calls");
+  await expect(group.getByText("Intermediate note one", { exact: true })).toBeHidden();
+  await expect(page.locator("#entry-answer").getByText("Final answer")).toBeVisible();
+  await group.locator(":scope > summary").click();
+  await expect(group.getByText("Intermediate note one", { exact: true })).toBeVisible();
+  await expect(group.getByText("Intermediate note two", { exact: true })).toBeVisible();
+  await group.locator('[data-collapse-key="thinking:answer:1"] > summary').click();
+  await expect(group.getByText("Model summary after a text block.")).toBeVisible();
+});
+
+test("allow for session approves an already waiting RPC computer request", async ({ page, sessionsDir }, info) => {
+  const id = writeSession(sessionsDir, uniqueSessionName(info, "approval-policy"), buildSession({ cwd: realWorkingDir() }).entries);
+  await collapseScratchpad(page);
+  await page.goto("/session?id=" + encodeURIComponent(id));
+  await page.locator("#pi-chat-message").fill("[[computer-approval]]");
+  await page.locator("#pi-chat-send").click();
+  const approval = page.getByRole("region", { name: "Computer action awaiting approval" });
+  await expect(approval).toBeInViewport();
+  const permission = page.locator(".computer-permission");
+  await expect(permission).toHaveAttribute("data-mode", "ask");
+  await permission.locator(":scope > summary").click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await permission.getByRole("button", { name: "Allow for session", exact: true }).click();
+  await expect(permission).toHaveAttribute("data-mode", "allow");
+  await expect(approval).toBeHidden();
+  await expect(page.locator("#messages-list")).toContainText("The session policy approved the tool.");
+  await page.reload();
+  await expect(permission).toHaveAttribute("data-mode", "allow");
+});
+
+test("the default theme tracks system changes while the conversation stays open", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/");
+  const root = page.locator("html");
+  await expect(root).toHaveAttribute("data-theme-preference", "system");
+  await expect(root).toHaveAttribute("data-theme", "light");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(root).toHaveAttribute("data-theme", "dark");
+  await expect(root).toHaveCSS("color-scheme", "dark");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(root).toHaveAttribute("data-theme", "light");
+});

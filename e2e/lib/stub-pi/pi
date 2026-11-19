@@ -95,6 +95,19 @@ let heldPreview = null;
 
 function handlePrompt(cmd) {
   const raw = typeof cmd.message === "string" ? cmd.message : JSON.stringify(cmd.message ?? "");
+  if (raw === "[[computer-approval]]") {
+    respond(cmd.id, "prompt", { disposition: "started" });
+    const user = messageEntry("user", "Try the fixture computer tool.", lastEntryId());
+    appendEntry(user.entry);
+    heldPreview = { last: user.id, computer: true };
+    send({ type: "agent_start" });
+    send({
+      type: "extension_ui_request", id: "fixture-computer", method: "confirm",
+      title: "YuGo Pi computer approval", timeout: 120000,
+      message: JSON.stringify({ tool: "find_roots", detail: "Fixture request" }),
+    });
+    return;
+  }
   if (raw === "[[hold-preview]]" || raw === "[[hold-stream]]") {
     respond(cmd.id, "prompt", { disposition: "started" });
     const user = messageEntry("user", "Track preview state", lastEntryId());
@@ -240,7 +253,14 @@ function handle(cmd) {
       respond(cmd.id, "export_html", { path: cmd.outputPath });
       break;
     case "extension_ui_response":
-      if (cmd.id === "fixture-choice" && cmd.value === "Beta") {
+      if (cmd.id === "fixture-computer" && heldPreview?.computer) {
+        const text = cmd.confirmed ? "The session policy approved the tool." : "The tool was blocked.";
+        const assistant = messageEntry("assistant", text, heldPreview.last);
+        appendEntry(assistant.entry);
+        heldPreview = null;
+        send({ type: "message_end", message: assistant.entry.message });
+        send({ type: "agent_end" });
+      } else if (cmd.id === "fixture-choice" && cmd.value === "Beta") {
         send({ type: "extension_ui_request", id: "fixture-text", method: "input", title: "Write a fixture response", placeholder: "Response text" });
       } else if (extensionPrompt) {
         if (cmd.id === "fixture-text" && cmd.value === "Fixture answer")

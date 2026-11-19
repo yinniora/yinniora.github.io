@@ -16,6 +16,7 @@ const computerModeSchema = `CREATE TABLE IF NOT EXISTS session_computer_mode (se
 type computerApprover interface {
 	ComputerRequests(string) []workers.ComputerRequest
 	ReplyComputerRequest(string, string, bool) error
+	ApplyComputerPolicy(string)
 }
 
 func (s *Server) ComputerMode(sessionID string) string {
@@ -45,8 +46,10 @@ func (s *Server) handleComputerUse(w http.ResponseWriter, r *http.Request) {
 	mode := s.ComputerMode(id)
 	if r.Method == http.MethodPost {
 		var req struct {
-			Action, Mode, RequestID string
-			Allow                   bool
+			Action    string `json:"action"`
+			Mode      string `json:"mode"`
+			RequestID string `json:"requestID"`
+			Allow     bool   `json:"allow"`
 		}
 		if !decodeJSONBody(w, r, &req) {
 			return
@@ -61,12 +64,8 @@ func (s *Server) handleComputerUse(w http.ResponseWriter, r *http.Request) {
 				writeJSONError(w, 500, "could not save computer mode")
 				return
 			}
-			mode = req.Mode
-			if mode == "off" {
-				for _, pending := range manager.ComputerRequests(id) {
-					_ = manager.ReplyComputerRequest(id, pending.ID, false)
-				}
-			}
+			manager.ApplyComputerPolicy(id)
+			mode = s.ComputerMode(id)
 		case "answer":
 			if req.RequestID == "" || manager.ReplyComputerRequest(id, req.RequestID, req.Allow && mode != "off") != nil {
 				writeJSONError(w, 409, "approval expired")

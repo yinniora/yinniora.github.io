@@ -16,7 +16,7 @@ type liveDocumentData struct {
 // themeProvider returns the server-persisted theme so it can be injected into
 // the HTML shell before any JS runs (no flash of the wrong theme). It defaults
 // to "dark"; app wiring overrides it via SetThemeProvider to read the DB.
-var themeProvider = func() string { return "dark" }
+var themeProvider = func() string { return "system" }
 
 // SetThemeProvider installs the function used to resolve the current
 // server-backed theme for server-side injection.
@@ -81,7 +81,7 @@ const wcoBootScript = `<script>
     var t = document.documentElement.dataset.theme;
     if(t) return t;
     t = serverTheme();
-    if(!t){ try{ t = localStorage.getItem('pi-web-theme') || 'dark'; }catch(e){ t = 'dark'; } }
+    if(!t){ try{ t = localStorage.getItem('pi-web-theme') || 'system'; }catch(e){ t = 'system'; } }
     return t === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : t;
   }
   function applyBg(){
@@ -170,7 +170,7 @@ func liveDocumentStart(title string, preload, styles template.HTML) template.HTM
 }
 
 func liveThemeBootScript() template.HTML {
-	return themeBootScript("dark")
+	return themeBootScript("system")
 }
 
 func themeBootScript(defaultTheme string) template.HTML {
@@ -250,9 +250,14 @@ func themeBootScript(defaultTheme string) template.HTML {
   }
   // Keep theme-color/html background in sync if WCO turns on/off after load.
   try{ window.matchMedia('(display-mode: window-controls-overlay)').addEventListener('change', updateBtn); }catch(e){}
-  systemTheme.addEventListener('change', function(){
+  function syncSystemTheme(){
     if(document.documentElement.dataset.themePreference === 'system'){ applyTheme('system'); updateBtn(); }
-  });
+  }
+  if(systemTheme.addEventListener) systemTheme.addEventListener('change', syncSystemTheme);
+  else if(systemTheme.addListener) systemTheme.addListener(syncSystemTheme);
+  window.addEventListener('pageshow', syncSystemTheme);
+  window.addEventListener('focus', syncSystemTheme);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) syncSystemTheme(); });
 })();
 </script>`, defaultTheme))
 }

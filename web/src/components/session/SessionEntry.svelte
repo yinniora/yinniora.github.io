@@ -27,8 +27,7 @@
     live = false,
     chatAvailable = false,
     retryContent = null,
-    skipThinking = 0,
-    skipTools = false,
+    skipActivity = false,
     outputs,
     renderOutputs = null,
   } = $props();
@@ -134,11 +133,11 @@
     {#each assistantContent as block, blockIndex (blockIndex)}
       {#if block.type === 'text' && block.text.trim()}<div class="assistant-text markdown-content">
           {@html md(block.text)}
-        </div>{:else if blockIndex >= skipThinking && block.type === 'thinking' && block.thinking?.trim()}
+        </div>{:else if !skipActivity && block.type === 'thinking' && block.thinking?.trim()}
         <AssistantThinking id={`thinking:${entry.id}:${blockIndex}`} text={block.thinking} {live} />
       {/if}
     {/each}
-    {#if !skipTools}
+    {#if !skipActivity}
       {#each assistantContent as block, toolBlockIndex (toolBlockIndex)}{#if block.type === 'toolCall'}<ToolCall
             call={block}
             {model}

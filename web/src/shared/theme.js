@@ -47,9 +47,16 @@ export function paintTheme(windowImpl, documentImpl, preference = 'dark') {
 
 export function watchSystemTheme(windowImpl, documentImpl) {
   const media = windowImpl.matchMedia?.('(prefers-color-scheme: dark)');
-  media?.addEventListener('change', () => {
+  const sync = () => {
     if (documentImpl.documentElement.dataset.themePreference === 'system')
       paintTheme(windowImpl, documentImpl, 'system');
+  };
+  if (media?.addEventListener) media.addEventListener('change', sync);
+  else media?.addListener?.(sync);
+  windowImpl.addEventListener?.('pageshow', sync);
+  windowImpl.addEventListener?.('focus', sync);
+  documentImpl.addEventListener?.('visibilitychange', () => {
+    if (!documentImpl.hidden) sync();
   });
 }
 

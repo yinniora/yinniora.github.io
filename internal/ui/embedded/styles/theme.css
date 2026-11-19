@@ -129,6 +129,16 @@
     --customMessageText: #d4d4d4;
 }
 
+:root[data-theme="dark"],
+:root[data-theme="nord"],
+:root[data-theme="dracula"] {
+    color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+    color-scheme: light;
+}
+
 [data-theme="light"] {
     /* ── Typography & Layout ── */
     --line-height: 1.5;

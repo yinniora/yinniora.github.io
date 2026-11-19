@@ -13,6 +13,7 @@
   let mutation = 0;
   const modes = ['off', 'ask', 'allow'];
   const waiting = $derived(status?.requests?.[0] ?? null);
+  const modeLabel = $derived(status?.mode ? t('computer.mode.' + status.mode) : '');
 
   async function load(update) {
     if (!controller || controller.signal.aborted || (update ? busy : polling || busy)) return;
@@ -61,7 +62,7 @@
 
   onMount(() => {
     controller = new AbortController();
-    if (running) void load();
+    void load();
     const timer = setInterval(() => {
       if (running || waiting || details?.open) void load();
     }, 1500);
@@ -103,11 +104,16 @@
 {/if}
 
 {#snippet permissionControl()}
-  <details class="computer-permission" bind:this={details} ontoggle={() => details?.open && load()}>
+  <details
+    class="computer-permission"
+    data-mode={status?.mode}
+    bind:this={details}
+    ontoggle={() => details?.open && load()}
+  >
     <summary
       class="pi-chat-icon-button"
       aria-label={t('computer.title')}
-      title={t('computer.title')}
+      title={[t('computer.title'), modeLabel].filter(Boolean).join(' · ')}
     >
       {@html icon(ShieldCheck, { size: 19 })}
       {#if waiting}<span class="pending-dot" aria-label={t('computer.waiting')}></span>{/if}
@@ -187,6 +193,9 @@
     height: 7px;
     border-radius: 50%;
     background: var(--accent);
+  }
+  .computer-permission[data-mode='allow'] > summary {
+    color: var(--accent);
   }
   .computer-panel {
     position: absolute;

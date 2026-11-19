@@ -42,7 +42,7 @@ func (s *Server) handleAppShell(w http.ResponseWriter, r *http.Request, bootstra
 // listed here — it stays in localStorage only.
 var settingDefaults = map[string]string{
 	"pi-web:v1:standalone-tap-diagnostics": "false",
-	"pi-web-theme":                         "dark",
+	"pi-web-theme":                         "system",
 	"pi-web:v1:locale":                     "en",
 	"pi-web:v1:custom-languages":           "",
 	"pi-web:v1:font-ui":                    "mono",
@@ -119,7 +119,7 @@ func (s *Server) getSetting(key, fallback string) string {
 // ThemeSetting returns the persisted theme, used for server-side injection so
 // the page paints the correct theme before any JS runs.
 func (s *Server) ThemeSetting() string {
-	return s.getSetting("pi-web-theme", "dark")
+	return s.getSetting("pi-web-theme", settingDefaults["pi-web-theme"])
 }
 
 // fontKeywords maps a curated font name to a full CSS font-family stack. The

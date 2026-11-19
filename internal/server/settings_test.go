@@ -53,8 +53,8 @@ func TestHandleGetSettingsDefaults(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	got := decodeSettings(t, w.Body.Bytes())
-	if got["pi-web-theme"] != "dark" {
-		t.Errorf("expected default theme 'dark', got %q", got["pi-web-theme"])
+	if got["pi-web-theme"] != "system" {
+		t.Errorf("expected default theme 'system', got %q", got["pi-web-theme"])
 	}
 	if len(got) != len(settingDefaults) {
 		t.Errorf("expected %d settings, got %d", len(settingDefaults), len(got))
@@ -198,7 +198,7 @@ func TestSettingsNoDBDegradesGracefully(t *testing.T) {
 		t.Fatalf("expected 200 without db, got %d", w.Code)
 	}
 	got := decodeSettings(t, w.Body.Bytes())
-	if got["pi-web-theme"] != "dark" {
+	if got["pi-web-theme"] != "system" {
 		t.Errorf("expected default theme without db, got %q", got["pi-web-theme"])
 	}
 
@@ -210,7 +210,7 @@ func TestSettingsNoDBDegradesGracefully(t *testing.T) {
 	if w2.Code != http.StatusOK {
 		t.Fatalf("expected 200 no-op write without db, got %d", w2.Code)
 	}
-	if s.ThemeSetting() != "dark" {
+	if s.ThemeSetting() != "system" {
 		t.Errorf("expected theme to remain default without db")
 	}
 }

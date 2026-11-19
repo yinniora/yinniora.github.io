@@ -13,7 +13,7 @@
   const BUILTIN_FONTS = ['mono', 'system', 'sans', 'serif'];
   const uiSizeKey = 'pi-web:v1:font-ui-size';
   const contentSizeKey = 'pi-web:v1:font-content-size';
-  let theme = $derived(valueFor(settings, 'pi-web-theme', 'dark'));
+  let theme = $derived(valueFor(settings, 'pi-web-theme', 'system'));
   let uiSize = $derived(valueFor(settings, uiSizeKey, '14'));
   let contentSize = $derived(valueFor(settings, contentSizeKey, '15'));
   let detectedFonts = $state([]);

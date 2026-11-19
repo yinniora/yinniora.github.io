@@ -7,9 +7,17 @@ const defaultShellTimeoutSeconds = 300;
 const approvalTimeoutMs = 120000;
 
 export default function guardComputerTools(pi) {
-  let skipComputerTools = false;
-  pi.on('agent_start', () => {
-    skipComputerTools = false;
+  pi.on('before_agent_start', async (event, ctx) => {
+    const mode = await ctx.ui.select('YuGo Pi computer policy', ['ask', 'allow', 'off'], { timeout: 1500, signal: ctx.signal });
+    if (mode === 'allow') {
+      return { systemPrompt: event.systemPrompt + '\n\nYuGo Pi currently permits the registered computer tools in this conversation. An earlier approval error or timeout applies only to that attempt. If computer access is needed for the current request, use the appropriate registered tool and report its actual result.' };
+    }
+    if (mode === 'off') {
+      return { systemPrompt: event.systemPrompt + '\n\nYuGo Pi computer access is currently off for this conversation. Continue work that does not require computer access.' };
+    }
+    if (mode === 'ask') {
+      return { systemPrompt: event.systemPrompt + '\n\nYuGo Pi currently requests approval for computer operations in this conversation. When a protected computer tool is needed, use the registered tool so the app can ask. Earlier errors do not indicate the current approval state.' };
+    }
   });
   pi.registerCommand('yugo-computer-guard-ready', {
     description: 'YuGo Pi computer approval is active',
@@ -33,9 +41,6 @@ export default function guardComputerTools(pi) {
   pi.on('tool_call', async (event, ctx) => {
     if (!computerTools.has(event.toolName)) return;
     const guidance = 'Continue any remaining work that does not require this computer action. Do not retry or perform the blocked action through another tool. If computer access is essential, explain what remains blocked and ask the user.';
-    if (skipComputerTools) {
-      return { block: true, reason: `Computer tools are unavailable for the rest of this turn after an unapproved action. ${guidance}` };
-    }
     const request = JSON.stringify({
       tool: event.toolName,
       detail: JSON.stringify(event.input ?? {}).slice(0, 1200),
@@ -43,7 +48,6 @@ export default function guardComputerTools(pi) {
     const start = Date.now();
     const approved = await ctx.ui.confirm('YuGo Pi computer approval', request, { timeout: approvalTimeoutMs, signal: ctx.signal });
     if (!approved) {
-      skipComputerTools = true;
       const reason = Date.now() - start >= approvalTimeoutMs
         ? 'Approval timed out for this computer action.'
         : 'This computer action was not approved.';

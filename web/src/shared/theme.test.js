@@ -78,7 +78,11 @@ describe('theme helpers', () => {
     const storage = fakeStorage();
     const documentImpl = fakeDocument();
     const media = Object.assign(new EventTarget(), { matches: false });
-    const windowImpl = { localStorage: storage, navigator: {}, matchMedia: () => media };
+    const windowImpl = Object.assign(new EventTarget(), {
+      localStorage: storage,
+      navigator: {},
+      matchMedia: () => media,
+    });
     watchSystemTheme(windowImpl, documentImpl);
     applyTheme(windowImpl, documentImpl, 'system');
     expect(documentImpl.documentElement.dataset.theme).toBe('light');
@@ -86,6 +90,9 @@ describe('theme helpers', () => {
     media.dispatchEvent(new Event('change'));
     expect(documentImpl.documentElement.dataset.theme).toBe('dark');
     expect(storage.getItem('pi-web-theme')).toBe('system');
+    media.matches = false;
+    windowImpl.dispatchEvent(new Event('pageshow'));
+    expect(documentImpl.documentElement.dataset.theme).toBe('light');
 
     applyTheme(windowImpl, documentImpl, 'nord');
     media.matches = false;

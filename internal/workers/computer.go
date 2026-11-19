@@ -15,6 +15,7 @@ type ComputerRequest struct {
 type computerWorker interface {
 	ComputerRequests() []ComputerRequest
 	ReplyComputerRequest(string, bool) error
+	ApplyComputerPolicy()
 }
 
 func (m *Manager) computerWorker(sessionID string) computerWorker {
@@ -36,4 +37,10 @@ func (m *Manager) ReplyComputerRequest(sessionID, id string, allow bool) error {
 		return w.ReplyComputerRequest(id, allow)
 	}
 	return errors.New("approval expired")
+}
+
+func (m *Manager) ApplyComputerPolicy(sessionID string) {
+	if w := m.computerWorker(sessionID); w != nil {
+		w.ApplyComputerPolicy()
+	}
 }

@@ -162,10 +162,10 @@ The live client adds `OutputGallery` with confined asset URLs and scriptless SVG
 
 `ProjectsModal` offers project deletion for discovered and registered folders. Its confirmation defaults to preserving files; selecting a Mac Trash move opens a second confirmation covering the entire folder and its descendants, without a typed challenge. The client supplies the existing API confirmation field only after that second click.
 
-The live conversation groups consecutive tools and recorded thinking into
-compact disclosures with a tool count and a visible running or failed state.
-Visible assistant text and generated files stay outside the group. Opening a
-group reveals compact rows that can each expose their underlying details.
+The live conversation groups each reply's tool calls, recorded thinking, and
+intermediate commentary into one compact disclosure with a tool count and a
+visible running or failed state. The final reply and generated files remain
+visible. Opening a group reveals rows that can expose their underlying details.
 Entry links reveal their enclosing disclosures, and unanswered tool questions
 stay reachable. The toggle controller persists per-entry overrides and provides
 expand/collapse-all through `ActivityControls`. Static exports keep their
@@ -180,6 +180,9 @@ Reply and model-supplied thinking snapshots render at most once per animation
 frame, with the final transcript reconciled on the worker's completion event.
 Pending computer approval is shown directly above the composer toolbar, with
 separate controls for approving the action once and declining it.
+The toolbar shows the current permission mode after the server confirms it.
+System appearance is the default. Both clients resolve it on appearance change
+and when the page becomes active again.
 
 `DevicePanel` lists active approvals with precise enrollment/connection times,
 coarse system/browser/app labels, short key IDs and live presence. Removal uses

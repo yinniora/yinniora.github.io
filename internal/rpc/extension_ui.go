@@ -23,9 +23,16 @@ func (w *piRPCWorker) handleExtensionUI(line string) {
 	if json.Unmarshal([]byte(line), &request) != nil || request.ID == "" || len(request.ID) > 200 {
 		return
 	}
-	if request.Title == "YuGo Pi computer approval" {
-		if w.computerMode != nil {
-			w.handleComputerApproval(line)
+	if request.Title == computerPolicyTitle {
+		if w.computerMode != nil && request.Method == "select" {
+			mode := w.computerMode()
+			_ = w.writeExtensionAnswer(workers.ExtensionAnswer{ID: request.ID, Value: &mode})
+		}
+		return
+	}
+	if request.Title == computerApprovalTitle {
+		if w.computerMode != nil && request.Method == "confirm" {
+			w.handleComputerApproval(request.ID, request.Message, request.Timeout)
 		}
 		return
 	}

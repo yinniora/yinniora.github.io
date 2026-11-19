@@ -45,7 +45,10 @@
   });
 </script>
 
-{#snippet renderEntry({ entry, reply, repeatedError, retryContent, skipThinking, skipTools })}
+{#snippet renderEntry(
+  { entry, reply, repeatedError, retryContent, skipActivity },
+  inActivity = false,
+)}
   {#if repeatedError}
     <span id={`entry-${entry.id}`} hidden></span>
   {:else}
@@ -56,9 +59,8 @@
       {live}
       {chatAvailable}
       {retryContent}
-      {skipThinking}
-      {skipTools}
-      outputs={groups?.byEntry.get(entry.id)}
+      {skipActivity}
+      outputs={inActivity ? undefined : groups?.byEntry.get(entry.id)}
       {renderOutputs}
     />
   {/if}
@@ -74,6 +76,7 @@
           ? t('activity.thinking') + ' · ' + t('activity.tools')
           : t(section.thinking ? 'activity.thinking' : 'activity.tools')}
         count={section.toolCount}
+        required={section.required}
         summary={section.failures
           ? t('activity.failed') + ' ' + section.failures
           : section.running
@@ -81,26 +84,27 @@
             : ''}
         status={section.running ? 'pending' : section.failures ? 'error' : 'success'}
       >
-        {#each section.items as item (item.entry.id + (item.toolBlocks ? ':tools' : ''))}
-          {#if item.toolBlocks}
-            {#each item.toolBlocks as call, index (index)}
-              <ToolCall {call} {model} live />
-            {/each}
-          {:else if item.leadingThinking}
-            {#each item.entry.message.content.slice(0, item.leadingThinking) as block, index (index)}
+        {#each section.items as item (item.entry.id)}
+          {#if item.blocks}
+            {#each item.blocks as block, index (index)}
               {#if block.type === 'thinking' && block.thinking?.trim()}
                 <AssistantThinking
                   id={`thinking:${item.entry.id}:${index}`}
                   text={block.thinking}
                   live
                 />
+              {:else if block.type === 'toolCall'}
+                <ToolCall call={block} {model} live />
               {/if}
             {/each}
           {:else}
-            {@render renderEntry(item)}
+            {@render renderEntry(item, true)}
           {/if}
         {/each}
       </ActivityDisclosure>
+      {#if section.outputs.length}
+        {@render renderOutputs?.(section.outputs)}
+      {/if}
     {:else}
       {@render renderEntry(section.item)}
     {/if}

@@ -15,6 +15,9 @@ import (
 //go:embed computer_guard.mjs
 var computerGuard []byte
 
+const computerApprovalTitle = "YuGo Pi computer approval"
+const computerPolicyTitle = "YuGo Pi computer policy"
+
 func InstallComputerGuard(dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", err
@@ -35,47 +38,45 @@ func InstallComputerGuard(dir string) (string, error) {
 	return path, os.Rename(f.Name(), path)
 }
 
-func (w *piRPCWorker) handleComputerApproval(line string) {
-	var request struct {
-		ID, Title, Method, Message string
-		Timeout                    int64 `json:"timeout"`
+func (w *piRPCWorker) handleComputerApproval(id, payload string, timeoutMs int64) {
+	var message struct {
+		Tool   string `json:"tool"`
+		Detail string `json:"detail"`
 	}
-	if json.Unmarshal([]byte(line), &request) != nil || request.ID == "" || request.Method != "confirm" || request.Title != "YuGo Pi computer approval" {
+	if len(payload) > 8192 || json.Unmarshal([]byte(payload), &message) != nil || message.Tool == "" {
 		return
 	}
-	var message struct{ Tool, Detail string }
-	if json.Unmarshal([]byte(request.Message), &message) != nil || message.Tool == "" || len(request.Message) > 8192 {
-		return
-	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.expireComputerRequestsLocked()
 	switch w.computerMode() {
 	case "allow":
-		_ = w.writeComputerResponse(request.ID, true)
+		_ = w.writeComputerResponse(id, true)
 	case "off":
-		_ = w.writeComputerResponse(request.ID, false)
+		_ = w.writeComputerResponse(id, false)
 	default:
-		timeout := 2 * time.Minute
-		if request.Timeout > 0 && request.Timeout < timeout.Milliseconds() {
-			timeout = time.Duration(request.Timeout) * time.Millisecond
+		if w.computerDenied {
+			_ = w.writeComputerResponse(id, false)
+			return
 		}
-		w.mu.Lock()
+		timeout := 2 * time.Minute
+		if timeoutMs > 0 && timeoutMs < timeout.Milliseconds() {
+			timeout = time.Duration(timeoutMs) * time.Millisecond
+		}
 		if w.computerRequests == nil {
 			w.computerRequests = make(map[string]workers.ComputerRequest)
 		}
-		w.computerRequests[request.ID] = workers.ComputerRequest{ID: request.ID, Tool: message.Tool, Detail: message.Detail, Expires: time.Now().Add(timeout)}
-		w.mu.Unlock()
+		w.computerRequests[id] = workers.ComputerRequest{ID: id, Tool: message.Tool, Detail: message.Detail, Expires: time.Now().Add(timeout)}
 	}
 }
 
 func (w *piRPCWorker) ComputerRequests() []workers.ComputerRequest {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.expireComputerRequestsLocked()
 	var out []workers.ComputerRequest
-	for id, request := range w.computerRequests {
-		if time.Now().Before(request.Expires) {
-			out = append(out, request)
-		} else {
-			delete(w.computerRequests, id)
-		}
+	for _, request := range w.computerRequests {
+		out = append(out, request)
 	}
 	slices.SortFunc(out, func(a, b workers.ComputerRequest) int { return a.Expires.Compare(b.Expires) })
 	return out
@@ -83,13 +84,48 @@ func (w *piRPCWorker) ComputerRequests() []workers.ComputerRequest {
 
 func (w *piRPCWorker) ReplyComputerRequest(id string, allow bool) error {
 	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.expireComputerRequestsLocked()
 	request, found := w.computerRequests[id]
-	delete(w.computerRequests, id)
-	w.mu.Unlock()
-	if !found || !time.Now().Before(request.Expires) {
+	if !found {
 		return errors.New("approval expired")
 	}
-	return w.writeComputerResponse(id, allow)
+	mode := w.computerMode()
+	allow = mode == "allow" || (mode != "off" && allow)
+	if err := w.writeComputerResponse(request.ID, allow); err != nil {
+		return err
+	}
+	delete(w.computerRequests, id)
+	w.computerDenied = w.computerDenied || !allow
+	return nil
+}
+
+func (w *piRPCWorker) ApplyComputerPolicy() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.expireComputerRequestsLocked()
+	mode := w.computerMode()
+	if mode != "allow" && mode != "off" {
+		return
+	}
+	if mode == "allow" {
+		w.computerDenied = false
+	}
+	for id := range w.computerRequests {
+		if w.writeComputerResponse(id, mode == "allow") == nil {
+			delete(w.computerRequests, id)
+		}
+	}
+}
+
+func (w *piRPCWorker) expireComputerRequestsLocked() {
+	now := time.Now()
+	for id, request := range w.computerRequests {
+		if !now.Before(request.Expires) {
+			delete(w.computerRequests, id)
+			w.computerDenied = true
+		}
+	}
 }
 
 func (w *piRPCWorker) writeComputerResponse(id string, allow bool) error {

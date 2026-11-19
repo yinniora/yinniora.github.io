@@ -37,3 +37,44 @@ func TestExtensionDialogReplyValidatesChoiceAndCannotAcknowledgeGuard(t *testing
 		t.Fatalf("duplicate response accepted: %v", err)
 	}
 }
+
+func TestComputerPolicyChangeResolvesPendingAndOverridesEarlierRejection(t *testing.T) {
+	var sent bytes.Buffer
+	mode := "ask"
+	w := &piRPCWorker{stdin: nopWriteCloser{&sent}, computerMode: func() string { return mode }}
+	request := func(id string) {
+		w.handleRPCLine(`{"type":"extension_ui_request","id":"` + id + `","method":"confirm","title":"YuGo Pi computer approval","message":"{\"tool\":\"find_roots\"}"}`)
+	}
+	request("first")
+	if len(w.ComputerRequests()) != 1 {
+		t.Fatal("approval was not queued")
+	}
+	mode = "allow"
+	w.ApplyComputerPolicy()
+	if len(w.ComputerRequests()) != 0 || !strings.Contains(sent.String(), `"confirmed":true,"id":"first"`) {
+		t.Fatalf("pending action did not use the new policy: %s", &sent)
+	}
+	mode = "ask"
+	request("denied")
+	if err := w.ReplyComputerRequest("denied", false); err != nil {
+		t.Fatal(err)
+	}
+	request("repeated")
+	if len(w.ComputerRequests()) != 0 || !strings.Contains(sent.String(), `"confirmed":false,"id":"repeated"`) {
+		t.Fatal("another action was prompted after a denial")
+	}
+	mode = "allow"
+	w.ApplyComputerPolicy()
+	request("next")
+	w.handleRPCLine(`{"type":"extension_ui_request","id":"policy","method":"select","title":"YuGo Pi computer policy","options":["ask","allow","off"]}`)
+	if len(w.ExtensionUI().Dialogs) != 0 ||
+		!strings.Contains(sent.String(), `"confirmed":true,"id":"next"`) ||
+		!strings.Contains(sent.String(), `"value":"allow"`) {
+		t.Fatalf("current permission or internal policy lookup was not authoritative: %s", &sent)
+	}
+	mode = "off"
+	request("disabled")
+	if !strings.Contains(sent.String(), `"confirmed":false,"id":"disabled"`) {
+		t.Fatal("computer operation ran despite off policy")
+	}
+}

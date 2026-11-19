@@ -46,6 +46,7 @@ type piRPCWorker struct {
 	streamPreview        *streamPreviewAccumulator
 	computerMode         func() string
 	computerRequests     map[string]workers.ComputerRequest
+	computerDenied       bool
 	compacting           bool
 	agentRevision        uint64
 	handledPrompt        string
@@ -539,11 +540,11 @@ func (w *piRPCWorker) consume(r io.Reader) {
 
 func (w *piRPCWorker) handleRPCLine(line string) {
 	var meta struct {
-		Type       string                `json:"type"`
-		Level      string                `json:"level"`
-		ToolCallID string                `json:"toolCallId"`
-		ToolName   string                `json:"toolName"`
-		Message    struct{ Role string } `json:"message"`
+		Type       string          `json:"type"`
+		Level      string          `json:"level"`
+		ToolCallID string          `json:"toolCallId"`
+		ToolName   string          `json:"toolName"`
+		Message    json.RawMessage `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(line), &meta); err != nil {
 		return
@@ -578,7 +579,13 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		w.writeMu.Unlock()
 	case "message_end":
 		w.noteStreamActivity()
-		if meta.Message.Role == "assistant" || meta.Message.Role == "" {
+		var message struct {
+			Role string `json:"role"`
+		}
+		if len(meta.Message) != 0 && json.Unmarshal(meta.Message, &message) != nil {
+			return
+		}
+		if message.Role == "assistant" || message.Role == "" {
 			w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
 		}
 	case "turn_end":
@@ -588,6 +595,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type, ToolCallID: meta.ToolCallID, ToolName: meta.ToolName})
 	case "agent_start":
 		w.mu.Lock()
+		w.computerDenied = false
 		w.agentRevision++
 		w.status.State = workers.WorkerStateRunning
 		w.status.Error = ""
