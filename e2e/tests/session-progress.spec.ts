@@ -112,6 +112,7 @@ test("returning to a running session restores its thinking and progress before t
   const timedOut = page.locator('[data-collapse-key="tool:fixture-live-tool"]');
   await expect(timedOut.locator(".activity-status.timed-out")).toHaveText("Timed out");
   await timedOut.locator('xpath=ancestor::details[@data-display-kind="group"]/summary').click();
+  await timedOut.locator('xpath=ancestor::details[@data-display-kind="tool-run"]/summary').click();
   await timedOut.locator("summary").click();
   await expect(timedOut.locator(".tool-output")).toContainText("Captured output.");
 });
@@ -180,30 +181,21 @@ test("successive tool messages stay in one folded group above the reply", async 
   await page.goto("/session?id=" + encodeURIComponent(id));
   const group = page.locator('details[data-collapse-key="activity:first"]');
   await expect(group.locator(":scope > summary")).toHaveText(/2 tool calls/);
-  const first = page.locator("#entry-first .activity-disclosure > summary");
-  const second = page.locator("#entry-second .activity-disclosure > summary");
+  // Successive tool calls read as one Codex-style line inside the group.
+  const run = group.locator('details[data-display-kind="tool-run"]');
   const answer = page.locator("#entry-finished").getByText("Visible reply after tools.", { exact: true });
-  await expect(first).toBeHidden();
+  await expect(run).toBeHidden();
   await expect(answer).toBeVisible();
   await group.locator(":scope > summary").click();
-  await expect(first).toBeVisible();
+  await expect(run).toHaveCount(1);
+  await expect(run.locator(":scope > summary")).toHaveText(/Read 2 files/);
+  await expect(page.locator("#entry-first")).toHaveCount(1);
   await expect(page.getByText("Reasoning included in the final message.")).toBeHidden();
-  const hits = await page.locator("#entry-first").evaluate((entry) => {
-    const summary = entry.querySelector(".activity-disclosure > summary")!.getBoundingClientRect();
-    const menu = entry.querySelector(".entry-actions-menu > summary")!.getBoundingClientRect();
-    return { overlapped: menu.left < summary.right, menuVisible: menu.width > 0 };
-  });
-  expect(hits).toEqual({ overlapped: false, menuVisible: true });
-  await expect.poll(async () => {
-    const a = (await first.boundingBox())!;
-    const b = (await second.boundingBox())!;
-    return b.y - a.y - a.height;
-  }).toBeLessThanOrEqual(10);
-  await second.click();
+  await run.locator(":scope > summary").click();
+  await page.locator('[data-collapse-key="tool:call-second"] > summary').click();
   await expect(page.locator("#entry-second-result")).toContainText("Result second");
   await expect(page.locator("#entry-second-result")).toBeVisible();
-  await page.locator("#entry-second .entry-actions-menu > summary").click();
-  await expect(page.locator("#entry-second .entry-action-buttons .label-btn")).toBeVisible();
+  const first = run;
   await page.getByRole("button", { name: "Collapse all" }).click();
   await expect(first).toBeHidden();
   await expect(answer).toBeVisible();

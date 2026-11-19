@@ -46,8 +46,10 @@ test.describe("steer / queue (stubbed pi)", () => {
     await textarea.fill(`task A [[slow:${slowMs}]]`);
     await page.locator("#pi-chat-send").click();
 
-    // While running, the Steer (send) and Queue buttons are available.
-    await expect(page.locator("#pi-chat-queue")).toBeVisible();
+    // While running with an empty draft only Stop shows; typing brings back
+    // Steer (send) and Queue.
+    await expect(page.locator("#pi-chat-cancel")).toHaveText("Stop");
+    await expect(page.locator("#pi-chat-queue")).toBeHidden();
     await expect(page.locator("#pi-chat-send")).toHaveText("Steer");
     return { textarea };
   }
@@ -459,8 +461,9 @@ test.describe("steer / queue (stubbed pi)", () => {
     // queue to outlive a full browser close, so pause as soon as it's there.
     await page1.locator("#pi-chat-message").fill("task A [[slow:30000]]");
     await page1.locator("#pi-chat-send").click();
-    await expect(page1.locator("#pi-chat-queue")).toBeVisible();
+    await expect(page1.locator("#pi-chat-cancel")).toBeVisible();
     await page1.locator("#pi-chat-message").fill(msg);
+    await expect(page1.locator("#pi-chat-queue")).toBeVisible();
     await page1.locator("#pi-chat-queue").click();
     await expect(page1.locator(".pi-queue-item")).toContainText(msg);
     await page1.getByRole("button", { name: /^Pause$/ }).click();

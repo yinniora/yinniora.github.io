@@ -10,6 +10,9 @@
   import AssistantThinking from './AssistantThinking.svelte';
   import ActivityDisclosure from './ActivityDisclosure.svelte';
   import ToolCall from './ToolCall.svelte';
+  import ToolRun from './ToolRun.svelte';
+  import { marked } from 'marked';
+  import { safeMarkedParse } from '../../session/render/markdown.js';
   import { entriesWithReplyDetails } from '../../session/render/reply-details.js';
   import { groupOutputsByReply } from '../../session/artifacts/outputs.js';
   import { groupConversationActivity } from '../../session/render/conversation-activity.js';
@@ -18,6 +21,8 @@
 
   // Titled like "Worked for 1m 12s · 3 tool calls": the turn's duration says
   // more than a generic "Tool calls" label.
+  const md = (text) => safeMarkedParse(text, { marked });
+
   function activityText(section) {
     const tools = section.toolCount ? t('activity.toolCount', { count: section.toolCount }) : '';
     const failed = section.failures ? t('activity.failed') + ' ' + section.failures : '';
@@ -87,6 +92,7 @@
   {/if}
 {/snippet}
 
+<!-- eslint-disable svelte/no-at-html-tags -- trusted: sanitized session markdown -->
 <div id="messages-list" class="messages-list" bind:this={containerEl}>
   {#each sections as section (section.key)}
     {#if section.items}
@@ -107,21 +113,19 @@
               ? 'error'
               : 'success'}
       >
-        {#each section.items as item (item.entry.id)}
-          {#if item.blocks}
-            {#each item.blocks as block, index (index)}
-              {#if block.type === 'thinking' && block.thinking?.trim()}
-                <AssistantThinking
-                  id={`thinking:${item.entry.id}:${index}`}
-                  text={block.thinking}
-                  live
-                />
-              {:else if block.type === 'toolCall'}
-                <ToolCall call={block} {model} live />
-              {/if}
-            {/each}
+        {#each section.timeline as step (step.key)}
+          {#each step.anchors || [] as anchor (anchor)}<span
+              id={`entry-${anchor}`}
+              class="activity-anchor"
+            ></span>{/each}
+          {#if step.kind === 'text'}
+            <div class="activity-step-text markdown-content">{@html md(step.text)}</div>
+          {:else if step.kind === 'thinking'}
+            <AssistantThinking id={`thinking:${step.key}`} text={step.text} live />
+          {:else if step.kind === 'question'}
+            <ToolCall call={step.call} {model} live />
           {:else}
-            {@render renderEntry(item, true)}
+            <ToolRun run={step} {model} />
           {/if}
         {/each}
       </ActivityDisclosure>

@@ -38,6 +38,7 @@ export function toolKind(name) {
 // own so they stay visible.
 function appendTimeline(timeline, item, results) {
   const id = item.entry.id;
+  const start = timeline.length;
   const blocks =
     item.blocks || (Array.isArray(item.entry.message?.content) ? item.entry.message.content : []);
   blocks.forEach((block, index) => {
@@ -72,6 +73,10 @@ function appendTimeline(timeline, item, results) {
       if (kind === 'other') (run.others ||= new Set()).add(block.name);
     }
   });
+  // Keep the entry's anchor (tree navigation, links to entries) on its first
+  // step; a tool run merged from earlier entries carries extra anchors.
+  const step = timeline[start] || timeline.at(-1);
+  if (step) (step.anchors ||= []).push(id);
 }
 
 export function groupConversationActivity(entries, outputsByEntry, running = false) {

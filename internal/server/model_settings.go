@@ -141,7 +141,7 @@ func configuredModels(p map[string]any) []map[string]any {
 	return list
 }
 
-const fallbackContextWindow, fallbackOutputTokens = 128000, 8192
+const fallbackContextWindow, fallbackOutputTokens = 128000, 32000
 
 func publicModel(m map[string]any, provider, label string) map[string]any {
 	result := map[string]any{"provider": provider, "providerLabel": label, "id": m["id"], "name": m["id"], "input": []string{"text"}, "reasoning": false}
