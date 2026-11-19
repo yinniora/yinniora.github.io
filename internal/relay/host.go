@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -39,6 +40,34 @@ type Host struct {
 	brokerSyncMu sync.Mutex
 	brokerConn   *websocket.Conn
 	slots        chan struct{}
+	api          *webrtc.API
+}
+
+// virtualInterfacePrefixes are macOS/host interfaces that never reach a phone:
+// AirDrop/peer links, VM and container bridges, and legacy tunnels. Tailscale
+// (utunN) and normal LAN interfaces stay available.
+var virtualInterfacePrefixes = []string{"awdl", "llw", "anpi", "bridge", "vmnet", "vboxnet", "docker", "veth", "gif", "stf"}
+
+func keepInterface(name string) bool {
+	for _, prefix := range virtualInterfacePrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return false
+		}
+	}
+	return true
+}
+
+func keepCandidateIP(ip net.IP) bool {
+	return !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsUnspecified()
+}
+
+// newHostAPI trims host candidates so answers are smaller and connectivity
+// checks do not spend their budget on interfaces the phone cannot reach.
+func newHostAPI() *webrtc.API {
+	settings := webrtc.SettingEngine{}
+	settings.SetInterfaceFilter(keepInterface)
+	settings.SetIPFilter(keepCandidateIP)
+	return webrtc.NewAPI(webrtc.WithSettingEngine(settings))
 }
 
 func NewHost(identityFile string) (*Host, error) {
@@ -46,7 +75,7 @@ func NewHost(identityFile string) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Host{Certificate: cert, Fingerprint: fingerprint, slots: make(chan struct{}, 12)}, nil
+	return &Host{Certificate: cert, Fingerprint: fingerprint, slots: make(chan struct{}, 12), api: newHostAPI()}, nil
 }
 
 func (h *Host) Answer(ctx context.Context, id, offer string) (string, error) {
@@ -62,7 +91,11 @@ func (h *Host) Answer(ctx context.Context, id, offer string) (string, error) {
 	if h.ICE != nil {
 		configuration.ICEServers = h.ICE()
 	}
-	pc, err := webrtc.NewPeerConnection(configuration)
+	newPeer := webrtc.NewPeerConnection
+	if h.api != nil {
+		newPeer = h.api.NewPeerConnection
+	}
+	pc, err := newPeer(configuration)
 	if err != nil {
 		<-h.slots
 		return "", err
@@ -220,7 +253,7 @@ func (h *Host) ServeSignal(w http.ResponseWriter, r *http.Request) {
 	_, _ = rand.Read(idBytes[:])
 	id := fmt.Sprintf("direct-%x", idBytes[:])
 	defer h.ClosePeer(id)
-	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
 	answer, err := h.Answer(ctx, id, signal.SDP)
 	cancel()
 	if err != nil {
@@ -259,7 +292,7 @@ func (h *Host) ConnectBroker(ctx context.Context, endpoint, token string) {
 					h.ClosePeer(signal.ID)
 				} else if signal.Type == "offer" && len(signal.ID) <= 64 {
 					go func(signal Signal) {
-						offerCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+						offerCtx, cancel := context.WithTimeout(ctx, 18*time.Second)
 						defer cancel()
 						answer, err := h.Answer(offerCtx, signal.ID, signal.SDP)
 						if err == nil {

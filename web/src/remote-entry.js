@@ -21,6 +21,8 @@ lockPageZoom();
 trackVisualViewport();
 
 const platformFetch = window.fetch.bind(window);
+const FALLBACK_CODES = new Set(['relayFailed', 'signalTimeout', 'channelTimeout', 'disconnected']);
+const RESUME_AFTER_HIDDEN_MS = 1000;
 let transportClient = null;
 let transportInstalled = false;
 const registration = navigator.serviceWorker?.register('/remote-sw.js', {
@@ -89,10 +91,23 @@ async function start() {
           error.code = 'storageUnavailable';
           throw error;
         }
-        const client = new RemoteClient(next, { preference });
+        let client = new RemoteClient(next, { preference });
         client.addEventListener('phase', (event) => reportProgress?.(event.detail));
         try {
-          await client.connect();
+          try {
+            await client.connect();
+          } catch (error) {
+            // A Tailscale-only attempt has no relay route. When it times out,
+            // retry once with Automatic (direct + relay) without changing the
+            // saved preference, so the user is not left on an error screen.
+            if (preference !== 'tailscale' || !FALLBACK_CODES.has(error.code)) throw error;
+            client.peer?.close();
+            client.socket?.close();
+            reportProgress?.('fallback');
+            client = new RemoteClient(next, { preference: 'auto' });
+            client.addEventListener('phase', (event) => reportProgress?.(event.detail));
+            await client.connect();
+          }
           await launchWorkspace(client);
           await unmount(connectView);
           host.remove();
@@ -193,7 +208,7 @@ async function launchWorkspace(client) {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) hiddenAt = Date.now();
       else if (hiddenAt) {
-        if (Date.now() - hiddenAt > 3000) resume();
+        if (Date.now() - hiddenAt > RESUME_AFTER_HIDDEN_MS) resume();
         hiddenAt = 0;
         if (Date.now() - lastUpdateCheck > 60000) {
           lastUpdateCheck = Date.now();

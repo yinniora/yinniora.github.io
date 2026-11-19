@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -214,5 +215,18 @@ func TestForgedSDPFingerprintCannotImpersonateMac(t *testing.T) {
 		t.Fatal("forged fingerprint opened a channel")
 	case <-ctx.Done():
 		t.Fatal("native DTLS did not reject the forged identity in time")
+	}
+}
+
+func TestHostCandidateFilters(t *testing.T) {
+	for name, keep := range map[string]bool{"en0": true, "en1": true, "utun4": true, "awdl0": false, "llw0": false, "bridge100": false, "vmnet8": false, "anpi0": false} {
+		if keepInterface(name) != keep {
+			t.Fatalf("keepInterface(%q) = %v", name, !keep)
+		}
+	}
+	for ip, keep := range map[string]bool{"192.168.1.5": true, "100.64.1.2": true, "2001:db8::1": true, "127.0.0.1": false, "::1": false, "169.254.1.1": false, "fe80::1": false} {
+		if keepCandidateIP(net.ParseIP(ip)) != keep {
+			t.Fatalf("keepCandidateIP(%s) = %v", ip, !keep)
+		}
 	}
 }

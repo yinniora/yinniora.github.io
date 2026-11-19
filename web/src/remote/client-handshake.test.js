@@ -163,8 +163,8 @@ it('sends a usable relay offer promptly and reaches device authorization without
 });
 
 it.each([
-  [false, true, 'signalTimeout', 'answer', 30001],
-  [true, false, 'channelTimeout', 'channel', 35001],
+  [false, true, 'signalTimeout', 'answer', 20001],
+  [true, false, 'channelTimeout', 'channel', 20001],
 ])(
   'keeps signaling and channel failure diagnoses distinct',
   async (answer, authorize, code, stage, duration) => {
@@ -177,3 +177,31 @@ it.each([
     expect(JSON.stringify(error.diagnostics)).not.toContain(config.ticket);
   },
 );
+
+it('reuses unexpired TURN credentials on reconnect and forgets them after a failure', async () => {
+  const { client } = await setup();
+  const expiry = Math.floor(Date.now() / 1000) + 7200;
+  fetch.mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          iceServers: [
+            {
+              urls: 'turn:relay.example:3478?transport=udp',
+              username: `${expiry}:pi-fixture`,
+              credential: 'fixture',
+            },
+          ],
+        }),
+      ),
+  );
+  await client.openConnection();
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await client.openConnection();
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(client.diagnostics.iceCached).toBe(true);
+  const { forgetICE } = await import('./client.js');
+  forgetICE();
+  await client.openConnection();
+  expect(fetch).toHaveBeenCalledTimes(2);
+});

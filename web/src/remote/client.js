@@ -15,6 +15,43 @@ import {
 
 const originalFetch = window.fetch.bind(window);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Connection budgets. The Mac answers within its own 25s budget; a relay
+// allocation normally completes in well under a second.
+export const SIGNAL_OPEN_TIMEOUT = 8000;
+export const ANSWER_TIMEOUT = 20000;
+export const CHANNEL_TIMEOUT = 20000;
+export const RESUME_PROBE_TIMEOUT = 1500;
+
+// Short-lived TURN credentials are reused in memory (never persisted) so a
+// reconnect in the same page skips the signed /ice round trip.
+const ICE_CACHE_MARGIN = 15 * 60;
+const ICE_CACHE_MAX_AGE = 90 * 60;
+const iceCache = new Map();
+
+function cachedICE(url) {
+  const entry = iceCache.get(url);
+  if (entry && entry.expires > Date.now() / 1000) return entry.servers;
+  iceCache.delete(url);
+  return null;
+}
+
+function rememberICE(url, servers) {
+  const now = Math.floor(Date.now() / 1000);
+  let expires = now + ICE_CACHE_MAX_AGE;
+  for (const server of servers) {
+    // TURN REST usernames are "<unix expiry>:<id>".
+    const expiry = Number(String(server.username || '').split(':')[0]);
+    if (Number.isFinite(expiry) && expiry > 0)
+      expires = Math.min(expires, expiry - ICE_CACHE_MARGIN);
+  }
+  if (servers.length && expires > now) iceCache.set(url, { servers, expires });
+}
+
+export function forgetICE(url) {
+  if (url) iceCache.delete(url);
+  else iceCache.clear();
+}
 function connectionError(code) {
   const error = new Error(t(`remote.${code}`));
   error.code = code;
@@ -31,7 +68,7 @@ function openSignalSocket(endpoint, signal) {
     const timer = setTimeout(() => {
       fail();
       socket.close();
-    }, 12000);
+    }, SIGNAL_OPEN_TIMEOUT);
     socket.onopen = () => {
       clearTimeout(timer);
       resolve(socket);
@@ -231,7 +268,13 @@ export class RemoteClient extends EventTarget {
     signaling.catch(() => {});
 
     let iceServers = [];
-    if (this.preference !== 'tailscale') {
+    let iceFromCache = false;
+    const cached = this.preference !== 'tailscale' && cachedICE(this.config.iceUrl);
+    if (cached) {
+      iceServers = cached;
+      iceFromCache = true;
+      this.diagnostics.iceCached = true;
+    } else if (this.preference !== 'tailscale') {
       this.phase('ice');
       try {
         const options = {
@@ -266,6 +309,7 @@ export class RemoteClient extends EventTarget {
         }
         const data = JSON.parse(await new Blob(chunks).text());
         iceServers = validatedICEServers(data, new URL(this.config.iceUrl).hostname);
+        rememberICE(this.config.iceUrl, iceServers);
         if (this.preference === 'vps' && !iceServers.length)
           throw connectionError('iceUnavailable');
       } catch (error) {
@@ -420,7 +464,10 @@ export class RemoteClient extends EventTarget {
       await chosen.relayReady;
       this.phase('answer');
       socket.send(JSON.stringify({ type: 'offer', sdp: peer.localDescription.sdp }));
-      answerTimer = setTimeout(() => rejectAnswer(connectionError('signalTimeout')), 30000);
+      answerTimer = setTimeout(
+        () => rejectAnswer(connectionError('signalTimeout')),
+        ANSWER_TIMEOUT,
+      );
       const sdp = await answerPromise;
       clearTimeout(answerTimer);
       this.diagnostics.remoteRelayCandidates = (sdp.match(/ typ relay/g) || []).length;
@@ -438,7 +485,7 @@ export class RemoteClient extends EventTarget {
                 this.diagnostics.stage === 'auth' ? 'authIncomplete' : 'channelTimeout',
               ),
             ),
-          35000,
+          CHANNEL_TIMEOUT,
         );
       await approved;
       clearTimeout(approvalTimer);
@@ -452,6 +499,8 @@ export class RemoteClient extends EventTarget {
       clearTimeout(answerTimer);
       clearTimeout(approvalTimer);
       clearTimeout(gatherGrace);
+      // Stale cached TURN credentials must not poison the next attempt.
+      if (iceFromCache) forgetICE(this.config.iceUrl);
       rejectApproval(error);
       peer.close();
       socket?.close();
@@ -580,7 +629,9 @@ export class RemoteClient extends EventTarget {
     )
       return this.connect();
     try {
-      const response = await this.fetch('/api/version', { signal: AbortSignal.timeout(2000) });
+      const response = await this.fetch('/api/version', {
+        signal: AbortSignal.timeout(RESUME_PROBE_TIMEOUT),
+      });
       await response.arrayBuffer();
     } catch {
       if (this.peer === peer) return this.reconnect(this.preference);

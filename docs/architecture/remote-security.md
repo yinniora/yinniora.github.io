@@ -36,6 +36,12 @@ connections fail promptly when credentials are unavailable instead of attempting
 an impossible ICE session. Offer/answer and channel/auth timers have independent
 budgets; the browser and Mac can send their SDP once they have a usable TURN
 candidate and a brief grace period for other transports.
+Short-lived TURN credentials are reused from page memory (never storage) until
+shortly before expiry and dropped after a failed attempt, so reconnects skip the
+signed `/ice` round trip. The Mac omits AirDrop, VM/container bridge, loopback
+and link-local host candidates; LAN and Tailscale (`utun`) remain. A failed
+Tailscale-only attempt retries once with Automatic without changing the saved
+preference.
 Authentication denial is allowed to drain before DTLS closes. Mac signaling has
 bounded heartbeat/reconnect and periodic authoritative-whitelist synchronization.
 

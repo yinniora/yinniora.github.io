@@ -898,6 +898,7 @@ export default {
   'remote.phase.channel': '正在建立加密通道…',
   'remote.phase.auth': '正在通过 Mac 验证本设备…',
   'remote.phase.sync': '已连接。正在同步工作区…',
+  'remote.phase.fallback': 'Tailscale 未响应，正在改用自动线路（直连 + 中继）…',
   'piCommands.title': 'Pi 命令',
   'piCommands.extensions': '扩展',
   'piCommands.prompts': '提示词',
