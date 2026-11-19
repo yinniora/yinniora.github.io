@@ -7,6 +7,26 @@ export function progressLabel(phase) {
   return t('btw.working');
 }
 
+export function formatToolDuration(ms) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function nowMs(windowImpl) {
+  return windowImpl?.performance?.now?.() ?? Date.now();
+}
+
+// Refresh the elapsed time of the running tool shown beside the progress label.
+export function updateToolDuration(
+  state,
+  windowImpl = typeof window !== 'undefined' ? window : null,
+) {
+  const el = state?.chatPreviewEl?.querySelector('.preview-progress .preview-duration');
+  if (!el || !state.tool) return;
+  const text = formatToolDuration(state.tool.elapsed + nowMs(windowImpl) - state.tool.observedAt);
+  if (el.textContent !== text) el.textContent = text;
+}
+
 export function getSpinnerConfig(windowImpl = typeof window !== 'undefined' ? window : null) {
   let style = 'runcat';
   try {
@@ -47,6 +67,7 @@ export function clearChatPreviewState(state, { keepAssistant = false } = {}) {
     }
     state.chatPreviewEl = null;
     state.phase = '';
+    state.tool = null;
     state.content = undefined;
     stopWorkingAnimation(state);
   }
@@ -55,6 +76,7 @@ export function clearChatPreviewState(state, { keepAssistant = false } = {}) {
 export function finishChatPreviewState(state) {
   if (!state?.chatPreviewEl) return false;
   state.phase = '';
+  state.tool = null;
   state.chatPreviewEl.classList.remove('chat-preview-waiting');
   state.chatPreviewEl.classList.add('done');
   state.chatPreviewEl.querySelector('.preview-progress')?.remove();
@@ -71,7 +93,13 @@ export function startWorkingAnimation(
   } = {},
 ) {
   stopWorkingAnimation(state);
-  if (windowImpl?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+  if (windowImpl?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+    state.spinnerInterval = setIntervalImpl(() => {
+      if (!state.chatPreviewEl) stopWorkingAnimation(state);
+      else updateToolDuration(state, windowImpl);
+    }, 1000);
+    return;
+  }
   const config = getSpinnerConfig(windowImpl);
   let frameIdx = 0;
   state.spinnerInterval = setIntervalImpl(() => {
@@ -84,6 +112,7 @@ export function startWorkingAnimation(
     for (const spinnerEl of state.chatPreviewEl.querySelectorAll('.preview-spinner')) {
       spinnerEl.textContent = config.frames[frameIdx];
     }
+    updateToolDuration(state, windowImpl);
   }, config.interval);
 }
 
@@ -145,6 +174,14 @@ function createAssistantPreview(documentImpl, { waiting = false, windowImpl = nu
   );
   const progress = createPreviewLabel(documentImpl, config);
   progress.classList.add('preview-progress');
+  const tool = documentImpl.createElement('span');
+  tool.className = 'preview-tool';
+  tool.hidden = true;
+  const duration = documentImpl.createElement('span');
+  duration.className = 'preview-duration';
+  duration.setAttribute('aria-hidden', 'true');
+  duration.hidden = true;
+  progress.append(tool, duration);
   el.append(
     thinking,
     createMarkdownBlock(documentImpl, 'message-content assistant-text markdown-content'),
@@ -237,6 +274,21 @@ export function renderChatPreviewState(
   if (progress) {
     progress.hidden = phase === 'thinking' && hasThoughts;
     progress.querySelector('.preview-text').textContent = progressLabel(phase);
+    const toolName =
+      phase === 'tool' && typeof payload.toolName === 'string' ? payload.toolName.trim() : '';
+    if (toolName) {
+      const elapsed = Math.max(0, Number(payload.toolElapsedMs) || 0);
+      // Keep the local clock running between server updates for the same tool.
+      if (state.tool?.name !== toolName || state.tool.elapsed !== elapsed)
+        state.tool = { name: toolName, elapsed, observedAt: nowMs(windowImpl) };
+    } else state.tool = null;
+    const toolEl = progress.querySelector('.preview-tool');
+    const durationEl = progress.querySelector('.preview-duration');
+    toolEl.hidden = durationEl.hidden = !state.tool;
+    if (toolEl.textContent !== (state.tool?.name || ''))
+      toolEl.textContent = state.tool?.name || '';
+    if (state.tool) updateToolDuration(state, windowImpl);
+    else durationEl.textContent = '';
   }
   state.phase = phase;
 

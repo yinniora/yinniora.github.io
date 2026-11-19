@@ -105,7 +105,8 @@
     on(windowImpl, 'pi-chat-message-sent', (event) => {
       followScroll.extendPreviewFollow(30000);
       if (event && event.detail && event.detail.message) {
-        renderPendingChat(event.detail.message);
+        // The transcript preview now shows progress; tell the composer.
+        if (renderPendingChat(event.detail.message)) publishPhase('working');
       } else {
         forceFollowToBottom(true);
       }

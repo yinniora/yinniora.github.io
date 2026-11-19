@@ -5,9 +5,40 @@ import {
   finishChatPreviewState as finishChatPreview,
   renderChatPreviewState as renderChatPreview,
   renderPendingChatState as renderPendingChat,
+  formatToolDuration,
+  updateToolDuration,
 } from './chat-preview.js';
 
 describe('chat preview', () => {
+  it('shows the running tool and its elapsed time on the progress line', () => {
+    const dom = new JSDOM('<body><div id="messages"></div></body>');
+    let now = 1000;
+    const windowImpl = { performance: { now: () => now } };
+    const state = { chatPreviewEl: null, pendingUserEl: null };
+    const opts = {
+      documentImpl: dom.window.document,
+      windowImpl,
+      renderMarkdown: (text) => text,
+      setIntervalImpl: () => 1,
+    };
+    renderChatPreview(
+      { content: '', phase: 'tool', toolName: 'bash', toolElapsedMs: 61000 },
+      state,
+      opts,
+    );
+    const progress = state.chatPreviewEl.querySelector('.preview-progress');
+    expect(progress.querySelector('.preview-tool').textContent).toBe('bash');
+    expect(progress.querySelector('.preview-duration').textContent).toBe('1:01');
+    now += 5000;
+    updateToolDuration(state, windowImpl);
+    expect(progress.querySelector('.preview-duration').textContent).toBe('1:06');
+
+    renderChatPreview({ content: '', phase: 'working' }, state, opts);
+    expect(progress.querySelector('.preview-tool').hidden).toBe(true);
+    expect(progress.querySelector('.preview-duration').hidden).toBe(true);
+    expect(formatToolDuration(0)).toBe('0:00');
+  });
+
   it('renders, updates, follows, and clears preview', () => {
     const dom = new JSDOM('<body><div id="messages"></div></body>');
     const state = { chatPreviewEl: null, pendingUserEl: null };

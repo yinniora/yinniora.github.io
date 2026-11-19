@@ -168,7 +168,10 @@
   />
   <input id="pi-chat-files" type="file" multiple hidden disabled={!chatAvailable} />
   <QueuePanel store={queueStore} />
-  {#if toolbar.isRunning || previewPhase || (!chatAvailable && sessionRunning)}
+  <!-- The transcript's live preview owns detailed progress (phase, tool, elapsed).
+       This line only covers states the transcript cannot show: compaction and a
+       run started elsewhere before any preview arrived. -->
+  {#if toolbar.compacting || (!previewPhase && (toolbar.isRunning || (!chatAvailable && sessionRunning)))}
     <div class="session-progress" role="status">
       <span class="session-progress-spinner" aria-hidden="true"></span>
       <span>{toolbar.compacting ? t('piSession.compacting') : progressLabel(previewPhase)}</span>
@@ -185,6 +188,7 @@
         ><span class="pi-chat-focus-shortcut">{t('composer.focusShortcut')}</span>
       </div>{/if}
     {#if !chatAvailable}<div class="pi-chat-disabled-notice">{chatDisabledReason}</div>{/if}
+    <div id="pi-chat-attachments" class="pi-chat-attachments"></div>
     <textarea
       id="pi-chat-message"
       name="message"
@@ -192,7 +196,6 @@
       placeholder={t('composer.placeholder')}
       disabled={!chatAvailable}
     ></textarea>
-    <div id="pi-chat-attachments" class="pi-chat-attachments"></div>
     <ChatSelectorPopups />
     <ChatToolbar {chatAvailable} {toolbar} {modelLabel} {sessionId} />
     <ContextUsage popover />

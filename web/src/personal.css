@@ -2328,3 +2328,29 @@ body .pi-btw-input {
 #spa-root button:is(.danger-button, .danger-confirm):focus-visible {
   outline-color: var(--danger-border);
 }
+
+/* Attachments sit above the text, like a message draft; leave room for the
+   expand button in the top-right corner and keep the text close below. */
+#spa-root .pi-chat-attachments {
+  padding: 8px 34px 2px 4px;
+}
+#spa-root .pi-chat-attachments:not(:empty) + #pi-chat-message {
+  padding-top: 8px;
+}
+
+#spa-root .chat-preview-stream .preview-tool {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-code, monospace);
+}
+#spa-root .chat-preview-stream .preview-duration {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+#spa-root .chat-preview-stream .preview-tool[hidden],
+#spa-root .chat-preview-stream .preview-duration[hidden] {
+  display: none;
+}
