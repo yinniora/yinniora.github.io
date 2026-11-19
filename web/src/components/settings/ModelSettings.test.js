@@ -8,6 +8,53 @@ afterEach(() => {
   localStorage.clear();
 });
 
+it('shows the native effort protocol and saves only an available per-model default', async () => {
+  const model = {
+    id: 'claude-opus-5-5',
+    name: 'Claude Opus 5.5',
+    api: 'anthropic-messages',
+    reasoning: true,
+    adaptiveThinking: true,
+    contextWindow: 128000,
+    maxTokens: 32000,
+    thinkingLevelMap: { off: null, minimal: null, xhigh: 'xhigh', max: 'max' },
+  };
+  const profile = { id: 'fixture', label: 'Native', applied: [model], available: [model] };
+  const requests = [];
+  vi.stubGlobal('fetch', async (_url, options) => {
+    if (options?.method === 'POST') {
+      const request = JSON.parse(options.body);
+      requests.push(request);
+      model.defaultThinkingLevel = request.thinkingLevel;
+    }
+    return new Response(JSON.stringify({ profiles: [profile], revision: 'fixture' }));
+  });
+
+  const view = render(ModelSettings);
+  await view.findByText(/· effort$/);
+  await fireEvent.click(view.getByRole('button', { name: /Context limit.*Claude Opus/ }));
+  const select = view.getByRole('combobox', { name: /Adjustable reasoning effort.*Default/ });
+  expect(Array.from(select.options, (option) => option.value)).toEqual([
+    '',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+  ]);
+  await fireEvent.change(select, { target: { value: 'high' } });
+  await view.findByText(/Default high$/);
+  expect(requests).toEqual([
+    {
+      action: 'edit-thinking-default',
+      id: 'fixture',
+      modelId: model.id,
+      thinkingLevel: 'high',
+      revision: 'fixture',
+    },
+  ]);
+});
+
 it('keeps keys out of browser storage, refreshes without applying, and applies multiple models explicitly', async () => {
   const profile = {
     id: 'key-one',

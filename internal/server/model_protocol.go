@@ -126,6 +126,8 @@ func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred s
 
 var fixedThinkingAlias = regexp.MustCompile(`(?i)(?:-(?:thinking|nothinking|high|medium|low|xhigh|max)(?:-(?:high|medium|low|xhigh|max|[0-9]+))?|@(?:thinking|effort):[^@]+)$`)
 var adaptiveClaude = regexp.MustCompile(`^claude-(?:opus-(?:4-[678]|5(?:-5)?)|sonnet-(?:4-6|5(?:-5)?)|haiku-5-5|(?:fable|mythos)-5(?:-[12])?)(?:-[0-9]{8})?$`)
+var budgetClaude = regexp.MustCompile(`^claude-(?:3-7-sonnet|opus-4(?:-[015])?|sonnet-4(?:-[05])?|haiku-4-5)(?:-[0-9]{8})?$`)
+var claudeSnapshot = regexp.MustCompile(`-[0-9]{8}$`)
 
 func catalogStrings(value any) map[string]bool {
 	items, _ := value.([]any)
@@ -151,6 +153,23 @@ func declaredEffortLevels(levels map[string]bool) map[string]any {
 		result["off"] = "off"
 	}
 	return result
+}
+
+// Use model and protocol capabilities when a compatible catalog omits them.
+// Keep fixed aliases and explicitly advertised restrictions intact.
+func claudeEffortLevels(id string) map[string]bool {
+	if !adaptiveClaude.MatchString(id) {
+		return nil
+	}
+	model := claudeSnapshot.ReplaceAllString(id, "")
+	levels := map[string]bool{"low": true, "medium": true, "high": true, "max": true}
+	levels["xhigh"] = model != "claude-opus-4-6" && model != "claude-sonnet-4-6"
+	switch model {
+	case "claude-opus-5-5", "claude-sonnet-5-5":
+	default:
+		levels["off"] = strings.Contains(model, "-4-") || model == "claude-opus-5" || model == "claude-sonnet-5" || model == "claude-haiku-5-5"
+	}
+	return levels
 }
 
 func describeCatalogModel(model, raw map[string]any, id, api, base string) {
@@ -250,20 +269,29 @@ func describeCatalogModel(model, raw map[string]any, id, api, base string) {
 			}
 		}
 	}
-	if api == apiAnthropic && ((host == "api.anthropic.com" && adaptiveClaude.MatchString(id)) ||
+	knownClaudeLevels := claudeEffortLevels(id)
+	if api == apiAnthropic && (knownClaudeLevels != nil ||
 		(adaptive && len(levels) > 0) ||
-		params["output_config.effort"] || (adaptiveClaude.MatchString(id) && (params["output_config"] || params["effort"] || len(levels) > 0))) {
+		params["output_config.effort"]) {
 		model["reasoning"] = true
 		model["compat"] = map[string]any{"forceAdaptiveThinking": true}
-		levels := map[string]any{"minimal": nil}
-		if strings.Contains(id, "-5") {
-			levels["off"] = nil
-			levels["xhigh"] = "xhigh"
+		if len(levels) == 0 {
+			levels = knownClaudeLevels
+		} else if knownClaudeLevels != nil {
+			for level := range levels {
+				if !knownClaudeLevels[level] && !(level == "none" && knownClaudeLevels["off"]) {
+					delete(levels, level)
+				}
+			}
 		}
-		if id == "claude-opus-5-5" || strings.HasPrefix(id, "claude-fable-5") || strings.HasPrefix(id, "claude-mythos-5") {
-			levels["max"] = "max"
+		if len(levels) == 0 {
+			levels = map[string]bool{"low": true, "medium": true, "high": true}
 		}
-		model["thinkingLevelMap"] = levels
+	} else if api == apiAnthropic && (budgetClaude.MatchString(id) || params["thinking.budget_tokens"]) {
+		model["reasoning"] = true
+		if len(levels) == 0 {
+			levels = map[string]bool{"off": true, "minimal": true, "low": true, "medium": true, "high": true}
+		}
 	} else if api == apiResponses && (params["reasoning"] || params["reasoning.effort"] || params["reasoning_effort"] || len(levels) > 0) {
 		model["reasoning"] = true
 	} else if api == apiChat {

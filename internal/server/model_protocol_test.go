@@ -33,8 +33,8 @@ func TestDetectMixedModelCatalog(t *testing.T) {
 	if err != nil || detection.API != apiChat || !detection.BearerAuth || len(models) != 5 {
 		t.Fatalf("detect catalog: api=%s models=%+v err=%v", detection.API, models, err)
 	}
-	if models[0]["api"] != apiAnthropic || models[0]["baseUrl"] != provider.URL || models[0]["reasoning"] == true {
-		t.Fatalf("gateway's native route alone doesn't confirm dynamic effort: %+v", models[0])
+	if models[0]["api"] != apiAnthropic || models[0]["baseUrl"] != provider.URL || models[0]["reasoning"] != true {
+		t.Fatalf("canonical Claude model lost native adaptive effort: %+v", models[0])
 	}
 	if models[1]["reasoning"] == true || models[1]["supportsTools"] != true {
 		t.Fatalf("fixed reasoning alias: %+v", models[1])
@@ -53,6 +53,32 @@ func TestDetectMixedModelCatalog(t *testing.T) {
 	models = detection.Models
 	if err != nil || detection.API != apiAnthropic || !detection.BearerAuth || len(models) != 5 || models[2]["api"] != apiGemini || models[4]["api"] != apiResponses {
 		t.Fatalf("existing Claude profile lost mixed catalog routes: api=%s models=%+v err=%v", detection.API, models, err)
+	}
+}
+
+func TestClaudeEffortDependsOnExactModelAndProtocol(t *testing.T) {
+	for _, c := range []struct {
+		name, id, api       string
+		reasoning, adaptive bool
+		off, max            bool
+	}{
+		{"opus adaptive", "claude-opus-5-5", apiAnthropic, true, true, false, true},
+		{"dated adaptive", "claude-opus-5-5-20261101", apiAnthropic, true, true, false, true},
+		{"legacy budget", "claude-sonnet-4-5-20250929", apiAnthropic, true, false, true, false},
+		{"fixed variant", "claude-opus-5-5-thinking-high", apiAnthropic, false, false, false, false},
+		{"chat protocol", "claude-opus-5-5", apiChat, false, false, false, false},
+		{"arbitrary alias", "private-claude-opus-5-5", apiAnthropic, false, false, false, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			model := map[string]any{}
+			describeCatalogModel(model, nil, c.id, c.api, "https://example.invalid")
+			compat, _ := model["compat"].(map[string]any)
+			levels, _ := model["thinkingLevelMap"].(map[string]any)
+			if (model["reasoning"] == true) != c.reasoning || (compat["forceAdaptiveThinking"] == true) != c.adaptive ||
+				(levels["off"] != nil) != c.off || (levels["max"] != nil) != c.max {
+				t.Fatalf("incorrect model capabilities: %+v", model)
+			}
+		})
 	}
 }
 

@@ -30,6 +30,36 @@ func modelSettingsCall(t *testing.T, s *Server, body any) (int, map[string]any, 
 	return w.Code, data, w.Body.String()
 }
 
+func TestPerModelThinkingDefaultUsesPiSettings(t *testing.T) {
+	s := newTestServer(t)
+	modelPath := filepath.Join(s.agentDir, "models.json")
+	config := `{"providers":{"fixture":{"api":"anthropic-messages","baseUrl":"https://example.invalid","models":[{"id":"claude-opus-5-5","reasoning":true,"thinkingLevelMap":{"off":null,"max":"max"}}]}}}`
+	if err := os.WriteFile(modelPath, []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(s.agentDir, "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{"compaction":{"reserveTokens":36096},"modelThinkingLevels":{"other/m":"low"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, data, _ := modelSettingsCall(t, s, nil)
+	body := map[string]any{"action": "edit-thinking-default", "revision": data["revision"], "id": "fixture", "modelId": "claude-opus-5-5", "thinkingLevel": "off"}
+	if code, _, _ := modelSettingsCall(t, s, body); code != 400 {
+		t.Fatalf("unsupported off level accepted: %d", code)
+	}
+	body["thinkingLevel"] = "max"
+	if code, _, response := modelSettingsCall(t, s, body); code != 200 || !strings.Contains(response, `"defaultThinkingLevel":"max"`) {
+		t.Fatalf("per-model thinking preference was not saved: %d %s", code, response)
+	}
+	if raw, err := os.ReadFile(settingsPath); err != nil || !strings.Contains(string(raw), `"fixture/claude-opus-5-5": "max"`) ||
+		!strings.Contains(string(raw), `"reserveTokens": 36096`) || !strings.Contains(string(raw), `"other/m": "low"`) {
+		t.Fatalf("other Pi settings were lost or default was not written: %s, %v", raw, err)
+	}
+	body["thinkingLevel"] = ""
+	if code, _, response := modelSettingsCall(t, s, body); code != 200 || strings.Contains(response, `"defaultThinkingLevel"`) {
+		t.Fatalf("per-model thinking preference was not cleared: %d %s", code, response)
+	}
+}
+
 func TestModelKeysRefreshMultiApplyRemoveAndPrivacy(t *testing.T) {
 	s := newTestServer(t)
 	const secret = "fixture-key-do-not-return"

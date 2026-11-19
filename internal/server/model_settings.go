@@ -46,6 +46,7 @@ type modelSettingsRequest struct {
 	ModelID       string   `json:"modelId"`
 	Vision        bool     `json:"vision"`
 	Reasoning     bool     `json:"reasoning"`
+	ThinkingLevel string   `json:"thinkingLevel"`
 	ContextWindow int      `json:"contextWindow"`
 	MaxTokens     int      `json:"maxTokens"`
 }
@@ -150,6 +151,9 @@ func publicModel(m map[string]any, provider, label string) map[string]any {
 			result[key] = value
 		}
 	}
+	if compat, ok := m["compat"].(map[string]any); ok && compat["forceAdaptiveThinking"] == true {
+		result["adaptiveThinking"] = true
+	}
 	if id, ok := m["id"].(string); ok && fixedThinkingAlias.MatchString(id) {
 		result["reasoning"] = false
 	}
@@ -158,6 +162,10 @@ func publicModel(m map[string]any, provider, label string) map[string]any {
 
 func (s *Server) modelProfiles(providers map[string]any) []modelProfile {
 	profiles := []modelProfile{}
+	var settings struct{ ModelThinkingLevels map[string]string }
+	if raw, err := os.ReadFile(filepath.Join(s.agentDir, "settings.json")); err == nil {
+		_ = json.Unmarshal(raw, &settings)
+	}
 	for id, raw := range providers {
 		p, ok := raw.(map[string]any)
 		if !ok {
@@ -177,7 +185,13 @@ func (s *Server) modelProfiles(providers map[string]any) []modelProfile {
 		overrides, _ := p["modelOverrides"].(map[string]any)
 		for _, m := range configuredModels(p) {
 			public := publicModel(m, id, label)
+			if public["api"] == nil {
+				public["api"] = api
+			}
 			if modelID, ok := m["id"].(string); ok {
+				if level := settings.ModelThinkingLevels[id+"/"+modelID]; level != "" {
+					public["defaultThinkingLevel"] = level
+				}
 				override, _ := overrides[modelID].(map[string]any)
 				for _, field := range []string{"contextWindow", "maxTokens"} {
 					if override[field] != nil {
@@ -593,6 +607,51 @@ func writeModelConfigWithoutLegacyKey(agent, id string, config map[string]any, r
 var errModelCredentialsChanged = errors.New("model credentials changed; reload and try again")
 var errModelCredentialType = errors.New("provider has a different sign-in method")
 
+func setModelThinkingDefault(agent, qualified, level string) error {
+	path := filepath.Join(agent, "settings.json")
+	info, err := os.Lstat(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) || err == nil && (!info.Mode().IsRegular() || info.Size() > 4<<20) {
+		return errors.New("cannot read local Pi settings")
+	}
+	settings := map[string]json.RawMessage{}
+	var previous []byte
+	if err == nil {
+		previous, err = os.ReadFile(path)
+		if err != nil || json.Unmarshal(previous, &settings) != nil || settings == nil {
+			return errors.New("cannot read local Pi settings")
+		}
+	}
+	levels := map[string]string{}
+	if value := settings["modelThinkingLevels"]; len(value) != 0 && json.Unmarshal(value, &levels) != nil {
+		return errors.New("cannot read per-model thinking defaults")
+	}
+	if levels[qualified] == level {
+		return nil
+	}
+	if level == "" {
+		delete(levels, qualified)
+	} else {
+		if levels == nil {
+			levels = make(map[string]string)
+		}
+		levels[qualified] = level
+	}
+	if len(levels) == 0 {
+		delete(settings, "modelThinkingLevels")
+	} else {
+		settings["modelThinkingLevels"], _ = json.Marshal(levels)
+	}
+	next, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	current, err := os.ReadFile(path)
+	if !(os.IsNotExist(err) && previous == nil) && (err != nil || !bytes.Equal(current, previous)) {
+		return errModelCredentialsChanged
+	}
+	return writePrivateModelFile(path, append(next, '\n'))
+}
+
 func deleteModelConfiguration(agent, provider, modelID string, config map[string]any) error {
 	settingsPath := filepath.Join(agent, "settings.json")
 	info, err := os.Lstat(settingsPath)
@@ -608,6 +667,15 @@ func deleteModelConfiguration(agent, provider, modelID string, config map[string
 		return errors.New("cannot read local Pi settings")
 	}
 	changed := false
+	if levels, ok := settings["modelThinkingLevels"].(map[string]any); ok {
+		if _, ok := levels[provider+"/"+modelID]; ok {
+			delete(levels, provider+"/"+modelID)
+			if len(levels) == 0 {
+				delete(settings, "modelThinkingLevels")
+			}
+			changed = true
+		}
+	}
 	if settings["defaultProvider"] == provider && settings["defaultModel"] == modelID {
 		delete(settings, "defaultProvider")
 		delete(settings, "defaultModel")
@@ -1032,6 +1100,30 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	case "edit-thinking-default":
+		var model map[string]any
+		for _, configured := range configuredModels(p) {
+			if configured["id"] == request.ModelID {
+				model = configured
+				break
+			}
+		}
+		if model == nil {
+			writeJSONError(w, 404, "model not found")
+			return
+		}
+		level := request.ThinkingLevel
+		if level != "" {
+			mapping, _ := model["thinkingLevelMap"].(map[string]any)
+			mapped, explicit := mapping[level]
+			ordinary := level == "off" || level == "minimal" || level == "low" || level == "medium" || level == "high"
+			advanced := level == "xhigh" || level == "max"
+			if model["reasoning"] != true || fixedThinkingAlias.MatchString(request.ModelID) ||
+				!(ordinary && (!explicit || mapped != nil) || advanced && explicit && mapped != nil) {
+				writeJSONError(w, 400, "thinking level is not available for this model")
+				return
+			}
+		}
 	case "remove-model":
 		if p == nil || request.ModelID == "" {
 			writeJSONError(w, 404, "model not found")
@@ -1075,6 +1167,8 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	case "remove-model":
 		err = deleteModelConfiguration(s.agentDir, request.ID, request.ModelID, config)
+	case "edit-thinking-default":
+		err = setModelThinkingDefault(s.agentDir, request.ID+"/"+request.ModelID, request.ThinkingLevel)
 	default:
 		err = writeModelConfig(s.agentDir, config)
 	}
@@ -1103,7 +1197,7 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		s.modelCatalogs[request.ID] = *editedCatalog
 	}
-	if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok && (configAffectsResources || request.Action == "remove-key" || request.Action == "remove-model" || request.Action == "edit-limits") {
+	if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok && (configAffectsResources || request.Action == "remove-key" || request.Action == "remove-model" || request.Action == "edit-limits" || request.Action == "edit-thinking-default") {
 		manager.ResourcesChanged()
 	} else if manager, ok := s.chatSender.(interface{ ModelsChanged() }); ok {
 		manager.ModelsChanged()

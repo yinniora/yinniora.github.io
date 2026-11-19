@@ -373,6 +373,9 @@ including native retry and recovery work. Older workers can still finish with
 an `agent_end` event that lacks the `willRetry` field.
 Native compaction events update the live progress preview. The context meter
 waits for a fresh provider measurement after a persisted compaction.
+Model settings use Pi's `modelThinkingLevels` for per-model defaults. For known
+Claude IDs on the native Messages API, discovery distinguishes adaptive effort
+from legacy thinking budgets. A fixed-effort alias keeps its own behavior.
 Generic extension dialogs have a per-worker expiry, validate replies against
 the specific pending prompt, and travel over existing authenticated session
 routes. Reserved computer approval prompts use the Mac's current session policy

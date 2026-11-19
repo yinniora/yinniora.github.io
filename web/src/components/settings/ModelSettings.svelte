@@ -210,6 +210,16 @@
       status = t('common.saved');
     }
   }
+  async function saveThinkingDefault(profile, model, select) {
+    const result = await action({
+      action: 'edit-thinking-default',
+      id: profile.id,
+      modelId: model.id,
+      thinkingLevel: select.value,
+    });
+    if (result) status = t('common.saved');
+    else select.value = model.defaultThinkingLevel || '';
+  }
   async function remove(profile, model) {
     if (await action({ action: 'remove-model', id: profile.id, modelId: model.id }))
       status = t('models.removed');
@@ -486,7 +496,13 @@
                   >{t('models.maxTokens')} · {model.maxTokens.toLocaleString()}</small
                 >{/if}
               {#if supportedThinkingLevels(model).length > 1}<small>
-                  {t('models.effortAvailable')}
+                  {t('models.effortAvailable')} · {t(apiLabels[model.api] || 'models.protocol')}
+                  {#if model.api === 'anthropic-messages'}
+                    · {model.adaptiveThinking ? 'effort' : 'budget_tokens'}
+                  {/if}
+                  {#if model.defaultThinkingLevel}
+                    · {t('schedules.thinkingDefault')} {t('thinking.' + model.defaultThinkingLevel)}
+                  {/if}
                 </small>{/if}
             </div>
             <button
@@ -543,6 +559,21 @@
                     disabled={busy}
                   />
                 </label>
+                {#if supportedThinkingLevels(model).length > 1}
+                  <label>
+                    {t('models.effortAvailable')} · {t('schedules.thinkingDefault')}
+                    <select
+                      value={model.defaultThinkingLevel || ''}
+                      disabled={busy}
+                      onchange={(event) => saveThinkingDefault(profile, model, event.currentTarget)}
+                    >
+                      <option value="">{t('schedules.thinkingDefault')}</option>
+                      {#each supportedThinkingLevels(model) as level (level)}
+                        <option value={level}>{t('thinking.' + level)}</option>
+                      {/each}
+                    </select>
+                  </label>
+                {/if}
               </div>
               <div class="model-limit-actions">
                 <button type="button" disabled={busy} onclick={() => (limitEditor = null)}
@@ -769,6 +800,16 @@
     grid-template-columns: 1fr 1fr;
     gap: 12px;
     margin-top: 8px;
+  }
+  .model-limit-form select {
+    width: 100%;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--dim);
+    border-radius: 8px;
+    padding: 7px 8px;
+    min-height: 44px;
+    font-size: 16px;
   }
   .model-options label {
     display: flex;
