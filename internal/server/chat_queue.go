@@ -1,12 +1,16 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"pi-web/internal/chatqueue"
 	"pi-web/internal/sessions"
+	"pi-web/internal/workers"
 )
 
 // /api/chat/queue: single endpoint that demuxes on method.
@@ -71,10 +75,16 @@ func (s *Server) handleChatQueuePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
+		Action      string `json:"action"`
+		Position    int64  `json:"position"`
 		Message     string `json:"message"`
 		DisplayText string `json:"displayText"`
 	}
 	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	if body.Action == "send-now" {
+		s.handleQueueSendNow(w, r, sessionID, body.Position)
 		return
 	}
 	message := strings.TrimSpace(body.Message)
@@ -95,6 +105,50 @@ func (s *Server) handleChatQueuePost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, item)
 }
 
+func (s *Server) handleQueueSendNow(w http.ResponseWriter, r *http.Request, sessionID string, position int64) {
+	if position <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "position must be positive")
+		return
+	}
+	if s.chatSender == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "chat unavailable")
+		return
+	}
+	if _, busy := s.queueDispatches.LoadOrStore(sessionID, struct{}{}); busy {
+		writeJSONError(w, http.StatusConflict, workers.ErrPiSessionBusy.Error())
+		return
+	}
+	defer s.queueDispatches.Delete(sessionID)
+	resolved, err := sessions.ResolveByID(s.sessionsDir, sessionID)
+	if resolveOrWriteError(w, err) {
+		return
+	}
+	if !resolved.Session.ChatAvailable {
+		writeJSONError(w, http.StatusConflict, resolved.Session.ChatDisabledReason)
+		return
+	}
+	item, exists, err := s.chatQueue.Find(sessionID, position)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not read queue item")
+		return
+	}
+	if !exists {
+		writeJSONError(w, http.StatusNotFound, "queued message no longer exists")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err = s.sendQueued(ctx, resolved.Path, item, false); err != nil {
+		if errors.Is(err, workers.ErrPiSessionBusy) {
+			writeJSONError(w, http.StatusConflict, workers.ErrPiSessionBusy.Error())
+		} else {
+			writeJSONError(w, http.StatusBadGateway, "Pi did not acknowledge the queued message")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) handleChatQueueDelete(w http.ResponseWriter, r *http.Request) {
 	sessionID, ok := s.resolveQueueSession(r, w)
 	if !ok {
@@ -108,6 +162,15 @@ func (s *Server) handleChatQueueDelete(w http.ResponseWriter, r *http.Request) {
 	pos, err := strconv.ParseInt(posStr, 10, 64)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "position must be an integer")
+		return
+	}
+	if _, busy := s.queueDispatches.LoadOrStore(sessionID, struct{}{}); busy {
+		writeJSONError(w, http.StatusConflict, workers.ErrPiSessionBusy.Error())
+		return
+	}
+	defer s.queueDispatches.Delete(sessionID)
+	if _, exists, err := s.chatQueue.Find(sessionID, pos); err != nil || pos <= 0 || !exists {
+		writeJSONError(w, http.StatusNotFound, "queued message no longer exists")
 		return
 	}
 	if err := s.chatQueue.Remove(sessionID, pos); err != nil {

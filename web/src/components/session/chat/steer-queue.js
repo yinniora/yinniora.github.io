@@ -10,21 +10,21 @@
 //     server-side drainer dispatches items to the worker when it becomes idle
 //     (or via a kick from the queue API). The browser is just a viewer onto
 //     the server-side queue, kept in sync by SSE 'queue' events.
-//   - sendNow / edit: both pull a queued row out of the server queue (DELETE)
-//     before acting on it locally — send via /api/chat (sendNow) or put back
-//     into the textarea (edit). That way the server doesn't try to dispatch
-//     a row we've already taken over.
+//   - sendNow: the server dispatches the queue item and removes it on ack.
+//   - edit: remove the saved item before moving its text back to the composer.
 //
 // `activeRun` is driven solely by the `pi-chat-message-sent` (-> true) and
 // `pi-worker-done` (-> false) events, so the first message of a run is never
 // mistaken for a steer.
+import { t } from '../../../shared/i18n.js';
+
 export function setupSteerQueue({
   windowImpl = window,
   store,
   queueButton,
   textarea,
   attachments = { files: () => [], composeMessage: (typed) => typed, clear: () => {} },
-  sendChatMessage = async () => false,
+  setChatStatus = () => {},
   autoResizeTextarea = () => {},
   updateSendEnabled = () => {},
   queueApi = null,
@@ -33,6 +33,7 @@ export function setupSteerQueue({
   if (!store) throw new Error('setupSteerQueue: store is required');
 
   let activeRun = false;
+  const sending = new Set();
 
   function hasContent() {
     const typed = textarea ? textarea.value.trim() : '';
@@ -63,17 +64,22 @@ export function setupSteerQueue({
 
   async function sendNow(id) {
     const focused = store.items.find((it) => it.id === id);
-    if (!focused || focused.kind !== 'queued') return;
-    // Pull from the server first so the drainer doesn't race us.
-    if (queueApi && Number.isInteger(focused.position)) {
-      try {
-        await queueApi.remove(focused.position);
-      } catch {
-        /* best-effort — proceed even if the server-side delete fails */
-      }
+    if (!focused || focused.kind !== 'queued' || !queueApi || sending.has(id)) return;
+    const steering = activeRun;
+    sending.add(id);
+    try {
+      await queueApi.sendNow(focused.position);
+      store.takeLocalById(id);
+      if (steering && activeRun) store.pushSteer({ text: focused.text });
+    } catch (error) {
+      setChatStatus(
+        error.message === 'session is busy' ? t('piSession.busy') : t('activity.failed'),
+        'error',
+      );
+      await store.refresh?.();
+    } finally {
+      sending.delete(id);
     }
-    store.takeLocalById(id);
-    void sendChatMessage(focused.text, focused.files || []);
   }
 
   async function edit(id) {
@@ -83,7 +89,9 @@ export function setupSteerQueue({
       try {
         await queueApi.remove(focused.position);
       } catch {
-        /* ignore — local-only edit still works */
+        setChatStatus(t('activity.failed'), 'error');
+        await store.refresh?.();
+        return;
       }
     }
     store.takeLocalById(id);

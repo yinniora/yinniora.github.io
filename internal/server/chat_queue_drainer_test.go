@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
+	"pi-web/internal/chat"
 	"pi-web/internal/chatqueue"
 	"pi-web/internal/workers"
 )
@@ -48,7 +51,8 @@ func TestDrainerDispatchesNextItem(t *testing.T) {
 		t.Fatalf("Send message=%q want %q", req.Message, "first prompt")
 	}
 
-	// PopHead removed the item, so the queue is now empty.
+	s.wg.Wait()
+	// Only an acknowledged send removes the item.
 	snap, _ := s.chatQueue.List(id)
 	if len(snap.Items) != 0 {
 		t.Fatalf("queue should be empty after dispatch, got %#v", snap.Items)
@@ -78,8 +82,8 @@ func TestDrainerSkipsWhenPaused(t *testing.T) {
 
 func TestDrainerSkipsWhenWorkerBusy(t *testing.T) {
 	fake := &fakeSender{
-		status:  workers.WorkerStatus{State: workers.WorkerStateRunning},
-		sendCh:  make(chan struct{}, 1),
+		status: workers.WorkerStatus{State: workers.WorkerStateRunning},
+		sendCh: make(chan struct{}, 1),
 	}
 	s, d, id := newDrainerServer(t, fake)
 	s.chatQueue.Add(id, "wait your turn", "wait your turn")
@@ -114,10 +118,44 @@ func TestDrainerDrainAllScansEveryActiveSession(t *testing.T) {
 		t.Fatalf("expected first Send")
 	}
 
+	s.wg.Wait()
 	// Second item still queued (waiting for next idle).
 	snap, _ := s.chatQueue.List(id)
 	if len(snap.Items) != 1 || snap.Items[0].Message != "beta" {
 		t.Fatalf("after first drain, queue should hold beta: %#v", snap.Items)
+	}
+}
+
+type queueRejectingSender struct {
+	fakeSender
+	err error
+}
+
+func (s *queueRejectingSender) Send(context.Context, string, string, chat.Request) error {
+	return s.err
+}
+
+func TestDrainerKeepsUnacknowledgedItems(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		paused bool
+	}{
+		{"busy", workers.ErrPiSessionBusy, false},
+		{"timeout", context.DeadlineExceeded, true},
+		{"rejected", errors.New("fixture"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, d, id := newDrainerServer(t, &queueRejectingSender{err: tc.err})
+			item, _ := s.chatQueue.Add(id, "keep this message", "keep this message")
+			d.drainSession(id)
+			s.wg.Wait()
+			snap, err := s.chatQueue.List(id)
+			if err != nil || len(snap.Items) != 1 || snap.Items[0].Position != item.Position ||
+				snap.Items[0].Message != item.Message || snap.Paused != tc.paused {
+				t.Fatalf("unacknowledged item changed: %#v, %v", snap, err)
+			}
+		})
 	}
 }
 

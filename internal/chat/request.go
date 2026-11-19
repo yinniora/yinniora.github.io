@@ -24,9 +24,10 @@ type Image struct {
 }
 
 type Request struct {
-	Message string
-	Images  []Image
-	Files   []File
+	Message      string
+	Images       []Image
+	Files        []File
+	OnlyWhenIdle bool
 }
 
 type File struct {

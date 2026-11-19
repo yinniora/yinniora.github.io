@@ -94,6 +94,13 @@ func (a *streamPreviewAccumulator) handleAssistantEvent(event assistantMessageEv
 	switch event.Type {
 	case "agent_start":
 		*a = streamPreviewAccumulator{phase: "working"}
+	case "compaction_start":
+		a.phase = "compacting"
+	case "compaction_end":
+		if a.phase != "compacting" {
+			return StreamPreview{}, false
+		}
+		a.phase = "working"
 	case "thinking_start", "thinking_delta", "thinking_end":
 		a.thinking.update(event)
 		a.phase = "thinking"

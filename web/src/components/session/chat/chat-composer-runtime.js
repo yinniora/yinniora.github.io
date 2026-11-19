@@ -263,7 +263,7 @@ export function runChatComposer({
       queueButton,
       textarea,
       attachments,
-      sendChatMessage: submission.sendChatMessage,
+      setChatStatus,
       autoResizeTextarea,
       updateSendEnabled,
       queueApi,

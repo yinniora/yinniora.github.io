@@ -140,10 +140,9 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
       const thoughtCount = blocks.filter(
         (block) => block.type === 'thinking' && block.thinking?.trim(),
       ).length;
-      const final = item.reply || ['aborted', 'error'].includes(message.stopReason);
+      const final = item.reply || ['aborted', 'error', 'length'].includes(message.stopReason);
       if (!final && (tools.length || thoughtCount || message.stopReason === 'toolUse')) {
         addActivity(item, thoughtCount, tools);
-        activity.lastStop = message.stopReason || '';
         activity.outputs.push(...(outputsByEntry?.get(entry.id) || []));
         activity.needsResponse ||= tools.some((tool) =>
           questionNeedsResponse(tool.name, results.get(tool.id)),
@@ -168,10 +167,6 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
     activity.running = running;
     // Not running and still no reply: the turn ended without finishing.
     if (!running) activity.unfinished = true;
-  }
-  // A truncated output can't be followed by a reply in the same turn.
-  for (const section of sections) {
-    if (section.items && section.lastStop === 'length') section.unfinished = true;
   }
   // A question the user has not answered yet keeps its group open even after
   // the turn's closing reply, until the next user message. Otherwise a reload

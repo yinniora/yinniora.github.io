@@ -117,16 +117,18 @@ describe('setupSteerQueue (server-backed)', () => {
     expect(sendChatMessage).not.toHaveBeenCalled();
   });
 
-  it('sendNow DELETEs the row server-side, then dispatches via sendChatMessage', async () => {
+  it('sendNow waits for acknowledgement from the queue endpoint before removing the item', async () => {
     const { queueButton, textarea } = makeDom();
     const api = makeApi();
     const store = new QueueStore({ api });
-    const sendChatMessage = vi.fn(async () => true);
+    api.sendNow = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('session is busy'))
+      .mockResolvedValueOnce({ ok: true });
     const handle = setupSteerQueue({
       store,
       queueButton,
       textarea,
-      sendChatMessage,
       queueApi: api,
     });
 
@@ -139,9 +141,10 @@ describe('setupSteerQueue (server-backed)', () => {
 
     const id = store.items[0].id;
     await handle.sendNow(id);
-
-    expect(api.remove).toHaveBeenCalledWith(store.items[0]?.position ?? 1);
-    expect(sendChatMessage).toHaveBeenCalledWith('queue-me', []);
+    expect(store.queuedCount).toBe(1);
+    await handle.sendNow(id);
+    expect(api.sendNow).toHaveBeenCalledWith(1);
+    expect(api.remove).not.toHaveBeenCalled();
     expect(store.queuedCount).toBe(0);
   });
 

@@ -211,17 +211,17 @@ func (s *Store) Remove(sessionID string, position int64) error {
 	return nil
 }
 
-// PopHead removes and returns the lowest-position item for a session. Returns
-// (Item{}, false, nil) if the queue is empty — used by the autonomous drainer
-// when the worker is idle.
-func (s *Store) PopHead(sessionID string) (Item, bool, error) {
+// Find reads the requested item without removing it. Position zero selects
+// the head for automatic dispatch.
+func (s *Store) Find(sessionID string, position int64) (Item, bool, error) {
 	if sessionID == "" {
 		return Item{}, false, errors.New("sessionID is required")
 	}
 	row := s.db.QueryRow(
 		`SELECT position, message, display_text, created_at
-		 FROM chat_queue_items WHERE session_id = ? ORDER BY position ASC LIMIT 1`,
-		sessionID,
+		 FROM chat_queue_items WHERE session_id = ? AND (? = 0 OR position = ?)
+		 ORDER BY position ASC LIMIT 1`,
+		sessionID, position, position,
 	)
 	var item Item
 	item.SessionID = sessionID
@@ -230,12 +230,6 @@ func (s *Store) PopHead(sessionID string) (Item, bool, error) {
 			return Item{}, false, nil
 		}
 		return Item{}, false, fmt.Errorf("query head: %w", err)
-	}
-	if _, err := s.db.Exec(
-		`DELETE FROM chat_queue_items WHERE session_id = ? AND position = ?`,
-		sessionID, item.Position,
-	); err != nil {
-		return Item{}, false, fmt.Errorf("delete head: %w", err)
 	}
 	return item, true, nil
 }

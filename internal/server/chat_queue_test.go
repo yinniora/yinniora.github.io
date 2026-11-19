@@ -3,6 +3,7 @@ package server
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,36 @@ import (
 
 	_ "modernc.org/sqlite"
 )
+
+func TestChatQueueSendNowKeepsItemOnFailureAndRemovesItOnAcknowledgement(t *testing.T) {
+	s, id := newQueueServer(t)
+	item, err := s.chatQueue.Add(id, "try this", "try this")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender := &queueRejectingSender{err: errors.New("fixture rejection")}
+	s.chatSender = sender
+	send := func() int {
+		body := `{"action":"send-now","position":` + strconv.FormatInt(item.Position, 10) + `}`
+		req := httptest.NewRequest(http.MethodPost, "/api/chat/queue?id="+id, strings.NewReader(body))
+		w := httptest.NewRecorder()
+		s.handleChatQueue(w, req)
+		return w.Code
+	}
+	if status := send(); status != http.StatusBadGateway {
+		t.Fatalf("status = %d, want rejected send", status)
+	}
+	if snapshot, _ := s.chatQueue.List(id); len(snapshot.Items) != 1 || !snapshot.Paused {
+		t.Fatal("failed send did not preserve and pause the queue")
+	}
+	sender.err = nil
+	if status := send(); status != http.StatusOK {
+		t.Fatalf("status = %d, want acknowledged send", status)
+	}
+	if snapshot, _ := s.chatQueue.List(id); len(snapshot.Items) != 0 {
+		t.Fatal("acknowledged send left a duplicate in the queue")
+	}
+}
 
 func newQueueTestDB(t *testing.T) *sql.DB {
 	t.Helper()

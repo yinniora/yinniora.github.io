@@ -1,3 +1,6 @@
+const transportError =
+  /\b(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|UND_ERR_[A-Z_]+)\b|socket hang up|secure TLS connection/i;
+
 export function entriesWithReplyDetails(entries) {
   const repeatedErrors = new Set();
   let nextError = '';
@@ -5,11 +8,11 @@ export function entriesWithReplyDetails(entries) {
     const entry = entries[index];
     if (entry.type !== 'message') continue;
     const message = entry.message;
+    const error = message?.errorMessage || '';
     const rejection =
       message?.role === 'assistant' && message.stopReason === 'error'
-        ? /"(?:type|code)"\s*:\s*"(model_not_found|model_not_allowed)"/.exec(
-            message.errorMessage || '',
-          )?.[1]
+        ? /"(?:type|code)"\s*:\s*"(model_not_found|model_not_allowed)"/.exec(error)?.[1] ||
+          (transportError.test(error) ? 'transport' : '')
         : '';
     const key = rejection && `${message.provider}/${message.model}/${rejection}`;
     if (key && key === nextError) repeatedErrors.add(entry.id);

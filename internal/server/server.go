@@ -108,6 +108,7 @@ type Server struct {
 	schedules             *schedules.Store
 	chatQueue             *chatqueue.Store
 	queueDrainer          *queueDrainer
+	queueDispatches       sync.Map
 	updater               *updater.Checker
 	runInstall            func(ctx context.Context) error
 	runRestart            func() error

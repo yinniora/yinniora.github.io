@@ -1,3 +1,5 @@
+import { t } from '../../../shared/i18n.js';
+
 export function buildContextWindows(models = []) {
   const windows = {};
   (models || []).forEach((model) => {
@@ -77,9 +79,16 @@ export function collectContextUsage(entries = []) {
   let contextTokens = 0;
   for (let i = entries.length - 1; i >= 0; i -= 1) {
     const entry = entries[i];
+    if (entry?.type === 'compaction') {
+      // Usage before the compaction measured the old prompt. Wait for a
+      // measurement from the shortened conversation.
+      contextTokens = null;
+      break;
+    }
     if (entry?.type !== 'message' || !entry.message) continue;
     const msg = entry.message;
-    if (msg.role !== 'assistant' || !msg.usage) continue;
+    if (msg.role !== 'assistant' || !msg.usage || ['error', 'aborted'].includes(msg.stopReason))
+      continue;
     const total =
       msg.usage.totalTokens ||
       (msg.usage.input || 0) +
@@ -140,9 +149,10 @@ export function updateContextUsage({
   if (!el) return previous;
 
   const usage = collectContextUsage(entries);
+  const waitingForUsage = usage.contextTokens === null;
   const contextTokens =
-    usage.contextTokens > 0 ? usage.contextTokens : previous?.contextTokens || 0;
-  if (contextTokens <= 0 && usage.totalIOTokens <= 0) {
+    waitingForUsage || usage.contextTokens > 0 ? usage.contextTokens : previous?.contextTokens || 0;
+  if (!waitingForUsage && contextTokens <= 0 && usage.totalIOTokens <= 0) {
     el.style.display = 'none';
     return previous;
   }
@@ -164,12 +174,14 @@ export function updateContextUsage({
   const textSpan = el.querySelector('.pi-context-text');
 
   if (fillPath) fillPath.setAttribute('stroke-dasharray', `${percent}, 100`);
-  if (textSpan) textSpan.textContent = `${percent}%`;
+  if (textSpan) textSpan.textContent = waitingForUsage ? '—' : `${percent}%`;
 
   const formatNumber = (num) => num.toLocaleString();
   el.setAttribute(
     'title',
-    `Click for details (${formatNumber(contextTokens)} / ${formatNumber(limit)} tokens used in context)`,
+    waitingForUsage
+      ? t('piSession.compacted')
+      : `Click for details (${formatNumber(contextTokens)} / ${formatNumber(limit)} tokens used in context)`,
   );
 
   el.classList.remove('warning', 'danger');
@@ -193,7 +205,7 @@ export function updateContextUsage({
   if (valOutput) valOutput.textContent = formatTokensDetail(usage.outputTokens);
   if (valTotal) valTotal.textContent = formatTokensDetail(usage.totalIOTokens);
 
-  if (usedSpan) usedSpan.textContent = formatTokensDetail(contextTokens);
+  if (usedSpan) usedSpan.textContent = waitingForUsage ? '—' : formatTokensDetail(contextTokens);
   if (limitSpan) limitSpan.textContent = formatLimit(limit);
   if (popoverBar) popoverBar.style.width = `${percent}%`;
 

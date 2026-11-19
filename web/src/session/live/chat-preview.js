@@ -4,6 +4,7 @@ import { icon, ChevronRight } from '../../shared/icons.js';
 export function progressLabel(phase) {
   if (phase === 'thinking') return t('activity.thinking');
   if (phase === 'tool') return t('activity.tools');
+  if (phase === 'compacting') return t('piSession.compacting');
   return t('btw.working');
 }
 

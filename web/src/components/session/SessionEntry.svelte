@@ -34,6 +34,7 @@
     skipActivity = false,
     outputs,
     renderOutputs = null,
+    onCompact = null,
   } = $props();
 
   const ts = $derived(formatTimestamp(entry?.timestamp));
@@ -49,6 +50,7 @@
       !outputs?.length &&
       msg?.stopReason !== 'error' &&
       msg?.stopReason !== 'aborted' &&
+      msg?.stopReason !== 'length' &&
       assistantContent.some((block) => block.type === 'toolCall' || block.thinking?.trim()) &&
       !assistantContent.some((block) => block.type === 'text' && block.text?.trim()),
   );
@@ -161,11 +163,23 @@
       {:else}
         <div class="error-text">{t('activity.interrupted')}</div>
       {/if}
+    {:else if msg.stopReason === 'length'}
+      {#if live}
+        <ReplyError
+          interrupted
+          labelKey="activity.truncated"
+          error={msg.rawStopReason || ''}
+          onChooseModel={chatAvailable ? chooseModel : null}
+          onCompact={chatAvailable ? onCompact : null}
+        />
+      {:else}
+        <div class="error-text">{t('activity.truncated')}</div>
+      {/if}
     {:else if msg.stopReason === 'error'}
       {#if live}
         <ReplyError
           error={msg.errorMessage || t('activity.failed')}
-          model={[msg.provider, msg.model].filter(Boolean).join('/')}
+          model={msg.model || msg.provider}
           onChooseModel={chatAvailable ? chooseModel : null}
           onRetry={chatAvailable && retryContent ? retry : null}
         />

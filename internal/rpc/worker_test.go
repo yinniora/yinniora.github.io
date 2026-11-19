@@ -81,6 +81,22 @@ func TestStatusReturnsIdleAfterAgentEnd(t *testing.T) {
 	}
 }
 
+func TestWorkerStaysRunningUntilPiSettles(t *testing.T) {
+	w := &piRPCWorker{status: workers.WorkerStatus{State: workers.WorkerStateRunning}}
+	w.handleRPCLine(`{"type":"agent_end","willRetry":true}`)
+	if got := w.Status(); got.State != workers.WorkerStateRunning {
+		t.Fatalf("retry was reported as finished: %v", got.State)
+	}
+	w.handleRPCLine(`{"type":"agent_end","willRetry":false}`)
+	if got := w.Status(); got.State != workers.WorkerStateRunning {
+		t.Fatalf("low-level run was reported as settled: %v", got.State)
+	}
+	w.handleRPCLine(`{"type":"agent_settled","aborted":false}`)
+	if got := w.Status(); got.State != workers.WorkerStateIdle {
+		t.Fatalf("settled run is still marked busy: %v", got.State)
+	}
+}
+
 func TestWorkerCancelsAutomaticRetry(t *testing.T) {
 	var sent bytes.Buffer
 	w := &piRPCWorker{
@@ -201,6 +217,26 @@ func TestHandleRPCLineTracksMessageEndAsStreamActivity(t *testing.T) {
 
 	if got := w.Status(); got.State != workers.WorkerStateRunning {
 		t.Fatalf("status = %q, want running", got.State)
+	}
+}
+
+func TestHandleRPCLineStreamsNativeCompactionUntilSettled(t *testing.T) {
+	var previews []StreamPreview
+	w := &piRPCWorker{
+		status:        workers.WorkerStatus{State: workers.WorkerStateRunning},
+		streamPreview: &streamPreviewAccumulator{},
+		streamSink:    func(preview StreamPreview) { previews = append(previews, preview) },
+	}
+	w.handleRPCLine(`{"type":"agent_end","willRetry":false}`)
+	w.handleRPCLine(`{"type":"compaction_start","reason":"overflow"}`)
+	snapshot, ok := w.ChatPreview()
+	if !ok || snapshot.Phase != "compacting" || w.Status().State != workers.WorkerStateRunning {
+		t.Fatalf("compaction snapshot = %+v, ok = %v, status = %+v", snapshot, ok, w.Status())
+	}
+	w.handleRPCLine(`{"type":"compaction_end","reason":"overflow","willRetry":true}`)
+	w.handleRPCLine(`{"type":"agent_settled"}`)
+	if len(previews) != 3 || previews[0].Phase != "compacting" || previews[1].Phase != "working" || !previews[2].Done {
+		t.Fatalf("compaction previews = %+v", previews)
 	}
 }
 

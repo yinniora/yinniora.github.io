@@ -368,6 +368,11 @@ for the authorized session. HTML is generated in a restricted temporary
 directory and sent as a download. The worker exposes explicit compaction
 state to avoid concurrent prompts. `prompt` acknowledgments with `handled`
 release a command-only run without waiting for a model turn.
+Current Pi workers stay busy from prompt submission through `agent_settled`,
+including native retry and recovery work. Older workers can still finish with
+an `agent_end` event that lacks the `willRetry` field.
+Native compaction events update the live progress preview. The context meter
+waits for a fresh provider measurement after a persisted compaction.
 Generic extension dialogs have a per-worker expiry, validate replies against
 the specific pending prompt, and travel over existing authenticated session
 routes. Reserved computer approval prompts use the Mac's current session policy
@@ -397,7 +402,7 @@ and creating a single child folder.
 | `/api/sessions` | GET | `handleApiSessions` | JSON list of session summaries |
 | `/api/chat` | POST | `handleChat` | Send chat message (multipart) |
 | `/api/chat/cancel` | POST | `handleCancelChat` | Abort running chat worker |
-| `/api/chat/queue` | GET/POST/DELETE/PATCH | `handleChatQueue` | Per-session queued messages + pause state (SQLite) |
+| `/api/chat/queue` | GET/POST/DELETE/PATCH | `handleChatQueue` | Saved messages, send-now acknowledgement, and pause state |
 | `/api/set-model` | POST | `handleSetModel` | Change model for session |
 | `/api/set-thinking-level` | POST | `handleSetThinkingLevel` | Change thinking level |
 | `/api/models` | GET | `handleAvailableModels` | List available AI models |

@@ -42,6 +42,15 @@ export function createQueueApi({ sessionId, fetchImpl = fetch } = {}) {
       const url = `${base}&position=${encodeURIComponent(position)}`;
       return readJSON(await fetchImpl(url, { method: 'DELETE' }));
     },
+    async sendNow(position) {
+      return readJSON(
+        await fetchImpl(base, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ action: 'send-now', position }),
+        }),
+      );
+    },
     async setPaused(paused) {
       return readJSON(
         await fetchImpl(base, {

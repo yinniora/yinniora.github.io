@@ -30,7 +30,7 @@
       return { label: t('activity.working'), summary: failed || section.latestTool };
     if (section.unfinished)
       return {
-        label: t(section.lastStop === 'length' ? 'activity.truncated' : 'activity.unfinished'),
+        label: t('activity.unfinished'),
         summary: [formatElapsed(section.durationMs), tools, failed].filter(Boolean).join(' · '),
       };
     if (section.durationMs >= 1000)
@@ -49,6 +49,7 @@
     sessionRunning = false,
     outputs = [],
     renderOutputs = null,
+    onCompact = null,
   } = $props();
 
   let containerEl = $state(null);
@@ -88,6 +89,7 @@
       {skipActivity}
       outputs={inActivity ? undefined : groups?.byEntry.get(entry.id)}
       {renderOutputs}
+      {onCompact}
     />
   {/if}
 {/snippet}

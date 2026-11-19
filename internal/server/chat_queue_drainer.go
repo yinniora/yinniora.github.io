@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"pi-web/internal/chat"
+	"pi-web/internal/chatqueue"
 	"pi-web/internal/sessions"
 	"pi-web/internal/workers"
 )
@@ -120,6 +121,15 @@ func (d *queueDrainer) drainSession(sessionID string) {
 	if d.server.chatQueue == nil || d.server.chatSender == nil {
 		return
 	}
+	if _, busy := d.server.queueDispatches.LoadOrStore(sessionID, struct{}{}); busy {
+		return
+	}
+	dispatched := false
+	defer func() {
+		if !dispatched {
+			d.server.queueDispatches.Delete(sessionID)
+		}
+	}()
 	paused, err := d.server.chatQueue.IsPaused(sessionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "queue drainer: IsPaused %s: %v\n", sessionID, err)
@@ -146,25 +156,42 @@ func (d *queueDrainer) drainSession(sessionID string) {
 		// from the UI.
 		return
 	}
-	item, ok, err := d.server.chatQueue.PopHead(sessionID)
+	item, ok, err := d.server.chatQueue.Find(sessionID, 0)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "queue drainer: PopHead %s: %v\n", sessionID, err)
+		fmt.Fprintf(os.Stderr, "queue drainer: find head %s: %v\n", sessionID, err)
 		return
 	}
 	if !ok {
 		return
 	}
-	req := chat.Request{Message: item.Message}
-	d.server.startTask(func(taskCtx context.Context) {
+	dispatched = d.server.startTask(func(taskCtx context.Context) {
+		defer d.server.queueDispatches.Delete(sessionID)
 		ctx, cancel := context.WithTimeout(taskCtx, d.dispatchTimeout)
 		defer cancel()
-		if err := d.server.chatSender.Send(ctx, sessionID, resolved.Path, req); err != nil && !errors.Is(err, context.Canceled) {
+		if err := d.server.sendQueued(ctx, resolved.Path, item, true); err != nil &&
+			!errors.Is(err, workers.ErrPiSessionBusy) && !errors.Is(taskCtx.Err(), context.Canceled) {
 			fmt.Fprintf(os.Stderr,
 				"queue drainer: Send %s position %d failed: %v\n",
 				sessionID, item.Position, err)
 		}
 	})
-	if msg, err := formatSSEJSONEvent("queue", map[string]any{"sessionId": sessionID}); err == nil {
-		d.server.broadcast(sessionID, msg)
+}
+
+func (s *Server) sendQueued(ctx context.Context, path string, item chatqueue.Item, onlyWhenIdle bool) error {
+	err := s.chatSender.Send(ctx, item.SessionID, path, chat.Request{
+		Message: item.Message, OnlyWhenIdle: onlyWhenIdle,
+	})
+	if err == nil {
+		err = s.chatQueue.Remove(item.SessionID, item.Position)
 	}
+	if errors.Is(err, workers.ErrPiSessionBusy) {
+		return err
+	}
+	if err != nil {
+		// A missing acknowledgement can mean the send was accepted. Require
+		// an explicit resume before another automatic attempt.
+		err = errors.Join(err, s.chatQueue.SetPaused(item.SessionID, true))
+	}
+	s.notifyQueueChanged(item.SessionID)
+	return err
 }

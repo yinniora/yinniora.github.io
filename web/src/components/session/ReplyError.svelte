@@ -13,15 +13,17 @@
     error = '',
     model = '',
     interrupted = false,
+    labelKey = '',
     onChooseModel = null,
     onRetry = null,
+    onCompact = null,
   } = $props();
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- Lucide icons -->
 {#snippet label()}
   {@html icon(interrupted ? Square : CircleAlert, { size: 14 })}
-  <span>{t(interrupted ? 'activity.interrupted' : 'activity.failed')}</span>
+  <span>{t(labelKey || (interrupted ? 'activity.interrupted' : 'activity.failed'))}</span>
   {#if model}<small>{model}</small>{/if}
 {/snippet}
 
@@ -40,8 +42,11 @@
     <div class="reply-error-label">{@render label()}</div>
   </div>
 {/if}
-{#if onChooseModel || onRetry}
+{#if onChooseModel || onRetry || onCompact}
   <div class="reply-error-actions">
+    {#if onCompact}<button class="compact-action" type="button" onclick={onCompact}
+        >{t('piSession.compact')}</button
+      >{/if}
     {#if onChooseModel}<button
         type="button"
         aria-label={t('models.title')}
@@ -90,6 +95,10 @@
   summary::-webkit-details-marker {
     display: none;
   }
+  :is(summary, .reply-error-label) > span:first-of-type {
+    flex: none;
+    overflow-wrap: anywhere;
+  }
   small {
     color: var(--text-soft);
     overflow-wrap: anywhere;
@@ -135,5 +144,10 @@
       width: 44px;
       min-height: 44px;
     }
+  }
+  .reply-error-actions .compact-action {
+    width: auto;
+    padding-inline: 8px;
+    font-size: 12px;
   }
 </style>

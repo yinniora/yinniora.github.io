@@ -196,6 +196,10 @@ func (w *piRPCWorker) Prompt(ctx context.Context, chat chat.Request) error {
 		return workers.ErrPiSessionBusy
 	}
 	streaming := w.status.State == workers.WorkerStateRunning
+	if streaming && chat.OnlyWhenIdle {
+		w.mu.Unlock()
+		return workers.ErrPiSessionBusy
+	}
 	revision := w.agentRevision
 	w.status.State = workers.WorkerStateRunning
 	w.status.Error = ""
@@ -205,8 +209,13 @@ func (w *piRPCWorker) Prompt(ctx context.Context, chat chat.Request) error {
 	if err != nil {
 		w.mu.Lock()
 		if w.agentRevision == revision && !streaming {
-			w.status.State = workers.WorkerStateError
-			w.status.Error = err.Error()
+			if strings.Contains(err.Error(), "Agent is already processing.") {
+				w.status.State = workers.WorkerStateIdle
+				err = workers.ErrPiSessionBusy
+			} else {
+				w.status.State = workers.WorkerStateError
+				w.status.Error = err.Error()
+			}
 		}
 		w.mu.Unlock()
 		return err
@@ -545,6 +554,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		Level      string          `json:"level"`
 		ToolCallID string          `json:"toolCallId"`
 		ToolName   string          `json:"toolName"`
+		WillRetry  *bool           `json:"willRetry"`
 		Message    json.RawMessage `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(line), &meta); err != nil {
@@ -600,6 +610,9 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		}
 	case "turn_end":
 		w.noteStreamActivity()
+	case "compaction_start", "compaction_end":
+		w.noteStreamActivity()
+		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
 	case "tool_execution_start", "tool_execution_end":
 		w.noteStreamActivity()
 		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type, ToolCallID: meta.ToolCallID, ToolName: meta.ToolName})
@@ -611,14 +624,17 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		w.status.Error = ""
 		w.mu.Unlock()
 		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
-	case "agent_end":
+	case "agent_end", "agent_settled":
+		if meta.Type == "agent_end" && meta.WillRetry != nil {
+			return
+		}
 		w.mu.Lock()
 		w.agentRevision++
 		w.status = workers.WorkerStatus{State: workers.WorkerStateIdle}
 		clear(w.computerRequests)
 		w.mu.Unlock()
 		w.lastStreamActivity.Store(0)
-		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
+		w.emitStreamPreview(assistantMessageEvent{Type: "agent_end"})
 	case "thinking_level_changed":
 		if meta.Level != "" {
 			w.mu.Lock()

@@ -45,8 +45,9 @@ describe('conversation activity duration', () => {
     expect(groups(turn, true)[0]).toMatchObject({ running: true });
     expect(groups(turn, true)[0].unfinished).toBeFalsy();
     expect(groups(turn, false)[0].unfinished).toBe(true);
-    const [truncated] = groups([...turn, cut, msg('u2', 20, { role: 'user', content: 'x' })]);
-    expect(truncated).toMatchObject({ unfinished: true, lastStop: 'length' });
+    const [, activity, truncated] = groupConversationActivity([...turn, cut], new Map());
+    expect(activity.toolCount).toBe(1);
+    expect(truncated.item).toMatchObject({ entry: cut.entry, skipActivity: true });
   });
 });
 

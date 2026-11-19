@@ -180,8 +180,9 @@ func (b *httpBridge) receive(data []byte) {
 }
 
 func (b *httpBridge) start(message packet) {
+	queuePatch := message.Method == http.MethodPatch && strings.SplitN(message.Path, "?", 2)[0] == "/api/chat/queue"
 	if !validRequestPath(message.Path) || message.Size < 0 || message.Size > maxRequestBody ||
-		(message.Method != "GET" && message.Method != "HEAD" && message.Method != "POST" && message.Method != "DELETE") {
+		(message.Method != "GET" && message.Method != "HEAD" && message.Method != "POST" && message.Method != "DELETE" && !queuePatch) {
 		_ = b.writer.send(packet{Type: "response", ID: message.ID, Status: 400})
 		_ = b.writer.send(packet{Type: "end", ID: message.ID})
 		return

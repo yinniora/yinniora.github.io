@@ -73,23 +73,23 @@ func TestPositionsAreNotReused(t *testing.T) {
 	}
 }
 
-func TestPopHead(t *testing.T) {
+func TestFindKeepsItemsUntilAcknowledged(t *testing.T) {
 	s := newTestStore(t)
-	if _, ok, _ := s.PopHead("sess-1"); ok {
-		t.Fatalf("expected empty pop")
+	if _, ok, _ := s.Find("sess-1", 0); ok {
+		t.Fatal("expected empty queue")
 	}
 	s.Add("sess-1", "one", "one")
 	s.Add("sess-1", "two", "two")
-	item, ok, err := s.PopHead("sess-1")
+	item, ok, err := s.Find("sess-1", 0)
 	if err != nil || !ok || item.Message != "one" {
-		t.Fatalf("PopHead 1: ok=%v err=%v item=%#v", ok, err, item)
+		t.Fatalf("find head: ok=%v err=%v item=%#v", ok, err, item)
 	}
-	item, ok, err = s.PopHead("sess-1")
-	if err != nil || !ok || item.Message != "two" {
-		t.Fatalf("PopHead 2: ok=%v err=%v item=%#v", ok, err, item)
+	second, ok, err := s.Find("sess-1", item.Position+1)
+	if err != nil || !ok || second.Message != "two" {
+		t.Fatalf("find position: ok=%v err=%v item=%#v", ok, err, second)
 	}
-	if _, ok, _ := s.PopHead("sess-1"); ok {
-		t.Fatalf("expected empty pop after drain")
+	if head, _, _ := s.Find("sess-1", 0); head.Position != item.Position {
+		t.Fatal("read changed the queue head")
 	}
 }
 

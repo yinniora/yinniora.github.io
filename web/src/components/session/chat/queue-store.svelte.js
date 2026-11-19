@@ -28,6 +28,7 @@ export class QueueStore {
   #api = null;
   #steerSeq = 0;
   #pendingRefresh = false;
+  #refreshAgain = false;
 
   /** @param {{ api?: { list, add, remove, setPaused }|null }} [opts] */
   constructor({ api = null } = {}) {
@@ -64,13 +65,21 @@ export class QueueStore {
    *  resolved state without firing duplicate GETs. */
   refresh = () => {
     if (!this.#api) return Promise.resolve();
-    if (this.#pendingRefresh) return this.#pendingRefresh;
+    if (this.#pendingRefresh) {
+      this.#refreshAgain = true;
+      return this.#pendingRefresh;
+    }
     this.#pendingRefresh = (async () => {
       try {
-        const snapshot = await this.#api.list();
-        this.#mergeServerSnapshot(snapshot);
-      } catch {
-        /* network errors are non-fatal — next refresh tries again. */
+        do {
+          this.#refreshAgain = false;
+          try {
+            const snapshot = await this.#api.list();
+            this.#mergeServerSnapshot(snapshot);
+          } catch {
+            /* The next notification can retry a missed snapshot. */
+          }
+        } while (this.#refreshAgain);
       } finally {
         this.#pendingRefresh = false;
       }
@@ -138,28 +147,21 @@ export class QueueStore {
 
   /** Remove an item by id. Queued items are also removed on the server. */
   removeById = async (id) => {
-    const idx = this.items.findIndex((item) => item.id === id);
-    if (idx < 0) return false;
-    const item = this.items[idx];
-    const next = this.items.slice();
-    next.splice(idx, 1);
-    this.items = next;
-    if (this.focusIndex >= this.items.length) this.focusIndex = this.items.length - 1;
-    else if (idx < this.focusIndex) this.focusIndex -= 1;
+    const item = this.items.find((item) => item.id === id);
+    if (!item) return false;
     if (item.kind === 'queued' && this.#api && Number.isInteger(item.position)) {
       try {
         await this.#api.remove(item.position);
       } catch {
-        /* Treat the server failure as best-effort: the SSE refresh will
-         * reconcile if the row actually still exists server-side. */
+        await this.refresh();
+        return false;
       }
     }
+    this.takeLocalById(id);
     return true;
   };
 
-  /** Remove and return an item by id without touching the server. The runtime
-   *  uses this when it has already removed the row server-side (e.g., sendNow
-   *  is implemented as "remove + send via /api/chat"). */
+  /** Remove a local copy after the server acknowledges a queue mutation. */
   takeLocalById = (id) => {
     const idx = this.items.findIndex((item) => item.id === id);
     if (idx < 0) return null;
@@ -180,7 +182,8 @@ export class QueueStore {
       try {
         await this.#api.setPaused(next);
       } catch {
-        /* network failure: SSE refresh will reconcile. */
+        this.paused = !next;
+        await this.refresh();
       }
     }
   };

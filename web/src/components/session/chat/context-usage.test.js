@@ -89,6 +89,23 @@ describe('context usage helpers', () => {
 
     expect(usage.contextTokens).toBe(5200);
   });
+
+  it('clears stale context usage after Pi compacts while retaining cumulative usage', () => {
+    renderDom();
+    const entries = [
+      { type: 'message', message: { role: 'assistant', usage: { input: 124000 } } },
+      { type: 'compaction' },
+    ];
+    const snapshot = updateContextUsage({
+      entries,
+      previous: { contextTokens: 124000, limit: 128000 },
+    });
+    expect(snapshot.contextTokens).toBeNull();
+    expect(document.querySelector('.pi-context-text').textContent).toBe('—');
+    expect(collectContextUsage(entries).inputTokens).toBe(124000);
+    entries.push({ type: 'message', message: { role: 'assistant', usage: { input: 24800 } } });
+    expect(collectContextUsage(entries).contextTokens).toBe(24800);
+  });
 });
 
 describe('updateContextUsage', () => {

@@ -264,6 +264,7 @@
               {outputs}
               {renderOutputs}
               {chatAvailable}
+              onCompact={() => openPiTools('session')}
               sessionRunning={runningSessionIds.has(sessionId)}
               live
             />
