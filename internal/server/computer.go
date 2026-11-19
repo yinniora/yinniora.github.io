@@ -60,14 +60,19 @@ func (s *Server) handleComputerUse(w http.ResponseWriter, r *http.Request) {
 				writeJSONError(w, 400, "invalid computer mode")
 				return
 			}
-			if _, err = s.db.ExecContext(r.Context(), `INSERT INTO session_computer_mode (session_id, mode) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET mode=excluded.mode`, id, req.Mode); err != nil {
+			s.computerPolicyMu.Lock()
+			_, err = s.db.ExecContext(r.Context(), `INSERT INTO session_computer_mode (session_id, mode) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET mode=excluded.mode`, id, req.Mode)
+			if err == nil {
+				manager.ApplyComputerPolicy(id)
+			}
+			s.computerPolicyMu.Unlock()
+			if err != nil {
 				writeJSONError(w, 500, "could not save computer mode")
 				return
 			}
-			manager.ApplyComputerPolicy(id)
 			mode = s.ComputerMode(id)
 		case "answer":
-			if req.RequestID == "" || manager.ReplyComputerRequest(id, req.RequestID, req.Allow && mode != "off") != nil {
+			if req.RequestID == "" || manager.ReplyComputerRequest(id, req.RequestID, req.Allow) != nil {
 				writeJSONError(w, 409, "approval expired")
 				return
 			}

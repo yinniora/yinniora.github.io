@@ -71,6 +71,7 @@ type Deps struct {
 // per session file. Construct via New; register HTTP routes via Register.
 type Server struct {
 	modelConfigMu         sync.Mutex
+	computerPolicyMu      sync.Mutex
 	pluginConfigMu        sync.Mutex
 	modelCatalogs         map[string]modelCatalog
 	modelBalances         modelBalanceCache

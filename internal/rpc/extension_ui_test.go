@@ -65,6 +65,13 @@ func TestComputerPolicyChangeResolvesPendingAndOverridesEarlierRejection(t *test
 	}
 	mode = "allow"
 	w.ApplyComputerPolicy()
+	mode = "ask"
+	request("declined-during-change")
+	mode = "allow"
+	if err := w.ReplyComputerRequest("declined-during-change", false); err != nil ||
+		!strings.Contains(sent.String(), `"confirmed":false,"id":"declined-during-change"`) {
+		t.Fatal("explicit decline was overridden by a concurrent policy update")
+	}
 	request("next")
 	w.handleRPCLine(`{"type":"extension_ui_request","id":"policy","method":"select","title":"YuGo Pi computer policy","options":["ask","allow","off"]}`)
 	if len(w.ExtensionUI().Dialogs) != 0 ||

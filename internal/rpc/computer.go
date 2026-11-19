@@ -91,7 +91,7 @@ func (w *piRPCWorker) ReplyComputerRequest(id string, allow bool) error {
 		return errors.New("approval expired")
 	}
 	mode := w.computerMode()
-	allow = mode == "allow" || (mode != "off" && allow)
+	allow = allow && mode != "off"
 	if err := w.writeComputerResponse(request.ID, allow); err != nil {
 		return err
 	}
