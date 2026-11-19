@@ -1,0 +1,49 @@
+plugins {
+    id "com.android.application"
+}
+
+// Release builds are signed with the keystore supplied by CI secrets
+// (ANDROID_KEYSTORE_FILE etc.). Without them the APK uses the debug key so
+// local builds still work; such APKs cannot upgrade a release install.
+def releaseKeystore = System.getenv("ANDROID_KEYSTORE_FILE")
+def appVersionName = System.getenv("YUGO_VERSION") ?: "0.1.0-dev"
+def appVersionCode = (System.getenv("YUGO_VERSION_CODE") ?: "1") as Integer
+
+android {
+    namespace "io.github.yinniora.yugopi"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "io.github.yinniora.yugopi"
+        minSdk 26
+        // 34 keeps the classic (non edge-to-edge) window so the web client's
+        // layout is never drawn under the system bars.
+        targetSdk 34
+        versionCode appVersionCode
+        versionName appVersionName
+    }
+
+    signingConfigs {
+        release {
+            if (releaseKeystore) {
+                storeFile file(releaseKeystore)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+                storeType "pkcs12"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig releaseKeystore ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

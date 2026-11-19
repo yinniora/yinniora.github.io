@@ -1,0 +1,121 @@
+name: YuGo Apps
+
+# Platform apps for the YuGo Pi client. Nothing here needs a paid signing
+# identity: macOS builds are ad-hoc signed, Windows builds are unsigned and the
+# Android APK is signed with the project's own keystore (repository secrets).
+# iOS is omitted because sideloading requires a paid Apple Developer account;
+# iPhone users add the web client to the Home Screen instead.
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Desktop client (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            args: --mac
+          - name: Windows
+            os: windows-latest
+            args: --win
+          - name: Linux
+            os: ubuntu-latest
+            args: --linux
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Use the release version
+        shell: bash
+        run: npm pkg set version="$(node -p 'require("../../package.json").version')"
+      - run: npm ci --no-audit --no-fund
+      - name: Build
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder ${{ matrix.args }} --publish never
+      - uses: actions/upload-artifact@v7
+        with:
+          name: yugo-app-desktop-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.AppImage
+            apps/desktop/dist/*.deb
+
+  android:
+    name: Android client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: '8.11.1'
+      - name: Build APK
+        working-directory: apps/android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          version="$(node -p 'require("../../package.json").version')"
+          export YUGO_VERSION="$version"
+          # 0.1.0-yugo.38 -> 38; monotonically increasing across releases.
+          export YUGO_VERSION_CODE="$(echo "$version" | sed -E 's/.*yugo\.([0-9]+)$/\1/')"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.p12"
+            export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/release.p12"
+          else
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set; signing with a throwaway debug key."
+          fi
+          gradle --no-daemon assembleRelease
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/yugo-pi-client-$version-android.apk"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: yugo-app-android
+          if-no-files-found: error
+          path: apps/android/dist/*.apk
+
+  macos-host:
+    name: macOS host apps
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build native bundles
+        run: python3 scripts/build_macos.py
+      - name: Archive
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          mkdir -p dist
+          cd build/macos.noindex
+          ditto -c -k --sequesterRsrc --keepParent "YuGo Pi.app" "../../dist/yugo-pi-host-app-$version-macos-arm64.zip"
+          ditto -c -k --sequesterRsrc --keepParent "YuGo Pi Approval.app" "../../dist/yugo-pi-approval-app-$version-macos-arm64.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: yugo-app-macos-host
+          if-no-files-found: error
+          path: dist/*.zip

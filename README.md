@@ -27,6 +27,13 @@ Bug reports and contributions for this variant belong in this repository.
 
 - Settings → Models: labeled API keys, per-key model refresh, multi-select application, applied-model removal and shared Mac/mobile conversation pickers.
 
+## Apps
+
+Each [release](https://github.com/yinniora/yugo-pi/releases) includes client apps
+for Android (APK), Windows, macOS and Linux, plus the native macOS host windows.
+None of these needs a paid signing identity. iOS is not packaged; use Safari ›
+Add to Home Screen instead. For install notes, see [apps/README.md](apps/README.md).
+
 ## Build and install
 
 Prerequisites: Go from `go.mod`, Node/npm, a configured Pi coding agent, and

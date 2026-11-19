@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">YuGo Pi</string>
+    <string name="offline">无法连接 YuGo Pi，请检查网络。</string>
+    <string name="retry">重试</string>
+    <string name="camera_denied">未授予相机权限，可以改为粘贴配对链接。</string>
+</resources>

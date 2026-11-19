@@ -1,0 +1,69 @@
+{
+  "name": "yugo-pi-desktop",
+  "productName": "YuGo Pi Client",
+  "version": "0.1.0-yugo.38",
+  "description": "Desktop shell for the YuGo Pi encrypted remote client",
+  "homepage": "https://github.com/yinniora/yugo-pi",
+  "author": "yunior <48818458+yinniora@users.noreply.github.com>",
+  "license": "MIT",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "io.github.yinniora.yugopi.client",
+    "productName": "YuGo Pi Client",
+    "artifactName": "yugo-pi-client-${version}-${os}-${arch}.${ext}",
+    "copyright": "MIT License",
+    "files": ["main.js", "offline.html", "package.json"],
+    "extraResources": [
+      { "from": "../../LICENSE", "to": "LICENSE" },
+      { "from": "../../NOTICE", "to": "NOTICE" }
+    ],
+    "directories": { "output": "dist", "buildResources": "build" },
+    "afterPack": "./after-pack.js",
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSCameraUsageDescription": "Scan the pairing QR code shown on your Mac."
+      }
+    },
+    "dmg": { "sign": false },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64", "arm64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "signAndEditExecutable": true
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "yugo-pi-client-${version}-windows-${arch}-setup.${ext}"
+    },
+    "portable": { "artifactName": "yugo-pi-client-${version}-windows-${arch}-portable.${ext}" },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64", "arm64"] },
+        { "target": "deb", "arch": ["x64", "arm64"] }
+      ],
+      "category": "Development",
+      "maintainer": "yunior <48818458+yinniora@users.noreply.github.com>",
+      "synopsis": "YuGo Pi encrypted remote client"
+    }
+  }
+}

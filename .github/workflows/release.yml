@@ -58,9 +58,15 @@ jobs:
           name: yugo-pi-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/yugo-pi-*
 
+  apps:
+    name: Build platform apps
+    needs: test
+    uses: ./.github/workflows/apps.yml
+    secrets: inherit
+
   release:
     name: Publish YuGo archives
-    needs: build
+    needs: [build, apps]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -68,8 +74,10 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
-          pattern: yugo-pi-*
+          pattern: yugo-*
           merge-multiple: true
+      - name: Drop updater metadata
+        run: rm -f artifacts/*.blockmap artifacts/latest*.yml
       - uses: softprops/action-gh-release@v2
         with:
           name: YuGo Pi ${{ github.ref_name }}
