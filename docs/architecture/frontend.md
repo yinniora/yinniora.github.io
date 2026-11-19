@@ -16,6 +16,14 @@ popover and a mobile bottom sheet. Both direct and Trash permanent deletion
 require an explicit second action in the UI. The client never reads the access
 token: changing origins uses an authenticated API and a single-use pairing URL.
 
+The home menu links to Settings › Models; connection switching lives in
+Settings › Connections (`ConnectionSettings.svelte`). `navigate()` wraps route
+changes in `withPageTransition()`, which uses `document.startViewTransition`
+with `html[data-nav-motion=forward|back]` for push/pop page motion. It falls
+back to an instant swap without View Transitions, with reduced motion, or while
+the keyboard is open; the per-pane `data-route-motion` animation is skipped
+while a view transition runs.
+
 Built with **Vite + Svelte + JavaScript modules**, embedded into the Go binary.
 
 ### Build Pipeline

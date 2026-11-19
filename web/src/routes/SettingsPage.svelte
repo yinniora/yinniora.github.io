@@ -1,5 +1,6 @@
 <script>
   import RemoteSettings from '../components/settings/RemoteSettings.svelte';
+  import ConnectionSettings from '../components/settings/ConnectionSettings.svelte';
   import ModelSettings from '../components/settings/ModelSettings.svelte';
   import PluginSettings from '../components/settings/PluginSettings.svelte';
   import ConnectionStatus from '../components/shared/ConnectionStatus.svelte';
@@ -14,7 +15,7 @@
   import SessionsListSettings from '../components/settings/SessionsListSettings.svelte';
   import SessionTitleSettings from '../components/settings/SessionTitleSettings.svelte';
   import { t } from '../shared/i18n.js';
-  import { navigate, replaceLocation } from '../shared/navigation.js';
+  import { navigate, replaceLocation, withPageTransition } from '../shared/navigation.js';
   import { setupSwipeBack } from '../shared/swipe-back.js';
   import { loadSettings, persistSetting } from '../settings/settings-support.js';
   import { createAppEvents } from '../shared/app-events.js';
@@ -35,6 +36,7 @@
     { id: 'artifacts', labelKey: 'settings.artifacts' },
     { id: 'notifications', labelKey: 'settings.notifications' },
     { id: 'catGatekeeper', labelKey: 'settings.catGatekeeper' },
+    { id: 'connections', labelKey: 'hub.connections' },
     { id: 'remote', labelKey: 'remoteSettings.title' },
     { id: 'about', labelKey: 'settings.about' },
   ];
@@ -69,18 +71,25 @@
   }
 
   function selectSection(id) {
-    activeSection = id;
-    if (isMobile) mobileShowingPane = true;
-    syncSectionUrl(window, id);
-    if (isMobile && settingsPage) settingsPage.scrollTop = 0;
+    const show = () => {
+      activeSection = id;
+      if (isMobile) mobileShowingPane = true;
+      syncSectionUrl(window, id);
+      if (isMobile && settingsPage) settingsPage.scrollTop = 0;
+    };
+    // On phones the section list pushes to its pane like a page.
+    if (isMobile && !mobileShowingPane) withPageTransition('forward', show);
+    else show();
   }
 
   function backToList() {
     const focused = document.activeElement;
     if (settingsPage?.contains(focused)) focused.blur();
-    mobileShowingPane = false;
-    syncSectionUrl(window, '');
-    if (settingsPage) settingsPage.scrollTop = 0;
+    withPageTransition('back', () => {
+      mobileShowingPane = false;
+      syncSectionUrl(window, '');
+      if (settingsPage) settingsPage.scrollTop = 0;
+    });
   }
 
   function leaveSettings() {
@@ -228,6 +237,8 @@
       <NotificationSettings {settings} onSave={saveSetting} onSaved={flashSaved} />
     {:else if activeSection === 'catGatekeeper'}
       <CatGatekeeperSettings {settings} onSave={saveSetting} />
+    {:else if activeSection === 'connections'}
+      <ConnectionSettings />
     {:else if activeSection === 'remote'}
       <RemoteSettings />
     {:else if activeSection === 'about'}

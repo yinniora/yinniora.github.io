@@ -1,3 +1,5 @@
+import { tick } from 'svelte';
+
 function resolveWindow(windowImpl) {
   return windowImpl ?? (typeof window !== 'undefined' ? window : undefined);
 }
@@ -9,6 +11,52 @@ function notify(win, direction) {
       ? new win.CustomEvent('pi:locationchange', { detail: { direction } })
       : new win.Event('pi:locationchange');
   win.dispatchEvent(event);
+}
+
+let activeTransition = null;
+
+function motionAllowed(win, direction) {
+  const doc = win?.document;
+  return (
+    (direction === 'forward' || direction === 'back') &&
+    typeof doc?.startViewTransition === 'function' &&
+    !doc.hidden &&
+    !doc.documentElement.classList.contains('pi-keyboard-open') &&
+    !win.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+// Animate a route change: the old page slides away while the new one slides
+// in (push for "forward", pop for "back"). `update` must change the DOM state;
+// Svelte flushes it before the new snapshot is taken.
+export function withPageTransition(direction, update, { windowImpl } = {}) {
+  const win = resolveWindow(windowImpl);
+  if (!motionAllowed(win, direction)) {
+    update();
+    return;
+  }
+  const root = win.document.documentElement;
+  activeTransition?.skipTransition?.();
+  root.dataset.navMotion = direction;
+  let transition;
+  try {
+    transition = win.document.startViewTransition(async () => {
+      root.dataset.navMotion = direction;
+      update();
+      await tick();
+    });
+  } catch {
+    delete root.dataset.navMotion;
+    update();
+    return;
+  }
+  activeTransition = transition;
+  transition.ready?.catch?.(() => {});
+  transition.finished?.finally?.(() => {
+    if (activeTransition !== transition) return;
+    activeTransition = null;
+    delete root.dataset.navMotion;
+  });
 }
 
 export function navigate(
@@ -24,7 +72,8 @@ export function navigate(
   } else {
     win.history.pushState(state || {}, '', url);
   }
-  notify(win, direction);
+  // The URL updates at once; the page swap is animated when supported.
+  withPageTransition(direction, () => notify(win, direction), { windowImpl: win });
 }
 
 export function replaceLocation(url, { windowImpl, direction } = {}) {

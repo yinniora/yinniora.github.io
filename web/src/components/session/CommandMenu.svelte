@@ -166,7 +166,7 @@
           break;
         case 'connections':
           closeMenu();
-          openHub('connections');
+          navigate('/settings?section=connections', { state: backState() });
           break;
         case 'trash':
           closeMenu();

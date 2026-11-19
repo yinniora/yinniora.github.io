@@ -7,7 +7,7 @@
     FolderGit2,
     BookOpen,
     Settings,
-    Link2,
+    Cpu,
     Trash2,
     ChevronRight,
     X,
@@ -15,7 +15,7 @@
   } from '../../shared/icons.js';
   import { openVersionModal } from '../../shared/version.js';
   import { USER_DOCS_URL } from '../../shared/links.js';
-  import { handleNavClick } from '../../shared/navigation.js';
+  import { backState, handleNavClick } from '../../shared/navigation.js';
   let {
     open = false,
     onClose = () => {},
@@ -96,16 +96,18 @@
     >
   </div>
   <div class="home-menu-group">
-    <button
+    <a
       class="home-menu-row"
       role="menuitem"
-      onclick={() => {
+      href="/settings?section=models"
+      data-models-menu
+      onclick={(event) => {
         onClose();
-        openHub('connections');
+        handleNavClick(event, '/settings?section=models', { state: backState() });
       }}
-      ><span class="home-menu-icon">{@html icon(Link2, { size: 18 })}</span><span
-        >{t('hub.connections')}</span
-      ><span class="home-menu-chevron">{@html icon(ChevronRight, { size: 14 })}</span></button
+      ><span class="home-menu-icon">{@html icon(Cpu, { size: 18 })}</span><span
+        >{t('models.title')}</span
+      ><span class="home-menu-chevron">{@html icon(ChevronRight, { size: 14 })}</span></a
     >
     <button
       class="home-menu-row"
@@ -124,7 +126,7 @@
       href="/settings"
       onclick={(event) => {
         onClose();
-        handleNavClick(event, '/settings');
+        handleNavClick(event, '/settings', { state: backState() });
       }}
       ><span class="home-menu-icon">{@html icon(Settings, { size: 18 })}</span><span
         >{t('common.settings')}</span

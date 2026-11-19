@@ -543,3 +543,20 @@ test.describe("settings page", () => {
     await expect(page.locator(".session-header-title")).toHaveText("Settings");
   });
 });
+
+test.describe("home menu models entry", () => {
+  test("opens Models from the home menu and lists connections in Settings", async ({ page }) => {
+    await page.goto("/");
+    const trigger = page.locator("#web-menu-btn");
+    test.skip(!(await trigger.isVisible()), "home menu is mobile-only");
+    await trigger.click();
+    const models = page.locator("[data-models-menu]");
+    await expect(models).toBeVisible();
+    await models.click();
+    await expect(page).toHaveURL(/\/settings\?section=models/);
+    await expect(page.locator('[data-settings-nav="models"]')).toHaveAttribute("aria-current", "page");
+
+    await page.goto("/settings?section=connections");
+    await expect(page.locator("[data-connection-settings]")).toBeVisible();
+  });
+});

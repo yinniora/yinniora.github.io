@@ -2485,3 +2485,97 @@ body .pi-btw-input {
     height: 32px;
   }
 }
+
+/* Page transitions (home ⇄ session, home ⇄ settings, settings list ⇄ section).
+   navigation.js sets data-nav-motion on <html> for the view transition. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-nav-motion]::view-transition-old(root),
+  :root[data-nav-motion]::view-transition-new(root) {
+    mix-blend-mode: normal;
+    animation-duration: 260ms;
+    animation-timing-function: cubic-bezier(0.2, 0.75, 0.22, 1);
+    animation-fill-mode: both;
+  }
+  :root[data-nav-motion='forward']::view-transition-old(root) {
+    animation-name: pi-nav-fade-left;
+  }
+  :root[data-nav-motion='forward']::view-transition-new(root) {
+    animation-name: pi-nav-in-from-right;
+  }
+  :root[data-nav-motion='back']::view-transition-old(root) {
+    z-index: 1;
+    animation-name: pi-nav-out-to-right;
+  }
+  :root[data-nav-motion='back']::view-transition-new(root) {
+    animation-name: pi-nav-in-from-left;
+  }
+
+  /* Phones: a native-style push/pop where the top page covers the whole width. */
+  @media (max-width: 900px) {
+    :root[data-nav-motion]::view-transition-old(root),
+    :root[data-nav-motion]::view-transition-new(root) {
+      animation-duration: 340ms;
+      animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    :root[data-nav-motion='forward']::view-transition-old(root) {
+      animation-name: pi-nav-under-left;
+    }
+    :root[data-nav-motion='forward']::view-transition-new(root) {
+      animation-name: pi-nav-push-in;
+      box-shadow: -10px 0 28px rgb(0 0 0 / 18%);
+    }
+    :root[data-nav-motion='back']::view-transition-old(root) {
+      animation-name: pi-nav-pop-out;
+      box-shadow: -10px 0 28px rgb(0 0 0 / 18%);
+    }
+    :root[data-nav-motion='back']::view-transition-new(root) {
+      animation-name: pi-nav-under-return;
+    }
+  }
+}
+@keyframes pi-nav-fade-left {
+  to {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+@keyframes pi-nav-in-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+}
+@keyframes pi-nav-out-to-right {
+  to {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+}
+@keyframes pi-nav-in-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+@keyframes pi-nav-push-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes pi-nav-under-left {
+  to {
+    transform: translateX(-28%);
+    filter: brightness(0.82);
+  }
+}
+@keyframes pi-nav-pop-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes pi-nav-under-return {
+  from {
+    transform: translateX(-28%);
+    filter: brightness(0.82);
+  }
+}

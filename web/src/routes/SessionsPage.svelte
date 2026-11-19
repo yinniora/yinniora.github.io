@@ -29,6 +29,7 @@
     Search,
     FolderGit2,
     Link2,
+    Cpu,
     Trash2,
     Settings,
     Send,
@@ -436,8 +437,8 @@
     <button onclick={() => window.dispatchEvent(new CustomEvent('pi:devices'))}
       >{@html icon(Link2, { size: 17 })}{t('devices.title')}</button
     >
-    <button onclick={() => openHub('connections')}
-      >{@html icon(Link2, { size: 17 })}{t('hub.connections')}</button
+    <button onclick={() => navigate('/settings?section=models', { state: backState() })}
+      >{@html icon(Cpu, { size: 17 })}{t('models.title')}</button
     >
     <button onclick={() => openHub('trash')}
       >{@html icon(Trash2, { size: 17 })}{t('hub.trash')}</button

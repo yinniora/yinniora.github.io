@@ -50,7 +50,9 @@
       const direction =
         event?.detail?.direction ||
         (event?.type === 'popstate' && routeChanged ? (nextPath === '/' ? 'back' : 'forward') : '');
-      if (root && (direction === 'back' || direction === 'forward')) {
+      // A view transition already animates the whole page swap.
+      const viewTransition = !!document.documentElement.dataset.navMotion;
+      if (root && !viewTransition && (direction === 'back' || direction === 'forward')) {
         clearTimeout(motionTimer);
         root.dataset.routeMotion = direction;
         motionTimer = setTimeout(() => delete root.dataset.routeMotion, 420);
