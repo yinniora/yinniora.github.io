@@ -106,6 +106,8 @@
   {/key}
 {:else if path === '/settings'}
   <SettingsPage />
+{:else if path === '/models'}
+  <SettingsPage standaloneModels />
 {:else if path === '/schedules'}
   <SchedulesPage />
 {:else}

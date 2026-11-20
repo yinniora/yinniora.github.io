@@ -18,6 +18,7 @@ test("edits a saved key and shows the detected API without returning the credent
       if (init?.method === "POST") {
         const saved = JSON.parse(String(init.body));
         document.documentElement.dataset.updated = String(saved.action === "edit" && saved.id === profile.id && saved.key === "fixture-replacement");
+        document.documentElement.dataset.kept = String(saved.action === "edit" && saved.label === "Relabeled" && !Object.hasOwn(saved, "key"));
         document.documentElement.dataset.checked = String(saved.checkApi === true && !saved.key);
         profile.label = saved.label;
         profile.baseUrl = saved.baseUrl;
@@ -30,11 +31,21 @@ test("edits a saved key and shows the detected API without returning the credent
   await page.goto("/settings?section=models");
   await page.getByRole("button", { name: "Edit key", exact: true }).click();
   const key = page.getByLabel("API key", { exact: true });
-  await expect(key).toHaveValue("");
+  await expect(key).toHaveCount(0);
+  await expect(page.locator(".model-saved-key")).toContainText("Key configured");
   await expect(page.getByLabel("Key label")).toHaveValue("Relay key");
+  await page.getByLabel("Key label").fill("Relabeled");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-kept", "true");
+  await page.getByRole("button", { name: "Edit key", exact: true }).click();
   await page.getByLabel("Key label").fill("Updated relay");
   await page.getByLabel("API base URL").fill("https://other.invalid/v1");
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await expect(key).toHaveAttribute("autocomplete", "off");
+  if (await page.evaluate(() => CSS.supports("-webkit-text-security", "disc"))) {
+    await expect(key).toHaveAttribute("type", "text");
+    await expect(key).toHaveCSS("-webkit-text-security", "disc");
+  }
   await key.fill("fixture-replacement");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-updated", "true");
@@ -46,5 +57,6 @@ test("edits a saved key and shows the detected API without returning the credent
   await expect(page.locator("html")).toHaveAttribute("data-checked", "true");
   await expect(page.getByText("API connection checked.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit key", exact: true }).click();
+  await page.locator(".model-saved-key").getByRole("button", { name: "Edit key" }).click();
   await expect(key).toHaveValue("");
 });

@@ -437,7 +437,7 @@
     <button onclick={() => window.dispatchEvent(new CustomEvent('pi:devices'))}
       >{@html icon(Link2, { size: 17 })}{t('devices.title')}</button
     >
-    <button onclick={() => navigate('/settings?section=models', { state: backState() })}
+    <button onclick={() => navigate('/models', { state: backState() })}
       >{@html icon(Cpu, { size: 17 })}{t('models.title')}</button
     >
     <button onclick={() => openHub('trash')}

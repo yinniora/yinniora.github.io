@@ -157,6 +157,13 @@ func publicModel(m map[string]any, provider, label string) map[string]any {
 	if id, ok := m["id"].(string); ok && fixedThinkingAlias.MatchString(id) {
 		result["reasoning"] = false
 	}
+	if id, ok := m["id"].(string); ok {
+		for i, name := range []string{"defaultContextWindow", "defaultMaxTokens"} {
+			if limit := bundledModelLimits[id][i]; limit > 0 {
+				result[name] = limit
+			}
+		}
+	}
 	return result
 }
 
@@ -205,14 +212,21 @@ func (s *Server) modelProfiles(providers map[string]any) []modelProfile {
 		if catalog, ok := s.modelCatalogs[id]; ok && catalog.Signature == profileSignature(p, key) {
 			row.CatalogVerified = true
 			row.Available = []map[string]any{}
-			toolsByID := map[string]bool{}
+			metadataByID := map[string]map[string]any{}
 			for _, m := range catalog.Models {
 				row.Available = append(row.Available, publicModel(m, id, label))
-				toolsByID[m["id"].(string)] = m["supportsTools"] == true
+				metadataByID[m["id"].(string)] = m
 			}
 			for _, m := range row.Applied {
-				if modelID, ok := m["id"].(string); ok && toolsByID[modelID] {
+				modelID, _ := m["id"].(string)
+				metadata := metadataByID[modelID]
+				if metadata["supportsTools"] == true {
 					m["supportsTools"] = true
+				}
+				for i, name := range []string{"defaultContextWindow", "defaultMaxTokens"} {
+					if limit := metadata[modelLimitFields[i]]; limit != nil {
+						m[name] = limit
+					}
 				}
 			}
 		}

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, render, fireEvent, waitFor } from '@testing-library/svelte';
+import { cleanup, render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import ModelSettings from './ModelSettings.svelte';
 
 afterEach(() => {
@@ -17,6 +17,8 @@ it('shows the native effort protocol and saves only an available per-model defau
     adaptiveThinking: true,
     contextWindow: 128000,
     maxTokens: 32000,
+    defaultContextWindow: 1000000,
+    defaultMaxTokens: 128000,
     thinkingLevelMap: { off: null, minimal: null, xhigh: 'xhigh', max: 'max' },
   };
   const profile = { id: 'fixture', label: 'Native', applied: [model], available: [model] };
@@ -33,6 +35,13 @@ it('shows the native effort protocol and saves only an available per-model defau
   const view = render(ModelSettings);
   await view.findByText(/· effort$/);
   await fireEvent.click(view.getByRole('button', { name: /Context limit.*Claude Opus/ }));
+  const contextField = within(view.container.querySelector('.model-limit-form')).getByLabelText(
+    'Context limit',
+    { exact: true },
+  );
+  expect(contextField).toHaveValue('128K');
+  await fireEvent.click(view.getByRole('button', { name: 'Default · 1M' }));
+  expect(contextField).toHaveValue('1M');
   const select = view.getByRole('combobox', { name: /Adjustable reasoning effort.*Default/ });
   expect(Array.from(select.options, (option) => option.value)).toEqual([
     '',

@@ -372,6 +372,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/", s.auth.Wrap(s.visibleSession(s.handleIndex)))
 	mux.HandleFunc("/session", s.auth.Wrap(s.visibleSession(s.handleSession)))
 	mux.HandleFunc("/settings", s.auth.Wrap(s.visibleSession(s.handleSettingsPage)))
+	mux.HandleFunc("/models", s.auth.Wrap(s.visibleSession(s.handleSettingsPage)))
 	mux.HandleFunc("/api/session", s.auth.Wrap(s.visibleSession(s.handleApiSession)))
 	mux.HandleFunc("/api/sessions", s.auth.Wrap(s.visibleSession(s.handleApiSessions)))
 	mux.HandleFunc("/api/chat", s.auth.Wrap(s.visibleSession(s.handleChat)))

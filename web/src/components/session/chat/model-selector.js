@@ -102,7 +102,7 @@ export function setupModelSelector({
     if (!popupList) return;
     popupList.innerHTML = allModels.length
       ? renderModelList(allModels, { filter, selectedModel, balances, escapeHtml })
-      : `<div class="model-empty"><a href="/settings?section=models">${escapeHtml(t('models.noneInPicker'))}</a></div>`;
+      : `<div class="model-empty"><a href="/models">${escapeHtml(t('models.noneInPicker'))}</a></div>`;
     popupList.dataset.activeIndex = '-1';
   }
 
@@ -198,7 +198,7 @@ export function setupModelSelector({
   });
 
   popupList?.addEventListener('click', async (e) => {
-    const settings = e.target.closest('a[href="/settings?section=models"]');
+    const settings = e.target.closest('a[href="/models"]');
     if (settings) {
       const windowImpl = documentImpl.defaultView;
       handleNavClick(e, settings.getAttribute('href'), {

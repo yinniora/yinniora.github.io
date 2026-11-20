@@ -50,11 +50,13 @@ Google Gemini formats, with bounded same-endpoint pagination, timeouts and
 response sizes. HTTPS is required except on loopback; redirects never receive
 keys. Error responses do not include upstream response bodies. Refresh is a
 read-only model listing, not an inference request, and does not apply models.
-Advertised context and output limits are adopted on apply unless the user enters
-an explicit override. Missing limits use local defaults of 128K context and 8,192
-output tokens for newly added models. Gateway aliases can have different limits
-from upstream models. Editing an applied model updates its Pi definition and
-refreshes idle workers on their next use.
+Advertised context and output limits take precedence, followed by the model's
+exact ID in the bundled Pi catalog. Unrecognized IDs with missing metadata use
+conservative local limits of 128K context and 32K output. The editor accepts K
+and M units and can restore known model limits. Editing updates the Pi model
+and refreshes idle workers on their next use. Update the bundled limits after a
+Pi upgrade by running `node scripts/update_model_limits.mjs <models.generated.js>`
+and saving the result to `internal/server/model_limits.json`.
 
 `/api/model-balances` reads New API token quota and OpenRouter key limits using
 the corresponding saved credentials on the Mac. Only the balance state and

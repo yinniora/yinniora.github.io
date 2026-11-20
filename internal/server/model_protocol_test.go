@@ -82,6 +82,30 @@ func TestClaudeEffortDependsOnExactModelAndProtocol(t *testing.T) {
 	}
 }
 
+func TestBundledModelLimitsFillGapsInCatalog(t *testing.T) {
+	model := map[string]any{"id": "claude-opus-5-5"}
+	describeCatalogModel(model, nil, "claude-opus-5-5", apiAnthropic, "https://example.invalid")
+	if model["contextWindow"] != 1000000 || model["maxTokens"] != 128000 {
+		t.Fatalf("unexpected Opus 5.5 limits: %+v", model)
+	}
+	model["contextWindow"] = 200000
+	public := publicModel(model, "provider", "label")
+	if public["contextWindow"] != 200000 || public["defaultContextWindow"] != 1000000 ||
+		public["defaultMaxTokens"] != 128000 {
+		t.Fatalf("model defaults must remain available after editing: %+v", public)
+	}
+	alias := map[string]any{}
+	describeCatalogModel(alias, nil, "claude-opus-5-5-thinking-max", apiAnthropic, "https://example.invalid")
+	if alias["contextWindow"] != nil || alias["maxTokens"] != nil {
+		t.Fatalf("inferred unannounced alias limits: %+v", alias)
+	}
+	limited := map[string]any{}
+	describeCatalogModel(limited, map[string]any{"max_tokens": float64(64000)}, "claude-opus-5-5", apiAnthropic, "https://example.invalid")
+	if limited["contextWindow"] != 1000000 || limited["maxTokens"] != float64(64000) {
+		t.Fatalf("ignored an advertised limit: %+v", limited)
+	}
+}
+
 func TestEffortFromNativeGeminiAndAdvertisedResponseLevels(t *testing.T) {
 	gemini := map[string]any{}
 	describeCatalogModel(gemini, map[string]any{"thinking": true}, "gemini-3-pro-preview", apiGemini, "https://example.invalid/v1beta")

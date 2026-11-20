@@ -21,6 +21,7 @@
   import { createAppEvents } from '../shared/app-events.js';
   import { applyRemoteSettings } from '../shared/settings-live.js';
 
+  let { standaloneModels = false } = $props();
   let settings = $state({});
   let savedVisible = $state(false);
   let savedTimer = null;
@@ -122,9 +123,10 @@
 
   onMount(() => {
     const previousTitle = document.title;
-    document.title = `${t('settings.title')} — ${t('app.name')}`;
+    document.title = `${t(standaloneModels ? 'models.title' : 'settings.title')} — ${t('app.name')}`;
 
-    cameFromApp = typeof window.history.state?.back === 'string';
+    const back = window.history.state?.back;
+    cameFromApp = typeof back === 'string' && (!standaloneModels || back !== '/');
 
     const mq = window.matchMedia?.('(max-width: 760px)');
     const updateMobile = () => {
@@ -138,6 +140,13 @@
       startOnControl: '[data-settings-nav]',
       onBack: () => (mobileShowingPane ? backToList() : leaveSettings()),
     });
+    if (standaloneModels) {
+      return () => {
+        document.title = previousTitle;
+        mq?.removeEventListener('change', updateMobile);
+        stopSwipe();
+      };
+    }
 
     const initialSection = sectionFromUrl(window);
     if (initialSection) {
@@ -189,7 +198,11 @@
     {/if}
   </div>
   <span class="session-header-title">
-    {isMobile && mobileShowingPane ? activeLabel : t('settings.title')}
+    {standaloneModels
+      ? t('models.title')
+      : isMobile && mobileShowingPane
+        ? activeLabel
+        : t('settings.title')}
   </span>
   <div class="session-header-right"><ConnectionStatus /></div>
 </div>
@@ -197,27 +210,32 @@
 <div
   class="settings-page"
   bind:this={settingsPage}
-  class:settings-page-mobile-list={isMobile && !mobileShowingPane}
-  class:settings-page-mobile-pane={isMobile && mobileShowingPane}
+  class:settings-page-standalone={standaloneModels}
+  class:settings-page-mobile-list={isMobile && !mobileShowingPane && !standaloneModels}
+  class:settings-page-mobile-pane={isMobile && (mobileShowingPane || standaloneModels)}
 >
-  <nav class="settings-sidebar" aria-label={t('settings.title')}>
-    {#each sections as section (section.id)}
-      <button
-        type="button"
-        class="settings-sidebar-item"
-        class:active={activeSection === section.id}
-        data-settings-nav={section.id}
-        aria-current={activeSection === section.id ? 'page' : undefined}
-        onclick={() => selectSection(section.id)}
-      >
-        <span>{t(section.labelKey)}</span>
-        <span class="settings-sidebar-chev" aria-hidden="true">›</span>
-      </button>
-    {/each}
-  </nav>
+  {#if !standaloneModels}
+    <nav class="settings-sidebar" aria-label={t('settings.title')}>
+      {#each sections as section (section.id)}
+        <button
+          type="button"
+          class="settings-sidebar-item"
+          class:active={activeSection === section.id}
+          data-settings-nav={section.id}
+          aria-current={activeSection === section.id ? 'page' : undefined}
+          onclick={() => selectSection(section.id)}
+        >
+          <span>{t(section.labelKey)}</span>
+          <span class="settings-sidebar-chev" aria-hidden="true">›</span>
+        </button>
+      {/each}
+    </nav>
+  {/if}
 
   <div class="settings-pane">
-    {#if activeSection === 'appearance'}
+    {#if standaloneModels}
+      <ModelSettings standalone />
+    {:else if activeSection === 'appearance'}
       <AppearanceSettings {settings} onSave={saveSetting} onSaved={flashSaved} />
     {:else if activeSection === 'language'}
       <LanguageSettings {settings} onSave={saveSetting} />

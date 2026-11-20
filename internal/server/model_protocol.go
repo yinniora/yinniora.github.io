@@ -185,6 +185,11 @@ func describeCatalogModel(model, raw map[string]any, id, api, base string) {
 			break
 		}
 	}
+	for i, field := range modelLimitFields {
+		if limit := bundledModelLimits[id][i]; model[field] == nil && limit > 0 {
+			model[field] = limit
+		}
+	}
 	catalogAPI := api
 	types := catalogStrings(raw["supported_endpoint_types"])
 	params := catalogStrings(raw["supported_parameters"])

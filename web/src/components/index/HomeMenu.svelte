@@ -99,11 +99,11 @@
     <a
       class="home-menu-row"
       role="menuitem"
-      href="/settings?section=models"
+      href="/models"
       data-models-menu
       onclick={(event) => {
         onClose();
-        handleNavClick(event, '/settings?section=models', { state: backState() });
+        handleNavClick(event, '/models', { state: backState() });
       }}
       ><span class="home-menu-icon">{@html icon(Cpu, { size: 18 })}</span><span
         >{t('models.title')}</span

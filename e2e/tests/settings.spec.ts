@@ -553,8 +553,11 @@ test.describe("home menu models entry", () => {
     const models = page.locator("[data-models-menu]");
     await expect(models).toBeVisible();
     await models.click();
-    await expect(page).toHaveURL(/\/settings\?section=models/);
-    await expect(page.locator('[data-settings-nav="models"]')).toHaveAttribute("aria-current", "page");
+    await expect(page).toHaveURL(/\/models$/);
+    await expect(page.locator(".session-header-title")).toHaveText("Models");
+    await page.locator(".session-header-back").click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(trigger).toBeVisible();
 
     await page.goto("/settings?section=connections");
     await expect(page.locator("[data-connection-settings]")).toBeVisible();

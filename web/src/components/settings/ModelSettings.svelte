@@ -4,6 +4,7 @@
   import { t } from '../../shared/i18n.js';
   import { supportedThinkingLevels } from '../../session/chat/chat-selectors.js';
   import { loadModelBalances, modelBalanceLabel } from '../../session/chat/model-balances.js';
+  import { formatTokenLimit, parseTokenLimit } from '../../settings/model-token-limits.js';
   import { icon, Pencil, Trash2 } from '../../shared/icons.js';
   const apiLabels = {
     'openai-completions': 'models.openaiCompatible',
@@ -11,6 +12,7 @@
     'anthropic-messages': 'models.anthropic',
     'google-generative-ai': 'models.gemini',
   };
+  let { standalone = false } = $props();
   let profiles = $state([]),
     revision = $state(''),
     activeID = $state('');
@@ -19,6 +21,7 @@
     error = $state(''),
     status = $state('');
   let keyFormMode = $state(''),
+    replacingKey = $state(false),
     label = $state(''),
     baseUrl = $state(''),
     key = $state('');
@@ -29,9 +32,10 @@
   let balanceRequest;
   let mounted = false;
   let vision = $state(false),
-    contextWindow = $state(undefined),
-    maxTokens = $state(undefined);
+    contextWindow = $state(''),
+    maxTokens = $state('');
   let limitEditor = $state(null);
+  const maskedTextInput = globalThis.CSS?.supports?.('-webkit-text-security', 'disc') ?? false;
   const prefix = $props.id();
   const active = $derived(profiles.find((p) => p.id === activeID));
   const catalogAPIs = $derived([
@@ -136,6 +140,7 @@
   }
   function closeKeyForm() {
     keyFormMode = '';
+    replacingKey = false;
     label = '';
     baseUrl = '';
     key = '';
@@ -156,16 +161,17 @@
     if (busy) return;
     const editing = keyFormMode === 'edit';
     const source = active;
+    const replacement = !editing || replacingKey || newServer || !source?.hasKey ? key.trim() : '';
     const previous = new Set(profiles.map((p) => p.id));
     const data = await action({
       ...(editing ? { action: 'edit', id: activeID } : { action: 'add', api: 'auto' }),
       label,
       baseUrl,
-      key,
+      ...(replacement ? { key: replacement } : {}),
     });
     if (data) {
       if (editing) {
-        if (key.trim() || baseUrl.trim() !== source?.baseUrl) delete balances[activeID];
+        if (replacement || baseUrl.trim() !== source?.baseUrl) delete balances[activeID];
       } else {
         activeID = data.profiles.find((p) => !previous.has(p.id))?.id || activeID;
       }
@@ -190,14 +196,17 @@
     }
   }
   async function apply() {
+    const context = parseTokenLimit(contextWindow, 10000000);
+    const output = parseTokenLimit(maxTokens, 1000000);
+    if (context === null || output === null) return;
     if (
       await action({
         action: 'apply',
         id: activeID,
         modelIds: selected,
         vision,
-        contextWindow,
-        maxTokens,
+        contextWindow: context,
+        maxTokens: output,
       })
     )
       status = t('models.applied');
@@ -205,7 +214,17 @@
   async function saveLimits(event) {
     event.preventDefault();
     if (busy || !limitEditor) return;
-    if (await action({ action: 'edit-limits', ...limitEditor })) {
+    const context = parseTokenLimit(limitEditor.contextWindow, 10000000);
+    const output = parseTokenLimit(limitEditor.maxTokens, 1000000);
+    if (!context || !output) return;
+    if (
+      await action({
+        action: 'edit-limits',
+        ...limitEditor,
+        contextWindow: context,
+        maxTokens: output,
+      })
+    ) {
       limitEditor = null;
       status = t('common.saved');
     }
@@ -246,7 +265,8 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icons -->
 {#snippet keyForm(editing)}
-  <form onsubmit={saveKey} class="model-key-form">
+  {@const keyRequired = !editing || newServer}
+  <form onsubmit={saveKey} class="model-key-form" autocomplete="off">
     <label for={prefix + '-label'}>{t('models.label')}</label><input
       id={prefix + '-label'}
       bind:value={label}
@@ -264,25 +284,40 @@
       autocapitalize="none"
       spellcheck={false}
     />
-    <label for={prefix + '-key'}>{t('models.key')}</label><input
-      id={prefix + '-key'}
-      type="password"
-      bind:value={key}
-      required={!editing || newServer}
-      disabled={busy}
-      maxlength="8192"
-      autocomplete="new-password"
-      autocapitalize="none"
-      spellcheck={false}
-      aria-describedby={prefix + '-key-hint'}
-    />
-    <p id={prefix + '-key-hint'}>
-      {#if editing}
-        {t(newServer ? 'models.newServerKey' : 'models.keepKey')}
-      {:else}
-        {t('models.autoProtocol')} {t('models.keyPrivacy')}
-      {/if}
-    </p>
+    {#if keyRequired || replacingKey || !active?.hasKey}
+      <label for={prefix + '-token-entry'}>{t('models.key')}</label>
+      <input
+        id={prefix + '-token-entry'}
+        class:masked-key={maskedTextInput}
+        type={maskedTextInput ? 'text' : 'password'}
+        bind:value={key}
+        required={keyRequired}
+        disabled={busy}
+        maxlength="8192"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="none"
+        spellcheck={false}
+        aria-describedby={prefix + '-key-hint'}
+      />
+      <p id={prefix + '-key-hint'}>
+        {#if editing}
+          {t(newServer ? 'models.newServerKey' : 'models.keyPrivacy')}
+        {:else}
+          {t('models.autoProtocol')} {t('models.keyPrivacy')}
+        {/if}
+      </p>
+    {:else}
+      <div class="model-saved-key">
+        <div>
+          <strong>{t('models.keyConfigured')}</strong>
+          <p>{t('models.keyPrivacy')}</p>
+        </div>
+        <button type="button" disabled={busy} onclick={() => (replacingKey = true)}>
+          {t('models.editKey')}
+        </button>
+      </div>
+    {/if}
     {#if editing && error}
       <p role="alert" class="model-error">
         {error} <button type="button" disabled={busy} onclick={load}>{t('models.reload')}</button>
@@ -293,10 +328,7 @@
       <button
         type="submit"
         class="primary"
-        disabled={busy ||
-          ((!editing || newServer) && !key.trim()) ||
-          !label.trim() ||
-          !baseUrl.trim()}
+        disabled={busy || (keyRequired && !key.trim()) || !label.trim() || !baseUrl.trim()}
         >{t(busy ? 'models.saving' : editing ? 'common.save' : 'models.saveKey')}</button
       >
     </div>
@@ -306,7 +338,7 @@
 <section class="model-settings">
   <div class="model-heading">
     <div>
-      <h2>{t('models.title')}</h2>
+      {#if !standalone}<h2>{t('models.title')}</h2>{/if}
       <p>{t('models.intro')}</p>
     </div>
     <button type="button" class="primary" disabled={busy} onclick={() => openKeyForm()}
@@ -350,13 +382,11 @@
         <div class="model-catalog-heading">
           <h3>{t('models.availableFor', { label: active.label })}</h3>
           <div class="model-source-actions">
-            <button
-              type="button"
-              disabled={busy}
-              aria-expanded={keyFormMode === 'edit'}
-              onclick={() => openKeyForm(active)}
-              >{@html icon(Pencil, { size: 15 })}{t('models.editKey')}</button
-            >
+            {#if keyFormMode !== 'edit'}
+              <button type="button" disabled={busy} onclick={() => openKeyForm(active)}
+                >{@html icon(Pencil, { size: 15 })}{t('models.editKey')}</button
+              >
+            {/if}
             <button type="button" disabled={busy || !active.hasKey} onclick={refresh}
               >{t(busy ? 'models.working' : 'models.refresh')}</button
             >
@@ -435,7 +465,7 @@
                 ><strong>{model.name || model.id}</strong
                 >{#if model.name && model.name !== model.id}<small>{model.id}</small>{/if}
                 {#if model.contextWindow}<small
-                    >{t('models.contextWindow')} · {model.contextWindow.toLocaleString()}</small
+                    >{t('models.contextWindow')} · {formatTokenLimit(model.contextWindow)}</small
                   >{/if}</span
               >{#if appliedIDs.has(model.id)}<em>{t('models.inUse')}</em>{/if}</label
             >
@@ -452,9 +482,11 @@
             <label for={prefix + '-context'}
               >{t('models.contextWindow')}<input
                 id={prefix + '-context'}
-                type="number"
-                min="1"
-                max="10000000"
+                type="text"
+                placeholder="1M"
+                maxlength="24"
+                autocomplete="off"
+                aria-invalid={parseTokenLimit(contextWindow, 10000000) === null}
                 bind:value={contextWindow}
                 disabled={busy}
               /></label
@@ -462,9 +494,11 @@
             <label for={prefix + '-tokens'}
               >{t('models.maxTokens')}<input
                 id={prefix + '-tokens'}
-                type="number"
-                min="1"
-                max="1000000"
+                type="text"
+                placeholder="128K"
+                maxlength="24"
+                autocomplete="off"
+                aria-invalid={parseTokenLimit(maxTokens, 1000000) === null}
                 bind:value={maxTokens}
                 disabled={busy}
               /></label
@@ -472,8 +506,14 @@
           </div>
           <p>{t('models.capabilitiesHint')}</p>
         </details>
-        <button type="button" class="primary" disabled={busy || !selected.length} onclick={apply}
-          >{t('models.applySelected', { count: selected.length })}</button
+        <button
+          type="button"
+          class="primary"
+          disabled={busy ||
+            !selected.length ||
+            parseTokenLimit(contextWindow, 10000000) === null ||
+            parseTokenLimit(maxTokens, 1000000) === null}
+          onclick={apply}>{t('models.applySelected', { count: selected.length })}</button
         >
       </div>
     {/if}
@@ -490,10 +530,10 @@
               <strong>{model.name || model.id}</strong>
               {#if model.name && model.name !== model.id}<small>{model.id}</small>{/if}
               {#if model.contextWindow}<small
-                  >{t('models.contextWindow')} · {model.contextWindow.toLocaleString()}</small
+                  >{t('models.contextWindow')} · {formatTokenLimit(model.contextWindow)}</small
                 >{/if}
               {#if model.maxTokens}<small
-                  >{t('models.maxTokens')} · {model.maxTokens.toLocaleString()}</small
+                  >{t('models.maxTokens')} · {formatTokenLimit(model.maxTokens)}</small
                 >{/if}
               {#if supportedThinkingLevels(model).length > 1}<small>
                   {t('models.effortAvailable')} · {t(apiLabels[model.api] || 'models.protocol')}
@@ -518,8 +558,10 @@
                     : {
                         id: profile.id,
                         modelId: model.id,
-                        contextWindow: model.contextWindow,
-                        maxTokens: model.maxTokens,
+                        contextWindow: formatTokenLimit(
+                          model.contextWindow || model.defaultContextWindow,
+                        ),
+                        maxTokens: formatTokenLimit(model.maxTokens || model.defaultMaxTokens),
                       })}>{@html icon(Pencil, { size: 16 })}</button
             >
             <button
@@ -537,28 +579,56 @@
           {#if limitEditor?.id === profile.id && limitEditor?.modelId === model.id}
             <form class="model-limit-form" onsubmit={saveLimits}>
               <div class="model-options">
-                <label>
-                  {t('models.contextWindow')}
+                <div class="model-limit-field">
+                  <label for={prefix + '-edit-context'}>{t('models.contextWindow')}</label>
                   <input
-                    type="number"
-                    min="1"
-                    max="10000000"
+                    id={prefix + '-edit-context'}
+                    type="text"
+                    placeholder="1M"
+                    maxlength="24"
+                    autocomplete="off"
+                    aria-invalid={parseTokenLimit(limitEditor.contextWindow, 10000000) === null}
                     required
                     bind:value={limitEditor.contextWindow}
                     disabled={busy}
                   />
-                </label>
-                <label>
-                  {t('models.maxTokens')}
+                  {#if model.defaultContextWindow}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onclick={() =>
+                        (limitEditor.contextWindow = formatTokenLimit(model.defaultContextWindow))}
+                      >{t('schedules.thinkingDefault')} · {formatTokenLimit(
+                        model.defaultContextWindow,
+                      )}</button
+                    >
+                  {/if}
+                </div>
+                <div class="model-limit-field">
+                  <label for={prefix + '-edit-output'}>{t('models.maxTokens')}</label>
                   <input
-                    type="number"
-                    min="1"
-                    max="1000000"
+                    id={prefix + '-edit-output'}
+                    type="text"
+                    placeholder="128K"
+                    maxlength="24"
+                    autocomplete="off"
+                    aria-invalid={parseTokenLimit(limitEditor.maxTokens, 1000000) === null}
                     required
                     bind:value={limitEditor.maxTokens}
                     disabled={busy}
                   />
-                </label>
+                  {#if model.defaultMaxTokens}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onclick={() =>
+                        (limitEditor.maxTokens = formatTokenLimit(model.defaultMaxTokens))}
+                      >{t('schedules.thinkingDefault')} · {formatTokenLimit(
+                        model.defaultMaxTokens,
+                      )}</button
+                    >
+                  {/if}
+                </div>
                 {#if supportedThinkingLevels(model).length > 1}
                   <label>
                     {t('models.effortAvailable')} · {t('schedules.thinkingDefault')}
@@ -579,7 +649,13 @@
                 <button type="button" disabled={busy} onclick={() => (limitEditor = null)}
                   >{t('common.cancel')}</button
                 >
-                <button type="submit" class="primary" disabled={busy}>{t('common.save')}</button>
+                <button
+                  type="submit"
+                  class="primary"
+                  disabled={busy ||
+                    !parseTokenLimit(limitEditor.contextWindow, 10000000) ||
+                    !parseTokenLimit(limitEditor.maxTokens, 1000000)}>{t('common.save')}</button
+                >
               </div>
             </form>
           {/if}
@@ -641,6 +717,12 @@
     border-radius: 9px;
     font-size: 16px;
   }
+  input.masked-key {
+    -webkit-text-security: disc;
+  }
+  input[aria-invalid='true'] {
+    border-color: var(--error);
+  }
   .model-heading,
   .model-catalog-heading {
     display: flex;
@@ -667,6 +749,27 @@
     display: block;
     margin: 14px 0 6px;
     font-size: 13px;
+  }
+  .model-saved-key {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--dim);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .model-saved-key strong {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .model-saved-key p {
+    margin: 2px 0 0;
+  }
+  .model-saved-key > button {
+    flex: none;
   }
   .model-key-actions {
     display: flex;
@@ -816,6 +919,18 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
+  }
+  .model-limit-field {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    min-width: 0;
+  }
+  .model-limit-field button {
+    justify-self: start;
+    min-height: 36px;
+    padding: 6px 9px;
+    font-size: 12px;
   }
   .model-applied-row {
     display: flex;
