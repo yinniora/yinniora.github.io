@@ -42,7 +42,7 @@ describe('ToolCall', () => {
         questions: [{ question: 'Pick one', options: [{ label: 'A' }, { label: 'B' }] }],
       },
     };
-    const { container } = render(ToolCall, { props: { call, model: model() } });
+    const { container } = render(ToolCall, { props: { call, model: model(), live: true } });
     expect(container.querySelector('.ask-question-card')).not.toBeNull();
     const opts = container.querySelectorAll('.ask-question-option-action');
     expect(opts.length).toBe(2);
@@ -65,7 +65,7 @@ describe('ToolCall', () => {
         ],
       },
     };
-    const { container } = render(ToolCall, { props: { call, model: model() } });
+    const { container } = render(ToolCall, { props: { call, model: model(), live: true } });
     expect(container.querySelector('.ask-question-text')?.textContent).toContain(
       'What should I do?',
     );

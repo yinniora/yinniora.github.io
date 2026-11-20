@@ -1,33 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-// pi-ask ships pi-web's own `ask_user_question` tool so the browser question
-// card works without the user installing a third-party extension.
-//
-// It is intentionally active ONLY under pi-web's `pi --mode rpc` worker. In
-// that flow there is no TUI to collect an answer; instead the browser renders
-// the tool call, the user clicks an option, and pi-web sends the choice back as
-// an ordinary chat message (`"Question" = "Answer"`). The tool therefore does
-// not block on a TUI dialog — it records the questions, returns an
-// `awaitingChatReply` result, and tells the model to stop and wait for that
-// follow-up message.
-
-export interface AskQuestionOption {
-  label?: unknown;
-  description?: unknown;
-}
-
-export interface AskQuestion {
-  question?: unknown;
-  header?: unknown;
-  multiSelect?: unknown;
-  options?: unknown;
-}
-
-export interface AskToolResult {
-  content: Array<{ type: "text"; text: string }>;
-  details: { awaitingChatReply: true; questionCount: number };
-}
+// pi-web maps this titled RPC input to its structured question picker.
+const structuredQuestionTitle = "YuGo Pi structured questions";
 
 // pi-web spawns the worker as `pi --mode rpc`. `ctx.hasUI` is true in both
 // interactive and RPC mode, so it cannot distinguish them — argv can.
@@ -40,35 +15,6 @@ export function isRpcMode(argv: string[] = process.argv): boolean {
     if (arg === "--mode=rpc" || arg === "-mode=rpc") return true;
   }
   return false;
-}
-
-function questionText(q: AskQuestion, index: number): string {
-  return typeof q?.question === "string" && q.question.trim()
-    ? q.question
-    : `Question ${index + 1}`;
-}
-
-export function buildAwaitingResult(questions: AskQuestion[]): AskToolResult {
-  const list = Array.isArray(questions) ? questions : [];
-  const count = list.length;
-  const summary = list
-    .map((q, i) => `  ${i + 1}. ${questionText(q, i)}`)
-    .join("\n");
-
-  const text =
-    `Presented ${count} question${count === 1 ? "" : "s"} to the user in pi-web. ` +
-    `The question card is shown inline in the conversation (there is no sidebar, ` +
-    `panel, or popup) — do not describe a UI location or invent one.\n` +
-    `Stop now and wait for the user's reply. It arrives as the next user ` +
-    `message formatted as "Question" = "Answer" (multi-select answers are ` +
-    `comma-separated). Keep any acknowledgement brief; do not answer on the ` +
-    `user's behalf or call this tool again until they respond.` +
-    (summary ? `\n\nQuestions awaiting an answer:\n${summary}` : "");
-
-  return {
-    content: [{ type: "text", text }],
-    details: { awaitingChatReply: true, questionCount: count },
-  };
 }
 
 // ── pi_web_ tool preference ─────────────────────────────────────────────
@@ -159,17 +105,14 @@ export default function (pi: ExtensionAPI) {
     label: "Ask User Question",
     description:
       "Ask the user one or more structured multiple-choice questions when you " +
-      "need a decision before proceeding. The questions are shown in pi-web; " +
-      "the user picks options in the browser and their answer returns as a " +
-      "follow-up chat message. Prefer this over guessing when the user's intent " +
-      "is ambiguous and a small set of options would resolve it.",
+      "need a decision before proceeding. Waits for an explicit answer and returns " +
+      "the selected options, cancellation, or timeout.",
     promptSnippet:
-      "Use pi_web_ask_user_question to ask the user structured multiple-choice " +
-      "questions, then stop and wait for their reply.",
+      "Use pi_web_ask_user_question when a user decision would resolve ambiguity.",
     promptGuidelines: [
       "Call pi_web_ask_user_question when a decision is ambiguous and 2-4 concrete options would resolve it, instead of guessing.",
       "Keep each option label short; put rationale in the option description.",
-      "After calling pi_web_ask_user_question, stop and wait — the user's answer arrives as the next message.",
+      "If the question was cancelled or timed out, stop at the decision and do not assume any option was accepted.",
     ],
     parameters: Type.Object({
       questions: Type.Array(
@@ -198,6 +141,8 @@ export default function (pi: ExtensionAPI) {
                   description: "Optional hint shown beneath the label.",
                 }),
               ),
+              recommended: Type.Optional(Type.Boolean({ description: "Mark this option as recommended." })),
+              default: Type.Optional(Type.Boolean({ description: "Preselect this option. The user must still submit to confirm." })),
             }),
             {
               minItems: 2,
@@ -213,11 +158,25 @@ export default function (pi: ExtensionAPI) {
         },
       ),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      const questions = Array.isArray((params as { questions?: unknown })?.questions)
-        ? ((params as { questions: AskQuestion[] }).questions)
-        : [];
-      return buildAwaitingResult(questions);
+    async execute(_toolCallId, { questions }, signal, _onUpdate, ctx) {
+      const response = await ctx.ui.input(structuredQuestionTitle, JSON.stringify(questions), {
+        signal,
+        timeout: 125_000,
+      });
+      const questionCount = questions.length;
+      if (response === "timedOut" || response === undefined) {
+        const timedOut = response === "timedOut";
+        return {
+          content: [{ type: "text", text: `The question ${timedOut ? "timed out" : "was cancelled"} without an answer. Stop at this decision and wait for a user message.` }],
+          details: { questionCount, timedOut, cancelled: !timedOut },
+        };
+      }
+      const selections: string[][] = JSON.parse(response);
+      const answers = Object.fromEntries(questions.map((q, i) => [q.question, selections[i]]));
+      return {
+        content: [{ type: "text", text: JSON.stringify(answers) }],
+        details: { questionCount, answers },
+      };
     },
   });
 

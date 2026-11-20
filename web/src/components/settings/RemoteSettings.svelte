@@ -91,7 +91,7 @@
   {:else if !enabled}<p>{error || t('remoteSettings.setupRequired')}</p>
   {:else}
     <p class="remote-auto-hint">{t('remoteSettings.automatic')}</p>
-    <form onsubmit={save}>
+    <form onsubmit={save} autocomplete="off">
       <label for={prefix + '-server-url'}>{t('remoteSettings.server')}</label><input
         id={prefix + '-server-url'}
         type="url"
@@ -125,24 +125,33 @@
         />
         <label for={prefix + '-host-token'}>{t('remoteSettings.hostToken')}</label><input
           id={prefix + '-host-token'}
-          type="password"
+          type="text"
+          class="pi-secret-token"
           bind:value={hostToken}
           disabled={busy}
-          autocomplete="new-password"
+          autocomplete="off"
+          autocapitalize="none"
+          spellcheck={false}
         />
         <label for={prefix + '-client-secret'}>{t('remoteSettings.clientSecret')}</label><input
           id={prefix + '-client-secret'}
-          type="password"
+          type="text"
+          class="pi-secret-token"
           bind:value={clientSecret}
           disabled={busy}
-          autocomplete="new-password"
+          autocomplete="off"
+          autocapitalize="none"
+          spellcheck={false}
         />
         <label for={prefix + '-turn-secret'}>{t('remoteSettings.turnSecret')}</label><input
           id={prefix + '-turn-secret'}
-          type="password"
+          type="text"
+          class="pi-secret-token"
           bind:value={turnSecret}
           disabled={busy}
-          autocomplete="new-password"
+          autocomplete="off"
+          autocapitalize="none"
+          spellcheck={false}
         />
       </details>
       <p>{t('remoteSettings.authHint')}</p>

@@ -11,7 +11,7 @@ describe('ChatExpandButton', () => {
     render(ChatExpandButton, { props: { chatAvailable: true } });
 
     const button = document.getElementById('pi-chat-expand');
-    expect(button.className).toBe('pi-chat-expand-button');
+    expect(button.classList.contains('pi-chat-expand-button')).toBe(true);
     expect(button.getAttribute('aria-pressed')).toBe('false');
     expect(button.getAttribute('aria-label')).toBe('Expand composer');
     expect(button.disabled).toBe(false);

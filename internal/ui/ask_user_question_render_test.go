@@ -69,7 +69,7 @@ func TestErroredAskUserQuestionKeepsFallbackOptionsClickable(t *testing.T) {
 	src := readAskQuestionSrc(t)
 	checks := []string{
 		"result?.isError === true",
-		"question UI failed",
+		"piExtension.questionFailed",
 		"!result || questionToolFailed || awaitingChatReply",
 		"Use these options as a fallback",
 	}

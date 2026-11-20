@@ -1128,11 +1128,17 @@
   display: none;
 }
 #spa-root .activity-thinking-text {
-  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: 13px;
   line-height: 1.7;
   color: var(--text-soft);
   padding: 8px 0;
+}
+#spa-root .activity-thinking-text > :first-child {
+  margin-block-start: 0;
+}
+#spa-root .activity-thinking-text > :last-child {
+  margin-block-end: 0;
 }
 #spa-root .activity-body > .tool-execution {
   border: 0;
@@ -2890,6 +2896,14 @@ body .pi-btw-input {
   display: inline-flex;
   align-items: stretch;
 }
+#spa-root .pi-chat-send-group #pi-chat-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 42px;
+  border-radius: 999px;
+}
 #spa-root .pi-chat-send-group .pi-chat-queue {
   display: inline-flex;
   align-items: center;
@@ -2926,6 +2940,21 @@ body .pi-btw-input {
   display: none;
 }
 @media (max-width: 760px) {
+  #spa-root .pi-chat-send-group:not(.running) #pi-chat-send {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  #spa-root .pi-chat-send-group:not(.running) #pi-chat-send > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  #spa-root .pi-chat-send-group.running #pi-chat-send .composer-send-icon {
+    display: none;
+  }
   #spa-root .pi-chat-thinking-label {
     padding: 5px 8px;
   }

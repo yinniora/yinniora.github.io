@@ -19,7 +19,15 @@
   const modelLabel = $derived(formatRunningModel(runningStatus) || sessionModelLabel(session));
   const runningModel = $derived(running ? formatRunningModel(runningStatus) : '');
   const search = $derived(sessionSearchText(session));
-  const completed = $derived(!running && hasUnseenCompletion(session));
+  const lastState = $derived(session.lastTurnState);
+  const completed = $derived(
+    !running && (!lastState || lastState === 'completed') && hasUnseenCompletion(session),
+  );
+  const waiting = $derived(running ? runningStatus?.waitingForInput : lastState === 'waiting');
+  const endedEarly = $derived(!running && ['failed', 'timedOut', 'stopped'].includes(lastState));
+  const dotLabel = $derived(
+    t(waiting ? 'piExtension.waiting' : endedEarly ? 'activity.' + lastState : 'common.done'),
+  );
 
   // Start /api/session as soon as the user signals intent (hover or press), so
   // the response is usually back by the time SessionPage mounts. All three
@@ -45,12 +53,14 @@
     <div class="session-title-row">
       <div class="session-title">{title}</div>
       <div class="session-card-flags">
-        {#if completed}
+        {#if waiting || completed || endedEarly}
           <span
             class="session-completion-dot"
+            class:waiting={waiting || lastState === 'timedOut'}
+            class:failed={endedEarly && lastState !== 'timedOut'}
             role="img"
-            aria-label={t('common.done')}
-            title={t('common.done')}
+            aria-label={dotLabel}
+            title={dotLabel}
           ></span>
         {/if}
         {#if !session.chatAvailable}
@@ -66,7 +76,8 @@
     <div class="session-model" data-session-model>{modelLabel}</div>
     <div class="session-meta">
       <span class="session-active-status" data-running-status
-        ><span aria-hidden="true">●</span> {t('index.active')}</span
+        ><span aria-hidden="true">●</span>
+        {t(waiting ? 'piExtension.waiting' : 'index.active')}</span
       >
       <span class="session-time" data-timestamp={session.lastActivity} title={session.lastActivity}
         >{formatRelativeTime(session.lastActivity, now)}</span
@@ -99,6 +110,12 @@
     height: 8px;
     border-radius: 50%;
     background: var(--success);
+  }
+  .session-completion-dot.waiting {
+    background: var(--warning);
+  }
+  .session-completion-dot.failed {
+    background: var(--danger);
   }
   .hub-card-menu {
     position: absolute;

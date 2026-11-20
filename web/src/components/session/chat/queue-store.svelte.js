@@ -130,13 +130,15 @@ export class QueueStore {
 
   /** Push a transient steer chip (browser-only, never persisted). */
   pushSteer = (item) => {
+    const id = `s-${++this.#steerSeq}-${Date.now().toString(36)}`;
     this.items.push({
-      id: `s-${++this.#steerSeq}-${Date.now().toString(36)}`,
+      id,
       kind: 'steer',
       text: String(item.text ?? ''),
       displayText: String(item.displayText ?? item.text ?? ''),
     });
     this.#clampFocus();
+    return id;
   };
 
   clearSteers = () => {

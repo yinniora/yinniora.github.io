@@ -7,6 +7,7 @@ export function setupChatSubmission({
   attachments,
   chatApi,
   sessionId = '',
+  isSteering = () => false,
   setStatus = () => {},
   autoResizeTextarea = () => {},
   updateSendEnabled = () => {},
@@ -56,8 +57,9 @@ export function setupChatSubmission({
     }
     sendButton.dataset.sending = '1';
     sendButton.disabled = true;
+    const detail = { message, steering: isSteering() };
     setStatus('sending', 'running');
-    windowImpl.dispatchEvent(new CustomEventImpl('pi-chat-message-sent', { detail: { message } }));
+    windowImpl.dispatchEvent(new CustomEventImpl('pi-chat-message-sent', { detail }));
     try {
       const response = await chatApi.sendChat(sessionId, body);
       const data = await response.json();
@@ -65,6 +67,7 @@ export function setupChatSubmission({
       setStatus(data.status || 'queued', 'running');
       return true;
     } catch (error) {
+      windowImpl.dispatchEvent(new CustomEventImpl('pi-chat-message-failed', { detail }));
       setStatus(error.message || String(error), 'error');
       return false;
     } finally {

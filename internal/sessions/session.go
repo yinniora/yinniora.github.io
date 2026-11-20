@@ -42,6 +42,14 @@ type summaryMsg struct {
 	Content    json.RawMessage `json:"content"`
 	Usage      summaryUsage    `json:"usage"`
 	StopReason string          `json:"stopReason"`
+	ToolName   string          `json:"toolName"`
+	Details    json.RawMessage `json:"details"`
+}
+
+type questionOutcome struct {
+	AwaitingChatReply bool `json:"awaitingChatReply"`
+	TimedOut          bool `json:"timedOut"`
+	Cancelled         bool `json:"cancelled"`
 }
 
 type summaryUsage struct {
@@ -60,6 +68,7 @@ type SessionSummary struct {
 	Project            string
 	LastActivity       string
 	LastCompletedAt    string `json:",omitempty"`
+	LastTurnState      string `json:",omitempty"`
 	Name               string
 	MessageCount       int
 	TokenTotal         int
@@ -208,6 +217,32 @@ func isCompletedReply(role, stopReason string) bool {
 	return role == "assistant" && (stopReason == "" || stopReason == "stop" || stopReason == "length")
 }
 
+func isQuestionResult(role, toolName string) bool {
+	return role == "toolResult" && (toolName == "pi_web_ask_user_question" || toolName == "ask_user_question" || toolName == "ask_question")
+}
+
+func (s *SessionSummary) trackTurn(role, stopReason, timestamp string, question questionOutcome) {
+	switch {
+	case role == "user":
+		s.LastTurnState = "pending"
+	case question.TimedOut:
+		s.LastTurnState = "timedOut"
+	case question.Cancelled:
+		s.LastTurnState = "stopped"
+	case question.AwaitingChatReply:
+		s.LastTurnState = "waiting"
+	case s.LastTurnState == "waiting" || s.LastTurnState == "timedOut" || s.LastTurnState == "stopped":
+		// An acknowledgement following an unanswered question is not task completion.
+	case role == "assistant" && stopReason == "error":
+		s.LastTurnState = "failed"
+	case role == "assistant" && stopReason == "aborted":
+		s.LastTurnState = "stopped"
+	case timestamp != "" && isCompletedReply(role, stopReason):
+		s.LastCompletedAt = timestamp
+		s.LastTurnState = "completed"
+	}
+}
+
 // ParseSummary streams path line-by-line, accumulating only the fields the
 // index page needs. Lines are discarded after parsing — unlike ParseFile,
 // the full conversation is not retained in memory.
@@ -255,9 +290,11 @@ func ParseSummary(path, dirName, fileName string) (SessionSummary, error) {
 				continue
 			}
 			msg := raw.Message
-			if raw.Timestamp != "" && isCompletedReply(msg.Role, msg.StopReason) {
-				s.LastCompletedAt = raw.Timestamp
+			var question questionOutcome
+			if isQuestionResult(msg.Role, msg.ToolName) {
+				_ = json.Unmarshal(msg.Details, &question)
 			}
+			s.trackTurn(msg.Role, msg.StopReason, raw.Timestamp, question)
 			s.MessageCount++
 			s.TokenTotal += int(msg.Usage.TotalTokens)
 			s.CostTotal += msg.Usage.Cost.Total
@@ -562,9 +599,15 @@ func ParseFile(path, dirName, fileName string) (Session, error) {
 			}
 			role, _ := msg["role"].(string)
 			stopReason, _ := msg["stopReason"].(string)
-			if ts, _ := raw["timestamp"].(string); ts != "" && isCompletedReply(role, stopReason) {
-				s.LastCompletedAt = ts
+			ts, _ := raw["timestamp"].(string)
+			var question questionOutcome
+			if toolName, _ := msg["toolName"].(string); isQuestionResult(role, toolName) {
+				details, _ := msg["details"].(map[string]any)
+				question.AwaitingChatReply, _ = details["awaitingChatReply"].(bool)
+				question.TimedOut, _ = details["timedOut"].(bool)
+				question.Cancelled, _ = details["cancelled"].(bool)
 			}
+			s.trackTurn(role, stopReason, ts, question)
 			if firstUserText == "" && role == "user" {
 				firstUserText = extractMessageText(msg["content"])
 			}

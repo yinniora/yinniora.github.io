@@ -39,7 +39,6 @@
     contextWindow = $state(''),
     maxTokens = $state('');
   let limitEditor = $state(null);
-  const maskedTextInput = globalThis.CSS?.supports?.('-webkit-text-security', 'disc') ?? false;
   const prefix = $props.id();
   const active = $derived(profiles.find((p) => p.id === activeID));
   const catalogAPIs = $derived([
@@ -292,8 +291,8 @@
       <label for={prefix + '-token-entry'}>{t('models.key')}</label>
       <input
         id={prefix + '-token-entry'}
-        class:masked-key={maskedTextInput}
-        type={maskedTextInput ? 'text' : 'password'}
+        class="pi-secret-token"
+        type="text"
         bind:value={key}
         required={keyRequired}
         disabled={busy}
@@ -722,9 +721,6 @@
     border: 1px solid var(--dim);
     border-radius: 9px;
     font-size: 16px;
-  }
-  input.masked-key {
-    -webkit-text-security: disc;
   }
   input[aria-invalid='true'] {
     border-color: var(--error);

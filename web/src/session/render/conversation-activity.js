@@ -9,7 +9,9 @@ export function isQuestionTool(name) {
 export function questionNeedsResponse(name, result) {
   return (
     isQuestionTool(name) &&
-    (!result || result.isError || result.details?.awaitingChatReply || result.details?.cancelled)
+    (!result ||
+      result.details?.awaitingChatReply ||
+      (name !== 'pi_web_ask_user_question' && (result.isError || result.details?.cancelled)))
   );
 }
 
@@ -84,6 +86,7 @@ const STEER_GAP_MS = 15000;
 function isSteer(before, entry) {
   const kind = before?.type === 'message' ? before.message?.role : before?.type;
   if (kind !== 'toolResult' && kind !== 'compaction') return false;
+  if (isQuestionTool(before?.message?.toolName)) return false;
   const gap = entryTime(entry) - entryTime(before);
   return Number.isFinite(gap) && gap >= 0 && gap <= STEER_GAP_MS;
 }
@@ -110,6 +113,7 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
         outputs: [],
         timeline: [],
         needsResponse: false,
+        questionOutcome: '',
         startedAt: turnStartedAt || entryTime(item.entry),
         endedAt: 0,
       };
@@ -154,7 +158,7 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
       // (or Pi's between-turn compaction): the turn went on, it did not stop.
       if (activity) {
         if (isSteer(before, entry)) activity.steered = true;
-        else activity.unfinished = true;
+        else if (!activity.needsResponse) activity.unfinished = true;
       }
       activity = null;
       turnStartedAt = entryTime(entry);
@@ -172,9 +176,15 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
       if (!final && (tools.length || thoughtCount || message.stopReason === 'toolUse')) {
         addActivity(item, thoughtCount, tools);
         activity.outputs.push(...(outputsByEntry?.get(entry.id) || []));
-        activity.needsResponse ||= tools.some((tool) =>
-          questionNeedsResponse(tool.name, results.get(tool.id)),
-        );
+        for (const tool of tools) {
+          if (!isQuestionTool(tool.name)) continue;
+          const result = results.get(tool.id);
+          if (result || running || tool.name !== 'pi_web_ask_user_question') {
+            activity.needsResponse ||= questionNeedsResponse(tool.name, result);
+          }
+          if (result?.details?.timedOut) activity.questionOutcome = 'timeout';
+          else if (result?.details?.cancelled) activity.questionOutcome = 'stopped';
+        }
         continue;
       }
       if (tools.length || thoughtCount) {
@@ -194,7 +204,7 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
   if (activity) {
     activity.running = running;
     // Not running and still no reply: the turn ended without finishing.
-    if (!running) activity.unfinished = true;
+    if (!running && !activity.needsResponse) activity.unfinished = true;
   }
   // A question the user has not answered yet keeps its group open even after
   // the turn's closing reply, until the next user message. Otherwise a reload

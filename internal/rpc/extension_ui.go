@@ -14,6 +14,62 @@ type pendingExtensionDialog struct {
 	timer  *time.Timer
 }
 
+const structuredQuestionTitle = "YuGo Pi structured questions"
+const questionTimeoutReply = "timedOut"
+
+func validQuestions(questions []workers.Question) bool {
+	if len(questions) < 1 || len(questions) > 4 {
+		return false
+	}
+	names := make(map[string]bool, len(questions))
+	for _, question := range questions {
+		if strings.TrimSpace(question.Question) == "" || names[question.Question] ||
+			len(question.Options) < 2 || len(question.Options) > 4 {
+			return false
+		}
+		names[question.Question] = true
+		labels := make(map[string]bool, len(question.Options))
+		defaults := 0
+		for _, option := range question.Options {
+			if strings.TrimSpace(option.Label) == "" || labels[option.Label] {
+				return false
+			}
+			labels[option.Label] = true
+			if option.Default {
+				defaults++
+			}
+		}
+		if !question.MultiSelect && defaults > 1 {
+			return false
+		}
+	}
+	return true
+}
+
+func validQuestionAnswer(value string, questions []workers.Question) bool {
+	if len(value) > 64*1024 {
+		return false
+	}
+	var selections [][]string
+	if json.Unmarshal([]byte(value), &selections) != nil || len(selections) != len(questions) {
+		return false
+	}
+	for index, selected := range selections {
+		question := questions[index]
+		if len(selected) == 0 || len(selected) > len(question.Options) || (!question.MultiSelect && len(selected) != 1) {
+			return false
+		}
+		seen := make(map[string]bool, len(selected))
+		for _, label := range selected {
+			if seen[label] || !slices.ContainsFunc(question.Options, func(o workers.QuestionOption) bool { return o.Label == label }) {
+				return false
+			}
+			seen[label] = true
+		}
+	}
+	return true
+}
+
 func (w *piRPCWorker) handleExtensionUI(line string) {
 	var request struct {
 		workers.ExtensionDialog
@@ -59,6 +115,15 @@ func (w *piRPCWorker) handleExtensionUI(line string) {
 		_ = w.writeExtensionAnswer(cancel)
 		return
 	}
+	request.Questions = nil
+	if request.Method == "input" && request.Title == structuredQuestionTitle {
+		if json.Unmarshal([]byte(request.Placeholder), &request.Questions) != nil || !validQuestions(request.Questions) {
+			_ = w.writeExtensionAnswer(cancel)
+			return
+		}
+		request.Method = "question"
+		request.Placeholder = ""
+	}
 	timeout := 2 * time.Minute
 	if request.Timeout > 0 && request.Timeout < timeout.Milliseconds() {
 		timeout = time.Duration(request.Timeout) * time.Millisecond
@@ -86,7 +151,12 @@ func (w *piRPCWorker) handleExtensionUI(line string) {
 		}
 		delete(w.extensionDialogs, request.ID)
 		w.mu.Unlock()
-		_ = w.writeExtensionAnswer(cancel)
+		answer := cancel
+		if request.Method == "question" {
+			value := questionTimeoutReply
+			answer = workers.ExtensionAnswer{ID: request.ID, Value: &value}
+		}
+		_ = w.writeExtensionAnswer(answer)
 	})
 	w.extensionDialogs[request.ID] = pending
 	w.mu.Unlock()
@@ -119,6 +189,8 @@ func (w *piRPCWorker) ReplyExtensionUI(answer workers.ExtensionAnswer) error {
 			valid = answer.Confirmed != nil && answer.Value == nil
 		case "select":
 			valid = answer.Value != nil && answer.Confirmed == nil && slices.Contains(pending.dialog.Options, *answer.Value)
+		case "question":
+			valid = answer.Value != nil && answer.Confirmed == nil && validQuestionAnswer(*answer.Value, pending.dialog.Questions)
 		default:
 			valid = answer.Value != nil && answer.Confirmed == nil && len(*answer.Value) <= 64*1024
 		}

@@ -70,6 +70,7 @@ export function clearChatPreviewState(state, { keepAssistant = false } = {}) {
     state.phase = '';
     state.tool = null;
     state.content = undefined;
+    state.thinking = undefined;
     stopWorkingAnimation(state);
   }
 }
@@ -171,7 +172,7 @@ function createAssistantPreview(documentImpl, { waiting = false, windowImpl = nu
   thinking.hidden = true;
   thinking.append(
     createPreviewLabel(documentImpl, config, 'thinking', 'summary'),
-    createMarkdownBlock(documentImpl, 'activity-thinking-text'),
+    createMarkdownBlock(documentImpl, 'activity-thinking-text markdown-content'),
   );
   const progress = createPreviewLabel(documentImpl, config);
   progress.classList.add('preview-progress');
@@ -266,11 +267,15 @@ export function renderChatPreviewState(
   const thoughts = typeof payload.thinking === 'string' ? payload.thinking : '';
   const thinking = state.chatPreviewEl.querySelector('.preview-thinking');
   const hasThoughts = Boolean(thoughts.trim());
-  if (phase !== state.phase || thinking.hidden) thinking.open = phase === 'thinking';
+  if (hasThoughts && thinking.hidden) thinking.open = !payload.done;
+  if (payload.done) thinking.open = false;
   thinking.hidden = !hasThoughts;
   thinking.classList.toggle('is-thinking', phase === 'thinking');
   const thinkingContent = thinking.querySelector('.activity-thinking-text');
-  if (thinkingContent.textContent !== thoughts) thinkingContent.textContent = thoughts;
+  if (state.thinking !== thoughts || !thinkingContent.hasChildNodes()) {
+    setMarkdownContent(thinkingContent, renderMarkdown(thoughts));
+    state.thinking = thoughts;
+  }
   const progress = state.chatPreviewEl.querySelector('.preview-progress');
   if (progress) {
     progress.hidden = phase === 'thinking' && hasThoughts;

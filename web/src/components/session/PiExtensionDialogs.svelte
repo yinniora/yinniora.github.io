@@ -2,6 +2,7 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { onMount } from 'svelte';
   import FullScreenSheet from './FullScreenSheet.svelte';
+  import QuestionPicker from './QuestionPicker.svelte';
   import { postJSON } from '../../shared/api.js';
   import { showToast } from '../../shared/toast.js';
   import { t } from '../../shared/i18n.js';
@@ -10,6 +11,7 @@
   let dialogs = $state([]),
     activeId = $state(''),
     value = $state('');
+  let hiddenQuestionId = $state('');
   let pendingId = $state(''),
     error = $state('');
   const answered = new SvelteSet();
@@ -66,15 +68,32 @@
   });
 </script>
 
+{#if active?.method === 'question' && hiddenQuestionId === active.id}
+  <button type="button" class="btn-primary reopen-question" onclick={() => (hiddenQuestionId = '')}
+    >{t('piExtension.questionTitle')}</button
+  >
+{/if}
+
 <FullScreenSheet
-  open={!!active}
-  title={t('piExtension.title')}
+  open={!!active && hiddenQuestionId !== active.id}
+  title={t(active?.method === 'question' ? 'piExtension.questionTitle' : 'piExtension.title')}
   showBack={false}
-  showClose={false}
+  showClose={active?.method === 'question'}
   closeOnBackdrop={false}
   closeOnEscape={false}
+  onClose={() => (hiddenQuestionId = active?.id || '')}
 >
-  {#if active}
+  {#if active?.method === 'question'}
+    {#if error}<p class="extension-error" role="alert">{error}</p>{/if}
+    {#key active.id}
+      <QuestionPicker
+        questions={active.questions}
+        expires={active.expires}
+        busy={!!pendingId}
+        {reply}
+      />
+    {/key}
+  {:else if active}
     <div class="extension-dialog">
       <h3>{active.title || t('piExtension.title')}</h3>
       {#if active.message}<p>{active.message}</p>{/if}
@@ -157,8 +176,15 @@
   .extension-dialog :is(h3, p, button) {
     overflow-wrap: anywhere;
   }
-  .extension-dialog .extension-error {
+  .extension-error {
     color: var(--danger);
+  }
+  .reopen-question {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 62px);
+    right: 16px;
+    z-index: 20;
+    min-height: 44px;
   }
   input,
   textarea {

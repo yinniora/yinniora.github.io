@@ -96,6 +96,7 @@ type Server struct {
 	renderAppShell        func(w io.Writer, bootstrap string) error
 	models                func(ctx context.Context) (json.RawMessage, error)
 	lastKnown             map[string]struct{} // session ids currently broadcast as running
+	lastKnownWaiting      map[string]bool
 	lastKnownMu           sync.Mutex
 	push                  *PushManager
 	stopCh                chan struct{}

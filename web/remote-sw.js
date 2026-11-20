@@ -2,6 +2,12 @@
 // DTLS channel. Media Range requests stream through the same encrypted path.
 const CACHE = 'pi-remote-personal-1';
 const SHELL = ['/', '/icon.svg', '/manifest.webmanifest' /* packaged shell assets */];
+const APP_ROUTES = new Set(['/', '/index.html', '/session', '/settings', '/models', '/schedules']);
+const isAppClient = (client) => {
+  if (!client || client.type !== 'window') return false;
+  const url = new URL(client.url);
+  return url.origin === self.location.origin && APP_ROUTES.has(url.pathname);
+};
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
@@ -44,9 +50,13 @@ self.addEventListener('fetch', (event) => {
   ) {
     event.respondWith(
       (async () => {
-        const client =
-          (await self.clients.get(event.clientId)) ||
-          (await self.clients.matchAll({ type: 'window', includeUncontrolled: true }))[0];
+        let client = event.clientId ? await self.clients.get(event.clientId) : null;
+        if (!isAppClient(client)) {
+          if (client || url.pathname !== '/share' || event.request.mode !== 'navigate') {
+            return fetch(event.request);
+          }
+          client = (await self.clients.matchAll({ type: 'window' })).find(isAppClient);
+        }
         if (!client)
           return new Response('Open Pi Workspace to connect to the Mac.', { status: 503 });
         const channel = new MessageChannel();
@@ -108,6 +118,7 @@ self.addEventListener('fetch', (event) => {
       })(),
     );
   } else if (event.request.mode === 'navigate' && event.request.method === 'GET') {
+    if (!APP_ROUTES.has(url.pathname)) return;
     event.respondWith(
       caches
         .open(CACHE)
@@ -121,12 +132,18 @@ self.addEventListener('fetch', (event) => {
   ) {
     event.respondWith(
       (async () => {
+        if (!SHELL.includes(url.pathname) && !isAppClient(await self.clients.get(event.clientId))) {
+          return fetch(event.request);
+        }
         const cache = await caches.open(CACHE);
         const cached = await cache.match(event.request);
         if (cached) return cached;
         if (url.pathname.startsWith('/assets/')) {
-          const previous = await caches.match(event.request);
-          if (previous) return previous;
+          for (const key of await caches.keys()) {
+            if (!key.startsWith('pi-remote-') || key === CACHE) continue;
+            const previous = await (await caches.open(key)).match(event.request);
+            if (previous) return previous;
+          }
         }
         const response = await fetch(event.request);
         if (response.ok) event.waitUntil(cache.put(event.request, response.clone()));

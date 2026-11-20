@@ -103,6 +103,7 @@
     } = followScroll;
 
     on(windowImpl, 'pi-chat-message-sent', (event) => {
+      if (event.detail?.steering) return;
       followScroll.extendPreviewFollow(30000);
       if (event && event.detail && event.detail.message) {
         // The transcript preview now shows progress; tell the composer.
@@ -110,6 +111,9 @@
       } else {
         forceFollowToBottom(true);
       }
+    });
+    on(windowImpl, 'pi-chat-message-failed', (event) => {
+      if (!event.detail?.steering) clearChatPreviewState(CHAT_PREVIEW_STATE);
     });
 
     function updateStats(entries) {

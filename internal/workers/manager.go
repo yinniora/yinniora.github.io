@@ -27,6 +27,7 @@ type WorkerStatus struct {
 	ThinkingLevels   []string     `json:"thinkingLevels,omitempty"`
 	Compacting       bool         `json:"compacting,omitempty"`
 	CompactionFailed bool         `json:"compactionFailed,omitempty"`
+	WaitingForInput  bool         `json:"waitingForInput,omitempty"`
 	HandledPrompt    string       `json:"handledPrompt,omitempty"`
 	ExtensionUI      *ExtensionUI `json:"extensionUI,omitempty"`
 }

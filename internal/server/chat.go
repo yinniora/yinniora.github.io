@@ -182,6 +182,7 @@ func (s *Server) handleWorkerStatus(w http.ResponseWriter, r *http.Request) {
 		status.ThinkingLevels = state.ThinkingLevels
 		status.Compacting = state.Compacting
 		status.CompactionFailed = state.CompactionFailed
+		status.WaitingForInput = state.WaitingForInput
 		if !running && state.Error == workers.ErrPiContextCompaction.Error() {
 			status.State, status.Error = workers.WorkerStateError, state.Error
 		}

@@ -4,16 +4,20 @@
   // composer's delegated click handler turns into a chat reply. Mirrors the former
   // renderAskUserQuestionTool().
   import { icon, Check } from '../../shared/icons.js';
+  import { t } from '../../shared/i18n.js';
 
-  let { args = {}, result = null } = $props();
+  let { args = {}, result = null, live = false, structured = false } = $props();
 
   const questions = $derived(Array.isArray(args.questions) ? args.questions : []);
   const answers = $derived(result?.details?.answers || {});
   const cancelled = $derived(result?.details?.cancelled === true);
+  const timedOut = $derived(result?.details?.timedOut === true);
   const awaitingChatReply = $derived(result?.details?.awaitingChatReply === true);
   const questionToolFailed = $derived(result?.isError === true);
-  const canClick = $derived(!result || questionToolFailed || awaitingChatReply);
-  const isInteractive = $derived(canClick || cancelled);
+  const canReply = $derived(!result || questionToolFailed || awaitingChatReply);
+  const isInteractive = $derived(
+    live && ((canReply && (!structured || !!result)) || (!structured && cancelled)),
+  );
   const isMulti = $derived(questions.length > 1);
   const anyMultiSelect = $derived(questions.some((q) => q && q.multiSelect === true));
   const needsSubmit = $derived(isMulti || anyMultiSelect);
@@ -34,7 +38,11 @@
     return answers[questionText] ?? answers[q?.id] ?? '';
   }
   function isSelected(answer, label) {
-    return answer === label || (typeof answer === 'string' && answer.split(', ').includes(label));
+    return (
+      answer === label ||
+      (Array.isArray(answer) && answer.includes(label)) ||
+      (typeof answer === 'string' && answer.split(', ').includes(label))
+    );
   }
   function questionTextOf(q, i) {
     if (typeof q?.question === 'string') return q.question;
@@ -54,24 +62,26 @@
   data-question-count={questions.length}
   data-needs-submit={needsSubmit}
 >
-  <div class="ask-question-title">Question for you</div>
+  <div class="ask-question-title">{t('piExtension.questionTitle')}</div>
   {#if questionToolFailed}
-    <div class="ask-question-state error">question UI failed</div>
+    <div class="ask-question-state error">{t('piExtension.questionFailed')}</div>
+  {:else if timedOut}
+    <div class="ask-question-state error">{t('activity.timedOut')}</div>
   {:else if cancelled}
-    <div class="ask-question-state error">cancelled</div>
+    <div class="ask-question-state error">{t('activity.stopped')}</div>
   {:else if awaitingChatReply}
-    <div class="ask-question-state pending">waiting for response</div>
+    <div class="ask-question-state pending">{t('piExtension.waiting')}</div>
   {:else if result}
-    <div class="ask-question-state answered">answered</div>
+    <div class="ask-question-state answered">{t('activity.done')}</div>
   {:else}
-    <div class="ask-question-state pending">waiting for response</div>
+    <div class="ask-question-state pending">{t('piExtension.waiting')}</div>
   {/if}
 
   {#if questions.length === 0}
     <div class="ask-question-text">No question payload provided.</div>
   {/if}
 
-  {#each questions as q, qIndex (questionTextOf(q, qIndex))}
+  {#each questions as q, qIndex (qIndex)}
     {@const questionText = questionTextOf(q, qIndex)}
     {@const answer = answerFor(q, questionText)}
     {@const options = Array.isArray(q.options) ? q.options : []}
@@ -115,14 +125,17 @@
           {/each}
         </div>
       {/if}
-      {#if answer}<div class="ask-question-answer"><span>Answer:</span> {String(answer)}</div>{/if}
+      {#if answer}<div class="ask-question-answer">
+          <span>{t('piExtension.response')}</span>
+          {Array.isArray(answer) ? answer.join(', ') : answer}
+        </div>{/if}
     </div>
   {/each}
 
   {#if isInteractive}
     {#if needsSubmit}
       <div class="ask-question-actions" style="display:none">
-        <button type="button" class="ask-question-submit-btn">Send answers</button>
+        <button type="button" class="ask-question-submit-btn">{t('composer.send')}</button>
       </div>
     {:else if questionToolFailed}
       <div class="ask-question-hint">

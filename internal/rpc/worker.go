@@ -57,6 +57,7 @@ type piRPCWorker struct {
 	extensionDialogs     map[string]*pendingExtensionDialog
 	extensionNotices     []workers.ExtensionNotice
 	extensionClosed      bool
+	questionUnanswered   bool
 	// An empty final reply (no content, no output tokens) from a relay is
 	// continued once per user prompt instead of ending the task.
 	emptyReply      bool
@@ -338,6 +339,12 @@ func (w *piRPCWorker) Abort(ctx context.Context) error {
 	w.mu.Lock()
 	w.status.State = workers.WorkerStateIdle
 	w.status.Error = ""
+	for id, pending := range w.extensionDialogs {
+		if pending.dialog.Method == "question" {
+			pending.timer.Stop()
+			delete(w.extensionDialogs, id)
+		}
+	}
 	w.mu.Unlock()
 	return nil
 }
@@ -469,6 +476,12 @@ func (w *piRPCWorker) Status() workers.WorkerStatus {
 	s.ThinkingLevels = w.thinkingLevels
 	s.HandledPrompt = w.handledPrompt
 	s.CompactionFailed = w.compactionFailed
+	for _, pending := range w.extensionDialogs {
+		if pending.dialog.Method == "question" && time.Now().Before(pending.dialog.Expires) {
+			s.WaitingForInput = true
+			break
+		}
+	}
 	if w.compacting {
 		s.Compacting = true
 		s.State = workers.WorkerStateRunning
@@ -643,7 +656,9 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		var message struct {
 			Role       string            `json:"role"`
 			StopReason string            `json:"stopReason"`
+			ToolName   string            `json:"toolName"`
 			Content    []json.RawMessage `json:"content"`
+			Details    json.RawMessage   `json:"details"`
 			Usage      struct {
 				Output int `json:"output"`
 			} `json:"usage"`
@@ -651,7 +666,22 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		if len(meta.Message) != 0 && json.Unmarshal(meta.Message, &message) != nil {
 			return
 		}
-		if message.Role == "assistant" {
+		switch {
+		case message.Role == "user":
+			w.mu.Lock()
+			w.questionUnanswered = false
+			w.mu.Unlock()
+		case message.Role == "toolResult" && message.ToolName == "pi_web_ask_user_question":
+			var details struct {
+				AwaitingChatReply bool `json:"awaitingChatReply"`
+				TimedOut          bool `json:"timedOut"`
+				Cancelled         bool `json:"cancelled"`
+			}
+			_ = json.Unmarshal(message.Details, &details)
+			w.mu.Lock()
+			w.questionUnanswered = details.AwaitingChatReply || details.TimedOut || details.Cancelled
+			w.mu.Unlock()
+		case message.Role == "assistant":
 			w.mu.Lock()
 			w.emptyReply = isEmptyFinalReply(message.StopReason, len(message.Content), message.Usage.Output)
 			w.mu.Unlock()
@@ -689,7 +719,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 			return
 		}
 		w.mu.Lock()
-		if meta.Type == "agent_end" && w.emptyReply && w.emptyRecoveries < maxEmptyReplyRecoveries {
+		if meta.Type == "agent_end" && !w.questionUnanswered && w.emptyReply && w.emptyRecoveries < maxEmptyReplyRecoveries {
 			w.emptyReply = false
 			w.emptyRecoveries++
 			w.recovering = true

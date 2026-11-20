@@ -1,9 +1,11 @@
 <script>
   import {
     icon,
+    ArrowUp,
     Camera,
     ChevronDown,
     Clock,
+    CornerDownRight,
     Gauge,
     Paperclip,
     Plus,
@@ -137,9 +139,13 @@
           aria-label={t('composer.queue')}
           disabled>{@html icon(Clock, { size: 16 })}<span>{t('composer.queue')}</span></button
         >
-        <button type="submit" id="pi-chat-send" class="pi-chat-send" disabled
-          >{toolbar.isRunning ? t('composer.steer') : t('composer.send')}</button
-        >
+        <button type="submit" id="pi-chat-send" class="pi-chat-send" disabled>
+          {@html icon(toolbar.isRunning ? CornerDownRight : ArrowUp, {
+            size: 17,
+            class: 'composer-send-icon',
+          })}
+          <span>{toolbar.isRunning ? t('composer.steer') : t('composer.send')}</span>
+        </button>
       </div>
     </div>
   </div>

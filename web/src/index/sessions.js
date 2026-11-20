@@ -14,6 +14,7 @@ export function normalizeSession(raw = {}) {
     project: raw.project || raw.Project || '',
     lastActivity: raw.lastActivity || raw.LastActivity || '',
     lastCompletedAt: raw.lastCompletedAt || raw.LastCompletedAt || '',
+    lastTurnState: raw.lastTurnState || raw.LastTurnState || '',
     name: raw.name || raw.Name || raw.id || raw.ID || '',
     messageCount: raw.messageCount ?? raw.MessageCount ?? 0,
     tokenTotal: raw.tokenTotal ?? raw.TokenTotal ?? 0,

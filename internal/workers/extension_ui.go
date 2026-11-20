@@ -6,14 +6,29 @@ import (
 )
 
 type ExtensionDialog struct {
-	ID          string    `json:"id"`
-	Method      string    `json:"method"`
-	Title       string    `json:"title"`
-	Message     string    `json:"message,omitempty"`
-	Placeholder string    `json:"placeholder,omitempty"`
-	Prefill     string    `json:"prefill,omitempty"`
-	Options     []string  `json:"options,omitempty"`
-	Expires     time.Time `json:"expires"`
+	ID          string     `json:"id"`
+	Method      string     `json:"method"`
+	Title       string     `json:"title"`
+	Message     string     `json:"message,omitempty"`
+	Placeholder string     `json:"placeholder,omitempty"`
+	Prefill     string     `json:"prefill,omitempty"`
+	Options     []string   `json:"options,omitempty"`
+	Questions   []Question `json:"questions,omitempty"`
+	Expires     time.Time  `json:"expires"`
+}
+
+type Question struct {
+	Question    string           `json:"question"`
+	Header      string           `json:"header,omitempty"`
+	MultiSelect bool             `json:"multiSelect,omitempty"`
+	Options     []QuestionOption `json:"options"`
+}
+
+type QuestionOption struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Recommended bool   `json:"recommended,omitempty"`
+	Default     bool   `json:"default,omitempty"`
 }
 
 type ExtensionNotice struct {

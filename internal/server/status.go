@@ -63,6 +63,9 @@ func (s *Server) runningStatusPayload(sessionID string, running bool) map[string
 	if status.ModelProvider != "" {
 		payload["modelProvider"] = status.ModelProvider
 	}
+	if status.WaitingForInput {
+		payload["waitingForInput"] = true
+	}
 	return payload
 }
 
@@ -79,12 +82,22 @@ func (s *Server) recomputeAndBroadcastStatus(sessionID string) {
 		return
 	}
 	now := s.computeRunningStatus(sessionID)
+	payload := s.runningStatusPayload(sessionID, now)
+	waiting, _ := payload["waitingForInput"].(bool)
 
 	s.lastKnownMu.Lock()
 	_, was := s.lastKnown[sessionID]
-	if now == was {
+	if now == was && waiting == s.lastKnownWaiting[sessionID] {
 		s.lastKnownMu.Unlock()
 		return
+	}
+	if waiting {
+		if s.lastKnownWaiting == nil {
+			s.lastKnownWaiting = make(map[string]bool)
+		}
+		s.lastKnownWaiting[sessionID] = true
+	} else {
+		delete(s.lastKnownWaiting, sessionID)
 	}
 	if now {
 		s.lastKnown[sessionID] = struct{}{}
@@ -93,7 +106,7 @@ func (s *Server) recomputeAndBroadcastStatus(sessionID string) {
 	}
 	s.lastKnownMu.Unlock()
 
-	data, _ := json.Marshal(s.runningStatusPayload(sessionID, now))
+	data, _ := json.Marshal(payload)
 	s.broadcast(globalSessID, "event: status-delta\ndata: "+string(data))
 
 	// Transition running → idle: fire a push notification so subscribed

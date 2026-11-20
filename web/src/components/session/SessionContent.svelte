@@ -27,6 +27,7 @@
   function activityText(section) {
     const tools = section.toolCount ? t('activity.toolCount', { count: section.toolCount }) : '';
     const failed = section.failures ? t('activity.failed') + ' ' + section.failures : '';
+    if (section.required) return { label: t('piExtension.waiting'), summary: tools };
     if (section.running)
       return { label: t('activity.working'), summary: [tools, failed].filter(Boolean).join(' · ') };
     if (section.unfinished)
@@ -134,13 +135,10 @@
         required={section.required}
         running={section.running}
         unfinished={section.unfinished}
-        status={section.running
+        status={section.running || section.required
           ? 'pending'
-          : section.unfinished
-            ? 'stopped'
-            : section.failures
-              ? 'error'
-              : 'success'}
+          : section.questionOutcome ||
+            (section.unfinished ? 'stopped' : section.failures ? 'error' : 'success')}
       >
         {#each section.timeline as step (step.key)}
           {#each step.anchors || [] as anchor (anchor)}<span
@@ -150,7 +148,12 @@
           {#if step.kind === 'text'}
             <div class="activity-step-text markdown-content">{@html md(step.text)}</div>
           {:else if step.kind === 'thinking'}
-            <AssistantThinking id={`thinking:${step.key}`} text={step.text} live />
+            <AssistantThinking
+              id={`thinking:${step.key}`}
+              text={step.text}
+              running={section.running}
+              live
+            />
           {:else if step.kind === 'question'}
             <ToolCall call={step.call} {model} live />
           {:else}

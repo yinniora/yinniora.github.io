@@ -2,9 +2,9 @@
   import { t } from '../../shared/i18n.js';
   import ActivityDisclosure from './ActivityDisclosure.svelte';
   import { Brain } from '../../shared/icons.js';
-  let { id, text, live } = $props();
-  // Reasoning summaries open with a title line (**Title** or # Title). Show it
-  // on the folded row, as Codex does; plain thoughts keep the generic label.
+  import { marked } from 'marked';
+  import { safeMarkedParse } from '../../session/render/markdown.js';
+  let { id, text, live, running = false } = $props();
   const preview = $derived.by(() => {
     const first =
       String(text || '')
@@ -16,6 +16,7 @@
   });
 </script>
 
+<!-- eslint-disable svelte/no-at-html-tags -- sanitized Markdown -->
 {#if live}
   <ActivityDisclosure
     kind="thinking"
@@ -23,8 +24,11 @@
     label={t('activity.thinking')}
     summary={preview}
     glyph={Brain}
+    {running}
   >
-    <div class="activity-thinking-text">{text}</div>
+    <div class="activity-thinking-text markdown-content">
+      {@html safeMarkedParse(text, { marked })}
+    </div>
   </ActivityDisclosure>
 {:else}
   <div class="thinking-block">

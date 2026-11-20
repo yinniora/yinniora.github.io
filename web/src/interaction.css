@@ -314,3 +314,15 @@
     opacity: 0;
   }
 }
+input.pi-secret-token {
+  -webkit-text-security: disc;
+}
+@supports not (-webkit-text-security: disc) {
+  input.pi-secret-token {
+    color: transparent;
+    caret-color: var(--text);
+  }
+  input.pi-secret-token::selection {
+    color: transparent;
+  }
+}

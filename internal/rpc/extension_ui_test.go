@@ -2,12 +2,44 @@ package rpc
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
 	"pi-web/internal/workers"
 )
+
+func TestStructuredQuestionWaitsForValidatedUserAnswer(t *testing.T) {
+	var sent bytes.Buffer
+	w := &piRPCWorker{stdin: nopWriteCloser{&sent}}
+	defer w.Close()
+	payload, err := json.Marshal(map[string]string{
+		"type": "extension_ui_request", "id": "ask", "method": "input", "title": structuredQuestionTitle,
+		"placeholder": `[{"question":"Scope","options":[{"label":"Local","default":true},{"label":"Remote"}]},{"question":"Files","multiSelect":true,"options":[{"label":"One"},{"label":"Two"}]}]`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.handleRPCLine(string(payload))
+	dialogs := w.ExtensionUI().Dialogs
+	if len(dialogs) != 1 || dialogs[0].Method != "question" || !dialogs[0].Questions[0].Options[0].Default ||
+		sent.Len() != 0 || !w.Status().WaitingForInput {
+		t.Fatalf("request did not stay pending: %+v", dialogs)
+	}
+	for _, value := range []string{`[["Local"]]`, `[["Local","Remote"],["One"]]`, `[["Local"],["One","One"]]`, `[["Unknown"],["One"]]`, questionTimeoutReply} {
+		if err := w.ReplyExtensionUI(workers.ExtensionAnswer{ID: "ask", Value: &value}); !errors.Is(err, workers.ErrExtensionAnswer) {
+			t.Errorf("answer %q: %v", value, err)
+		}
+	}
+	value := `[["Local"],["One","Two"]]`
+	if err := w.ReplyExtensionUI(workers.ExtensionAnswer{ID: "ask", Value: &value}); err != nil {
+		t.Fatal(err)
+	}
+	if sent.Len() == 0 || w.Status().WaitingForInput || len(w.ExtensionUI().Dialogs) != 0 {
+		t.Fatal("valid user answer did not release the waiting turn")
+	}
+}
 
 func TestExtensionDialogReplyValidatesChoiceAndCannotAcknowledgeGuard(t *testing.T) {
 	var sent bytes.Buffer

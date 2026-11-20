@@ -13,9 +13,6 @@
 //   - sendNow: the server dispatches the queue item and removes it on ack.
 //   - edit: remove the saved item before moving its text back to the composer.
 //
-// `activeRun` is driven solely by the `pi-chat-message-sent` (-> true) and
-// `pi-worker-done` (-> false) events, so the first message of a run is never
-// mistaken for a steer.
 import { t } from '../../../shared/i18n.js';
 
 export function setupSteerQueue({
@@ -29,11 +26,13 @@ export function setupSteerQueue({
   updateSendEnabled = () => {},
   queueApi = null,
   getLiveEntries = null,
+  isRunning = null,
 } = {}) {
   if (!store) throw new Error('setupSteerQueue: store is required');
 
   let activeRun = false;
   const sending = new Set();
+  const steerRequests = new WeakMap();
 
   function hasContent() {
     const typed = textarea ? textarea.value.trim() : '';
@@ -65,12 +64,22 @@ export function setupSteerQueue({
   async function sendNow(id) {
     const focused = store.items.find((it) => it.id === id);
     if (!focused || focused.kind !== 'queued' || !queueApi || sending.has(id)) return;
-    const steering = activeRun;
+    const steering = isRunning?.() ?? activeRun;
+    const before = userEntryIds(getLiveEntries?.() || []);
     sending.add(id);
     try {
       await queueApi.sendNow(focused.position);
       store.takeLocalById(id);
-      if (steering && activeRun) store.pushSteer({ text: focused.text });
+      if (steering && (isRunning?.() ?? activeRun)) {
+        const consumed = (getLiveEntries?.() || []).some(
+          ({ id, message }) =>
+            id &&
+            !before.has(id) &&
+            message?.role === 'user' &&
+            matchesSteer(extractUserText(message.content).trim(), focused.text),
+        );
+        if (!consumed) store.pushSteer({ text: focused.text });
+      }
     } catch (error) {
       setChatStatus(
         error.message === 'session is busy' ? t('piSession.busy') : t('activity.failed'),
@@ -111,11 +120,16 @@ export function setupSteerQueue({
   }
 
   const onMessageSent = (event) => {
-    const message = event?.detail?.message;
-    if (activeRun) {
-      store.pushSteer({ text: message });
+    const detail = event.detail;
+    if (detail && (detail.steering ?? activeRun)) {
+      steerRequests.set(detail, store.pushSteer({ text: detail.message }));
     }
     activeRun = true;
+  };
+  const onMessageFailed = (event) => {
+    if (!event.detail?.steering) activeRun = false;
+    const id = steerRequests.get(event.detail);
+    if (id) store.takeLocalById(id);
   };
 
   const onWorkerDone = () => {
@@ -129,13 +143,6 @@ export function setupSteerQueue({
   // session JSONL. The live reload fires `pi-session-reload`; we then drop the
   // matching steer chip so it disappears as soon as the steer is observably
   // picked up, instead of waiting until the whole run completes.
-  //
-  // Strategy: first try a text match (most precise). If we can't match by
-  // text — pi could decorate the stored content in ways we don't recognise —
-  // fall back to a FIFO clear keyed on "did the count of user messages grow
-  // since the previous reload?". Either path is safe because steer chips are
-  // only ever added while `activeRun` is true; the next run begins via
-  // pi-worker-done's clearSteers().
   function extractUserText(content) {
     if (typeof content === 'string') return content;
     if (Array.isArray(content)) {
@@ -151,6 +158,14 @@ export function setupSteerQueue({
         ids.add(entry.id);
     }
     return ids;
+  }
+
+  function matchesSteer(text, draft) {
+    const own = String(draft || '').trim();
+    return (
+      own &&
+      (text === own || text.startsWith(own + '\n') || text.startsWith('[steer] ' + own + ' ('))
+    );
   }
 
   // Track user entries by id, not by count: a compaction can shrink the live
@@ -169,24 +184,11 @@ export function setupSteerQueue({
     }
     if (store.steerCount === 0 || fresh.length === 0) return;
 
-    // 1) Text match. Pi may append notes (e.g. image descriptions) to the
-    // stored prompt, so a prefix is enough.
-    let unmatched = 0;
     for (const text of fresh) {
-      const chip = store.items.find((item) => {
-        const own = String(item.text || '').trim();
-        return item.kind === 'steer' && own && (text === own || text.startsWith(own));
-      });
+      const chip = store.items.find(
+        (item) => item.kind === 'steer' && matchesSteer(text, item.text),
+      );
       if (chip) store.removeById(chip.id);
-      else unmatched += 1;
-    }
-
-    // 2) FIFO fallback: one chip per unmatched new user message, oldest first.
-    while (unmatched > 0 && store.steerCount > 0) {
-      const head = store.items.find((item) => item.kind === 'steer');
-      if (!head) break;
-      store.removeById(head.id);
-      unmatched -= 1;
     }
   }
 
@@ -197,6 +199,7 @@ export function setupSteerQueue({
   queueButton?.addEventListener('click', enqueueFromComposer);
   textarea?.addEventListener('input', updateQueueEnabled);
   windowImpl.addEventListener('pi-chat-message-sent', onMessageSent);
+  windowImpl.addEventListener('pi-chat-message-failed', onMessageFailed);
   windowImpl.addEventListener('pi-worker-done', onWorkerDone);
   windowImpl.addEventListener('pi-session-reload', reconcileSteersAgainstEntries);
 
@@ -211,6 +214,7 @@ export function setupSteerQueue({
     steerCount: () => store.steerCount,
     dispose: () => {
       windowImpl.removeEventListener('pi-chat-message-sent', onMessageSent);
+      windowImpl.removeEventListener('pi-chat-message-failed', onMessageFailed);
       windowImpl.removeEventListener('pi-worker-done', onWorkerDone);
       windowImpl.removeEventListener('pi-session-reload', reconcileSteersAgainstEntries);
     },

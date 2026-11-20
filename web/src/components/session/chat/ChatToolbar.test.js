@@ -34,7 +34,7 @@ describe('ChatToolbar', () => {
     expect(document.getElementById('pi-chat-cancel').textContent).toBe('Stop');
     expect(document.getElementById('pi-chat-queue').style.display).toBe('');
     expect(document.getElementById('pi-chat-queue').textContent).toBe('Queue');
-    expect(document.getElementById('pi-chat-send').textContent).toBe('Steer');
+    expect(document.getElementById('pi-chat-send').textContent.trim()).toBe('Steer');
   });
 
   it('falls back to defaults and hides controls when unavailable', () => {
@@ -59,6 +59,6 @@ describe('ChatToolbar', () => {
     expect(document.querySelector('.thinking-control').hidden).toBe(true);
     expect(document.getElementById('pi-chat-cancel').style.display).toBe('none');
     expect(document.getElementById('pi-chat-queue').style.display).toBe('none');
-    expect(document.getElementById('pi-chat-send').textContent).toBe('Send');
+    expect(document.getElementById('pi-chat-send').textContent.trim()).toBe('Send');
   });
 });

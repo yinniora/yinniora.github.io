@@ -1,7 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import {
+import { describe, it, expect, vi } from 'vitest';
+import piAsk, {
   isRpcMode,
-  buildAwaitingResult,
   extractToolNames,
   findPiWebOverlaps,
   buildSteeringNote,
@@ -32,32 +31,42 @@ describe('isRpcMode', () => {
   });
 });
 
-describe('buildAwaitingResult', () => {
-  it('marks the result as awaiting a chat reply with the question count', () => {
-    const result = buildAwaitingResult([
-      { question: 'Pick a color', options: [{ label: 'Red' }, { label: 'Blue' }] },
-      { question: 'Pick a size', options: [{ label: 'S' }, { label: 'L' }] },
-    ]);
-    expect(result.details.awaitingChatReply).toBe(true);
-    expect(result.details.questionCount).toBe(2);
-    expect(result.content[0].type).toBe('text');
+describe('structured question tool', () => {
+  const questions = [{ question: 'Proceed?', options: [{ label: 'Yes', default: true }, { label: 'No' }] }];
+
+  function execute(input: unknown) {
+    const registerTool = vi.fn();
+    const argv = process.argv;
+    try {
+      process.argv = ['pi', '--mode', 'rpc'];
+      piAsk({ registerTool, on: vi.fn() } as unknown as Parameters<typeof piAsk>[0]);
+    } finally {
+      process.argv = argv;
+    }
+    const tool = registerTool.mock.calls[0][0];
+    return tool.execute('id', { questions }, undefined, undefined, { ui: { input } });
+  }
+
+  it('waits for the user even when a default is selected', async () => {
+    let submit!: (response: string) => void;
+    const input = vi.fn((_title: string, _payload: string) => new Promise<string>((resolve) => { submit = resolve; }));
+    const pending = execute(input);
+    const settled = vi.fn();
+    void pending.then(settled);
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    expect(JSON.parse(input.mock.calls[0][1])).toEqual(questions);
+    submit('[["No"]]');
+    expect((await pending).details).toEqual({ questionCount: 1, answers: { 'Proceed?': ['No'] } });
   });
 
-  it('tells the model to stop and wait for the user message', () => {
-    const text = buildAwaitingResult([{ question: 'Proceed?', options: [] }]).content[0].text;
-    expect(text).toContain('Stop now');
-    expect(text).toContain('"Question" = "Answer"');
-    expect(text).toContain('Proceed?');
-  });
-
-  it('handles a missing/blank question with a positional fallback', () => {
-    const text = buildAwaitingResult([{ options: [] }]).content[0].text;
-    expect(text).toContain('Question 1');
-  });
-
-  it('tolerates non-array input', () => {
-    const result = buildAwaitingResult(undefined as unknown as []);
-    expect(result.details.questionCount).toBe(0);
+  it.each([
+    ['timedOut', { timedOut: true, cancelled: false }],
+    [undefined, { timedOut: false, cancelled: true }],
+  ])('never submits the default for outcome %s', async (response, outcome) => {
+    const result = await execute(vi.fn(async () => response));
+    expect(result.details).toEqual({ questionCount: 1, ...outcome });
+    expect(result.content[0].text).toContain('wait for a user message');
   });
 });
 

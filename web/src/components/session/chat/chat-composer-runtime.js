@@ -203,6 +203,12 @@ export function runChatComposer({
       setChatStatus(text, cls);
     }
 
+    let workerRunning = false;
+    // A recent transcript write can briefly show status "running" without
+    // an active RPC worker. A first prompt in that state is still a new turn.
+    const isSteering = () =>
+      workerRunning || ['sending', 'queued', 'accepted'].includes(toolbar.statusText);
+
     const submission = setupChatSubmission({
       windowImpl: window,
       form,
@@ -212,6 +218,7 @@ export function runChatComposer({
       attachments,
       chatApi: __piChatApi,
       sessionId,
+      isSteering,
       setStatus,
       autoResizeTextarea,
       updateSendEnabled,
@@ -259,6 +266,7 @@ export function runChatComposer({
 
     const steerQueue = setupSteerQueue({
       windowImpl: window,
+      isRunning: isSteering,
       store: queueStore,
       queueButton,
       textarea,
@@ -288,6 +296,7 @@ export function runChatComposer({
         toolbar.compacting = value;
         updateSendEnabled();
       },
+      setWorkerRunning: (running) => (workerRunning = running),
       setExtensionUI: (ui) =>
         window.dispatchEvent(new CustomEvent('pi:extension-ui', { detail: { sessionId, ui } })),
       setIntervalImpl: setInterval,

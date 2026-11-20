@@ -14,6 +14,7 @@ export function setupWorkerStatusPolling({
   setKnownThinkingLevel = () => {},
   getWorkerModelUpdate = () => null,
   setCompacting = () => {},
+  setWorkerRunning = () => {},
   setExtensionUI = () => {},
   setIntervalImpl = windowImpl.setInterval?.bind(windowImpl),
   clearIntervalImpl = windowImpl.clearInterval?.bind(windowImpl),
@@ -48,6 +49,7 @@ export function setupWorkerStatusPolling({
       if (apiModelLabel) setKnownModelLabel(apiModelLabel);
       if (data.thinkingLevel) setKnownThinkingLevel(data.thinkingLevel);
       setCompacting(Boolean(data.compacting));
+      setWorkerRunning(data.state === 'running' && Boolean(data.model));
       if (data.state === 'running') setStatus('running', 'running');
       if (data.state === 'idle') {
         if (data.compactionFailed) setStatus(t('piSession.compactFailed'), 'error');

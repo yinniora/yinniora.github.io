@@ -5,7 +5,7 @@
   import ActivityDisclosure from './ActivityDisclosure.svelte';
   import ToolCall from './ToolCall.svelte';
   import { toolKind } from '../../session/render/conversation-activity.js';
-  import { t } from '../../shared/i18n.js';
+  import { getLocale, t } from '../../shared/i18n.js';
   import {
     Terminal,
     FileText,
@@ -35,10 +35,19 @@
   let { run, model } = $props();
 
   const order = ['command', 'read', 'edit', 'search', 'web', 'ui', 'other'];
+  const singular = new Set(['command', 'read', 'edit', 'other']);
   const label = $derived.by(() => {
     const parts = order
       .filter((kind) => run.counts[kind])
-      .map((kind) => t('toolRun.' + kind, { count: run.counts[kind] }));
+      .map((kind) => {
+        const key = 'toolRun.' + kind;
+        return t(
+          getLocale() === 'en' && singular.has(kind) && run.counts[kind] === 1 ? key + 'One' : key,
+          {
+            count: run.counts[kind],
+          },
+        );
+      });
     if (run.pending) {
       const kind = toolKind(run.pending.name);
       return {
