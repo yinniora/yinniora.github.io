@@ -79,6 +79,15 @@ function appendTimeline(timeline, item, results) {
   if (step) (step.anchors ||= []).push(id);
 }
 
+const STEER_GAP_MS = 15000;
+
+function isSteer(before, entry) {
+  const kind = before?.type === 'message' ? before.message?.role : before?.type;
+  if (kind !== 'toolResult' && kind !== 'compaction') return false;
+  const gap = entryTime(entry) - entryTime(before);
+  return Number.isFinite(gap) && gap >= 0 && gap <= STEER_GAP_MS;
+}
+
 export function groupConversationActivity(entries, outputsByEntry, running = false) {
   const results = new Map();
   for (const { entry } of entries) {
@@ -117,9 +126,20 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
     }
   }
 
+  // The entry before the current one, to tell a steer from a stopped turn.
+  let previous = null;
   for (let item of entries) {
     const { entry } = item;
     const message = entry.type === 'message' && entry.message;
+    const before = previous;
+    if (entry.type !== 'session_info') previous = entry;
+    // The server continued a turn the provider closed with an empty reply:
+    // keep one activity group and note the recovery in its summary.
+    if (item.autoContinued) {
+      if (activity) activity.autoContinued = true;
+      sections.push({ key: entry.id, item });
+      continue;
+    }
     if (
       message?.role === 'toolResult' ||
       entry.type === 'thinking_level_change' ||
@@ -130,7 +150,12 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
     if (message?.role === 'user') {
       // The previous turn never reached a reply: it was cut off, stopped or
       // lost its runner. Say so instead of looking finished.
-      if (activity) activity.unfinished = true;
+      // A message steered into a running turn lands right after a tool result
+      // (or Pi's between-turn compaction): the turn went on, it did not stop.
+      if (activity) {
+        if (isSteer(before, entry)) activity.steered = true;
+        else activity.unfinished = true;
+      }
       activity = null;
       turnStartedAt = entryTime(entry);
     }

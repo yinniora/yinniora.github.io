@@ -325,7 +325,8 @@ test.describe("steer / queue (stubbed pi)", () => {
     });
     const items = await queueThree(page, textarea, testInfo, "touch");
     await expect(page.locator(".pi-queue-shortcuts")).toBeHidden();
-    await expect(page.locator(".pi-queue-touch-hint")).toBeVisible();
+    // The row buttons say what a tap does; the panel no longer adds a hint line.
+    await expect(page.locator(".pi-queue-touch-hint")).toBeHidden();
 
     const rows = page.locator(".pi-queue-item");
     await rows.nth(1).locator(".pi-queue-item-text").click();

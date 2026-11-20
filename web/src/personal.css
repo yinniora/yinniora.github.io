@@ -2663,3 +2663,354 @@ body .pi-btw-input {
 #spa-root .activity-disclosure[data-display-kind='tool-run'] > .activity-body {
   padding-inline-start: 14px;
 }
+
+/* Activity, Codex-style: no card around a turn's work. The steps hang off a
+   quiet rail, one compact line each, with an icon for what kind of step it is.
+   Folded thoughts and single tool calls preview what they are about. */
+#spa-root .activity-group,
+#spa-root .activity-group[open] {
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+#spa-root .activity-group > summary,
+#spa-root .activity-group[open] > summary {
+  min-height: 38px;
+  gap: 6px;
+  padding-inline: 0 4px;
+  font-size: 13px;
+}
+#spa-root .activity-group > summary:hover {
+  background: none;
+  color: var(--text);
+}
+#spa-root .activity-group > summary .activity-label {
+  font-weight: 600;
+}
+#spa-root .activity-group > .activity-body {
+  margin: 0 0 4px 7px;
+  padding: 2px 0 2px 13px;
+  border-top: 0;
+  border-inline-start: 1.5px solid var(--dim-2);
+}
+#spa-root .activity-group .activity-disclosure[data-glyph] {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+#spa-root .activity-group .activity-disclosure[data-glyph] > summary {
+  min-height: 32px;
+  gap: 8px;
+  padding: 3px 2px 3px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+#spa-root .activity-group .activity-disclosure[data-glyph] > summary:hover,
+#spa-root .activity-group .activity-disclosure[data-glyph][open] > summary {
+  background: none;
+  color: var(--text-soft);
+}
+#spa-root .activity-glyph {
+  display: flex;
+  flex: none;
+  opacity: 0.85;
+}
+#spa-root .activity-disclosure[data-glyph] > summary .activity-chevron {
+  order: 10;
+  opacity: 0.45;
+}
+#spa-root .activity-disclosure[data-glyph] > summary .activity-chevron svg {
+  width: 13px;
+  height: 13px;
+}
+#spa-root .activity-disclosure[data-glyph] > summary .activity-status {
+  order: 9;
+}
+#spa-root .activity-disclosure[data-glyph] > summary .activity-label {
+  flex: none;
+  max-width: 70%;
+  font-weight: 500;
+}
+#spa-root .activity-disclosure[data-glyph] > summary .activity-summary {
+  flex: 1 1 0;
+  opacity: 0.75;
+  font-size: 12px;
+}
+#spa-root .activity-disclosure[data-display-kind='thinking'] > summary .activity-summary {
+  font-family: inherit;
+  font-style: italic;
+}
+#spa-root .activity-disclosure[data-glyph][open] > summary .activity-summary {
+  visibility: hidden;
+}
+#spa-root .activity-group .activity-disclosure[data-glyph] > .activity-body {
+  padding: 0 0 8px 22px;
+  border: 0;
+}
+#spa-root .activity-group .activity-thinking-text {
+  padding: 0 0 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+#spa-root .activity-group .activity-disclosure[data-glyph] > .activity-body > .tool-execution {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  font-size: 12px;
+  overflow-x: auto;
+}
+#spa-root .activity-group .activity-step-text {
+  padding: 5px 0;
+}
+#spa-root .activity-group .activity-collapse-end {
+  justify-content: flex-start;
+  width: auto;
+  min-height: 32px;
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+  font-size: 12px;
+}
+/* A running turn's label shimmers, like Codex. */
+@media (prefers-reduced-motion: no-preference) {
+  #spa-root .activity-group[data-running='true'] > summary .activity-label,
+  #spa-root
+    .activity-disclosure[data-display-kind='tool-run']:has(.activity-status.pending)
+    > summary
+    .activity-label {
+    background: linear-gradient(
+        90deg,
+        var(--muted) 0%,
+        var(--muted) 35%,
+        var(--text) 50%,
+        var(--muted) 65%,
+        var(--muted) 100%
+      )
+      0 0 / 250% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    animation: activity-shimmer 2.2s linear infinite;
+  }
+}
+@keyframes activity-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+#spa-root .activity-group[data-unfinished='true'] > summary .activity-label {
+  color: color-mix(in srgb, var(--warning) 85%, var(--text));
+}
+
+/* Queue / steer panel: one quiet card that matches the composer. */
+#spa-root .pi-queue-panel {
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 8px 8px 6px;
+  border: 1px solid var(--workspace-edge, var(--dim));
+  border-radius: 16px;
+  background: var(--surface, var(--container-bg));
+  box-shadow: 0 6px 20px rgb(0 0 0 / 16%);
+}
+#spa-root .pi-queue-header {
+  min-height: 28px;
+  padding-inline: 6px 0;
+}
+#spa-root .pi-queue-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#spa-root .pi-queue-status-label {
+  font-weight: 600;
+}
+#spa-root .pi-queue-toggle {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+#spa-root .pi-queue-item {
+  min-height: 36px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+#spa-root .pi-queue-item-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-size: 11px;
+  font-style: normal;
+}
+#spa-root .pi-queue-panel--steers .pi-queue-item--steer {
+  background: transparent;
+}
+#spa-root .pi-queue-panel--steers .pi-queue-item-tag {
+  display: none;
+}
+#spa-root .pi-queue-panel--steers .pi-queue-status-label {
+  color: color-mix(in srgb, var(--accent) 75%, var(--text));
+}
+#spa-root .pi-queue-panel--steers .pi-queue-status-count {
+  color: var(--muted);
+}
+
+/* Composer toolbar: the attach button never shrinks; the model label gives up
+   space first. While a task runs with a draft, Stop turns into an icon and
+   Queue + Steer share one split button so nothing is clipped on phones. */
+#spa-root .pi-chat-toolbar-left {
+  min-width: 42px;
+}
+#spa-root .pi-chat-toolbar-left > .composer-add {
+  flex: none;
+}
+#spa-root .pi-chat-toolbar-left .pi-chat-model-label {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#spa-root .pi-chat-toolbar .actions {
+  flex: none;
+  gap: 6px;
+  align-items: center;
+}
+#spa-root .pi-chat-send-group {
+  display: inline-flex;
+  align-items: stretch;
+}
+#spa-root .pi-chat-send-group .pi-chat-queue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--text);
+  border-right: 0;
+  border-radius: 999px 0 0 999px;
+  background: transparent;
+  color: var(--text);
+}
+#spa-root .pi-chat-send-group .pi-chat-queue > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+#spa-root .pi-chat-send-group .pi-chat-queue:is(:hover, :focus-visible):not(:disabled) {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+#spa-root .pi-chat-send-group.running #pi-chat-send {
+  min-height: 40px;
+  border-radius: 0 999px 999px 0;
+  padding: 7px 14px 7px 12px;
+}
+#spa-root .actions.running:has(.pi-chat-send:not(:disabled)) .pi-chat-cancel {
+  width: 40px;
+  padding: 0;
+}
+#spa-root .actions.running:has(.pi-chat-send:not(:disabled)) .pi-chat-cancel > span {
+  display: none;
+}
+@media (max-width: 760px) {
+  #spa-root .pi-chat-thinking-label {
+    padding: 5px 8px;
+  }
+  #spa-root .pi-chat-thinking-label > svg:last-child {
+    display: none;
+  }
+  #spa-root .pi-chat-toolbar .actions {
+    gap: 5px;
+  }
+}
+
+/* Queue panel, compact: one header line, icon-only row actions, no tap hint
+   (the row's own buttons say what tapping does). */
+#spa-root .pi-queue-touch-hint {
+  display: none;
+}
+#spa-root .pi-queue-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#spa-root .pi-queue-item-touch-actions .pi-queue-item-action {
+  width: 34px;
+  min-height: 32px;
+  padding: 0;
+  justify-content: center;
+}
+#spa-root .pi-queue-item-touch-actions .pi-queue-item-action > span,
+#spa-root .pi-queue-status-saved {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+@media (max-width: 760px) {
+  #spa-root .pi-queue-toggle {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+  #spa-root .pi-queue-toggle > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+
+/* Images in sent messages and in the composer are compact thumbnails; a tap
+   opens the full image (existing zoom overlay). */
+#spa-root .user-message .message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 8px;
+}
+#spa-root .user-message .message-image {
+  width: 72px;
+  height: 72px;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  object-fit: cover;
+  border: 1px solid var(--dim);
+  border-radius: 10px;
+  background: var(--bg);
+}
+#spa-root .pi-chat-attachment.image-only {
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+#spa-root .pi-chat-attachment-preview {
+  width: 56px;
+  height: 56px;
+  max-width: none;
+  object-fit: cover;
+  border-radius: 0;
+}
+#spa-root .pi-chat-attachment.image-only .pi-chat-remove {
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+}

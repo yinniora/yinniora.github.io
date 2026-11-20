@@ -11,6 +11,7 @@
   import ActivityDisclosure from './ActivityDisclosure.svelte';
   import ToolCall from './ToolCall.svelte';
   import ToolRun from './ToolRun.svelte';
+  import ReplyError from './ReplyError.svelte';
   import { marked } from 'marked';
   import { safeMarkedParse } from '../../session/render/markdown.js';
   import { entriesWithReplyDetails } from '../../session/render/reply-details.js';
@@ -27,7 +28,7 @@
     const tools = section.toolCount ? t('activity.toolCount', { count: section.toolCount }) : '';
     const failed = section.failures ? t('activity.failed') + ' ' + section.failures : '';
     if (section.running)
-      return { label: t('activity.working'), summary: failed || section.latestTool };
+      return { label: t('activity.working'), summary: [tools, failed].filter(Boolean).join(' · ') };
     if (section.unfinished)
       return {
         label: t('activity.unfinished'),
@@ -36,7 +37,13 @@
     if (section.durationMs >= 1000)
       return {
         label: t('activity.worked', { duration: formatElapsed(section.durationMs) }),
-        summary: failed || tools,
+        summary: [
+          failed || tools,
+          section.steered && t('activity.steered'),
+          section.autoContinued && t('activity.autoContinued'),
+        ]
+          .filter(Boolean)
+          .join(' · '),
       };
     return { label: tools || t('activity.thinking'), summary: failed };
   }
@@ -62,6 +69,24 @@
       ? groupConversationActivity(entries, groups?.byEntry, sessionRunning)
       : entries.map((item) => ({ key: item.entry.id, item })),
   );
+  // Sections after the last user message belong to the newest turn; only that
+  // turn offers to continue with another model or effort.
+  const latestFrom = $derived.by(() => {
+    for (let index = sections.length - 1; index >= 0; index--) {
+      const item = sections[index].item;
+      if (item?.entry.message?.role === 'user' && !item.autoContinued) return index + 1;
+    }
+    return 0;
+  });
+  function continueTask() {
+    document
+      .getElementById('pi-chat-composer')
+      ?.dispatchEvent(new CustomEvent('pi:retry-prompt', { detail: t('activity.continuePrompt') }));
+  }
+  function openControl(id, event) {
+    event.stopPropagation();
+    document.getElementById(id)?.click();
+  }
 
   // Re-run post-render side effects whenever the rendered path changes.
   $effect(() => {
@@ -73,10 +98,11 @@
 </script>
 
 {#snippet renderEntry(
-  { entry, reply, repeatedError, retryContent, skipActivity, emptyReply },
+  { entry, reply, repeatedError, autoContinued, retryContent, skipActivity, emptyReply },
   inActivity = false,
+  latestTurn = false,
 )}
-  {#if repeatedError}
+  {#if repeatedError || autoContinued}
     <span id={`entry-${entry.id}`} hidden></span>
   {:else}
     <SessionEntry
@@ -87,6 +113,7 @@
       {chatAvailable}
       {retryContent}
       {emptyReply}
+      {latestTurn}
       {skipActivity}
       outputs={inActivity ? undefined : groups?.byEntry.get(entry.id)}
       {renderOutputs}
@@ -97,13 +124,12 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: sanitized session markdown -->
 <div id="messages-list" class="messages-list" bind:this={containerEl}>
-  {#each sections as section (section.key)}
+  {#each sections as section, sectionIndex (section.key)}
     {#if section.items}
       <ActivityDisclosure
         kind="group"
         id={section.key}
         label={activityText(section).label}
-        count={section.running ? section.toolCount : 0}
         summary={activityText(section).summary}
         required={section.required}
         running={section.running}
@@ -132,11 +158,19 @@
           {/if}
         {/each}
       </ActivityDisclosure>
+      {#if section.unfinished && chatAvailable && !sessionRunning && sectionIndex >= latestFrom}
+        <ReplyError
+          actionsOnly
+          onContinue={continueTask}
+          onChooseModel={(event) => openControl('pi-chat-model-label', event)}
+          onChooseEffort={(event) => openControl('pi-chat-thinking-label', event)}
+        />
+      {/if}
       {#if section.outputs.length}
         {@render renderOutputs?.(section.outputs)}
       {/if}
     {:else}
-      {@render renderEntry(section.item)}
+      {@render renderEntry(section.item, false, !sessionRunning && sectionIndex >= latestFrom)}
     {/if}
   {/each}
   {#if groups?.unassigned.length}

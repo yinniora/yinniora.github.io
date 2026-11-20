@@ -1,7 +1,49 @@
 const transportError =
   /\b(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|UND_ERR_[A-Z_]+)\b|socket hang up|secure TLS connection/i;
 
+// The server's recovery prompt after a provider closed a turn with an empty
+// reply (internal/rpc/worker.go EmptyReplyContinuePrompt).
+export const AUTO_CONTINUE_PROMPT = 'Continue.';
+
+function messageText(message) {
+  const content = message?.content;
+  if (typeof content === 'string') return content;
+  return Array.isArray(content)
+    ? content
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('')
+    : '';
+}
+
+function isEmptyStop(message) {
+  const blocks = Array.isArray(message?.content) ? message.content : [];
+  return (
+    message?.role === 'assistant' &&
+    message.stopReason === 'stop' &&
+    !blocks.length &&
+    !(message.usage?.output > 0)
+  );
+}
+
+// An empty reply followed right away by the recovery prompt: the task went on.
+function autoContinuedEntries(entries) {
+  const ids = new Set();
+  let empty = null;
+  for (const entry of entries) {
+    if (entry.type !== 'message') continue;
+    const message = entry.message;
+    if (empty && message?.role === 'user' && messageText(message).trim() === AUTO_CONTINUE_PROMPT) {
+      ids.add(empty);
+      ids.add(entry.id);
+    }
+    empty = isEmptyStop(message) ? entry.id : null;
+  }
+  return ids;
+}
+
 export function entriesWithReplyDetails(entries) {
+  const autoContinued = autoContinuedEntries(entries);
   const repeatedErrors = new Set();
   let nextError = '';
   for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -25,6 +67,7 @@ export function entriesWithReplyDetails(entries) {
       previousModel = [entry.provider, entry.modelId].filter(Boolean).join('/');
     }
     const message = entry.type === 'message' && entry.message;
+    if (autoContinued.has(entry.id)) return { entry, autoContinued: true };
     if (message?.role === 'user') prompt = message.content;
     if (repeatedErrors.has(entry.id)) return { entry, repeatedError: true };
     if (message?.role === 'assistant' && message.stopReason === 'error') {

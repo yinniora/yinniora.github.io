@@ -38,6 +38,36 @@ describe('conversation activity duration', () => {
     expect(activity.durationMs).toBe(72000);
   });
 
+  it('treats a message steered into a running turn as a continuation', () => {
+    const tool = (id, s) =>
+      msg(id, s, {
+        role: 'assistant',
+        stopReason: 'toolUse',
+        content: [{ type: 'toolCall', id: 't' + id, name: 'bash', arguments: {} }],
+      });
+    const result = (id, s) =>
+      msg(id, s, { role: 'toolResult', toolCallId: 't' + id[1], content: [] });
+    const activity = (entries) =>
+      groupConversationActivity(entries, new Map(), true).filter((section) => section.items)[0];
+    const start = [msg('u', 0, { role: 'user', content: 'go' }), tool('a', 1), result('ra', 2)];
+
+    const steered = activity([
+      ...start,
+      msg('s', 4, { role: 'user', content: 'also' }),
+      tool('b', 6),
+    ]);
+    expect(steered).toMatchObject({ steered: true });
+    expect(steered.unfinished).toBeFalsy();
+    const compacted = activity([
+      ...start,
+      { entry: { id: 'c', type: 'compaction', timestamp: at(50) } },
+      msg('s', 51, { role: 'user', content: 'also' }),
+    ]);
+    expect(compacted).toMatchObject({ steered: true });
+    const later = activity([...start, msg('s', 300, { role: 'user', content: 'again' })]);
+    expect(later).toMatchObject({ unfinished: true });
+  });
+
   it('marks a turn that ended without a reply as unfinished', () => {
     const tool = (id, s) =>
       msg(id, s, {
@@ -60,6 +90,48 @@ describe('conversation activity duration', () => {
     const [, activity, truncated] = groupConversationActivity([...turn, cut], new Map());
     expect(activity.toolCount).toBe(1);
     expect(truncated.item).toMatchObject({ entry: cut.entry, skipActivity: true });
+  });
+
+  it('keeps one turn when the server continued after an empty reply', () => {
+    const tool = (id, s) =>
+      msg(id, s, {
+        role: 'assistant',
+        stopReason: 'toolUse',
+        content: [{ type: 'toolCall', id: 't' + id, name: 'bash', arguments: {} }],
+      });
+    const empty = msg('e', 3, {
+      role: 'assistant',
+      stopReason: 'stop',
+      content: [],
+      usage: { output: 0 },
+    });
+    const resume = msg('c', 4, { role: 'user', content: 'Continue.' });
+    const done = msg('d', 9, { role: 'assistant', stopReason: 'stop', content: 'done' });
+    const sections = groupConversationActivity(
+      entriesWithReplyDetails(
+        [
+          msg('u', 0, { role: 'user', content: 'go' }),
+          tool('a', 1),
+          empty,
+          resume,
+          tool('b', 5),
+          done,
+        ].map((item) => item.entry),
+      ),
+      new Map(),
+    );
+    const groups = sections.filter((section) => section.items);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ toolCount: 2, autoContinued: true });
+    expect(groups[0].unfinished).toBeFalsy();
+    expect(sections.filter((section) => section.item?.autoContinued)).toHaveLength(2);
+    expect(sections.at(-1).item.reply.text).toBe('done');
+
+    // Without the recovery prompt the empty reply still ends the turn.
+    const ended = entriesWithReplyDetails(
+      [msg('u', 0, { role: 'user', content: 'go' }), empty].map((item) => item.entry),
+    );
+    expect(ended[1]).toMatchObject({ emptyReply: true });
   });
 });
 

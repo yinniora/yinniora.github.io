@@ -21,6 +21,7 @@
     required = false,
     running = false,
     unfinished = false,
+    glyph = null,
     children,
   } = $props();
   const indicators = {
@@ -58,6 +59,7 @@
   class:activity-thinking={kind === 'thinking'}
   class:activity-group={kind === 'group'}
   data-display-kind={kind}
+  data-glyph={glyph ? 'true' : undefined}
   data-collapse-key={id}
   data-requires-response={required ? 'true' : undefined}
   data-running={running ? 'true' : undefined}
@@ -65,6 +67,9 @@
   open={required || running}
 >
   <summary onclick={toggle}>
+    {#if glyph}<span class="activity-glyph" aria-hidden="true"
+        >{@html icon(glyph, { size: 14 })}</span
+      >{/if}
     <span class="activity-chevron" aria-hidden="true">{@html icon(ChevronRight, { size: 15 })}</span
     >
     <span class="activity-label">{label}</span>

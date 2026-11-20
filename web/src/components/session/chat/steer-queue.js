@@ -144,59 +144,49 @@ export function setupSteerQueue({
     return '';
   }
 
-  function countUserMessages(entries) {
-    let n = 0;
+  function userEntryIds(entries) {
+    const ids = new Set();
     for (const entry of entries) {
-      if (entry?.type === 'message' && entry.message?.role === 'user') n += 1;
+      if (entry?.type === 'message' && entry.message?.role === 'user' && entry.id)
+        ids.add(entry.id);
     }
-    return n;
+    return ids;
   }
 
-  // Seed at attach time with the current historical user-message count so we
-  // don't treat existing entries as fresh steer pickups on the first reload.
-  let lastUserMessageCount = getLiveEntries ? countUserMessages(getLiveEntries() || []) : 0;
+  // Track user entries by id, not by count: a compaction can shrink the live
+  // projection, and a count delta then never sees the steer land.
+  let seenUserIds = getLiveEntries ? userEntryIds(getLiveEntries() || []) : new Set();
 
   function reconcileSteersAgainstEntries() {
     if (!getLiveEntries) return;
     const entries = getLiveEntries() || [];
-    const userCount = countUserMessages(entries);
-    if (store.steerCount === 0) {
-      lastUserMessageCount = userCount;
-      return;
+    const fresh = [];
+    for (const entry of entries) {
+      if (entry?.type !== 'message' || entry.message?.role !== 'user' || !entry.id) continue;
+      if (seenUserIds.has(entry.id)) continue;
+      seenUserIds.add(entry.id);
+      fresh.push(extractUserText(entry.message.content).trim());
     }
-    let newUserMessages = Math.max(0, userCount - lastUserMessageCount);
-    lastUserMessageCount = userCount;
+    if (store.steerCount === 0 || fresh.length === 0) return;
 
-    // 1) Precise text match.
-    if (newUserMessages > 0) {
-      const recent = new Set();
-      let scanned = 0;
-      for (let i = entries.length - 1; i >= 0 && scanned < 25; i -= 1) {
-        const entry = entries[i];
-        if (!entry || entry.type !== 'message') continue;
-        if (entry.message?.role !== 'user') continue;
-        const text = extractUserText(entry.message.content).trim();
-        if (text) recent.add(text);
-        scanned += 1;
-      }
-      const matched = store.items.filter(
-        (item) => item.kind === 'steer' && recent.has(String(item.text || '').trim()),
-      );
-      for (const item of matched) {
-        store.removeById(item.id);
-        newUserMessages -= 1;
-        if (newUserMessages <= 0) return;
-      }
+    // 1) Text match. Pi may append notes (e.g. image descriptions) to the
+    // stored prompt, so a prefix is enough.
+    let unmatched = 0;
+    for (const text of fresh) {
+      const chip = store.items.find((item) => {
+        const own = String(item.text || '').trim();
+        return item.kind === 'steer' && own && (text === own || text.startsWith(own));
+      });
+      if (chip) store.removeById(chip.id);
+      else unmatched += 1;
     }
 
-    // 2) FIFO fallback. If pi's stored content doesn't match our captured chip
-    // text exactly (decorated user entries, etc.) we still pop one steer chip
-    // per newly arrived user message, oldest first.
-    while (newUserMessages > 0 && store.steerCount > 0) {
+    // 2) FIFO fallback: one chip per unmatched new user message, oldest first.
+    while (unmatched > 0 && store.steerCount > 0) {
       const head = store.items.find((item) => item.kind === 'steer');
       if (!head) break;
       store.removeById(head.id);
-      newUserMessages -= 1;
+      unmatched -= 1;
     }
   }
 

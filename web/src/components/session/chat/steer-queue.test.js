@@ -226,6 +226,26 @@ describe('setupSteerQueue (server-backed)', () => {
     expect(store.steerCount).toBe(0);
   });
 
+  it('clears a steer chip that lands right after a compaction shrank the projection', () => {
+    const { queueButton, textarea } = makeDom();
+    const store = new QueueStore();
+    const user = (id, content) => ({ id, type: 'message', message: { role: 'user', content } });
+    let entries = [user('old1', 'a'), user('old2', 'b'), user('old3', 'c')];
+    setupSteerQueue({ store, queueButton, textarea, getLiveEntries: () => entries });
+
+    window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
+    window.dispatchEvent(
+      new CustomEvent('pi-chat-message-sent', { detail: { message: 'polish' } }),
+    );
+    expect(store.steerCount).toBe(1);
+
+    // Compaction leaves fewer user entries than before, plus the steer with
+    // an image note appended.
+    entries = [user('new', 'polish\n\n[Image: 1206x2622]')];
+    window.dispatchEvent(new Event('pi-session-reload'));
+    expect(store.steerCount).toBe(0);
+  });
+
   it('leaves the steer chip alone while no matching user entry has landed', () => {
     const { queueButton, textarea } = makeDom();
     const store = new QueueStore();

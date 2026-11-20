@@ -105,7 +105,7 @@ func TestClaudeEffortDependsOnExactModelAndProtocol(t *testing.T) {
 		{"dated adaptive", "claude-opus-5-5-20261101", apiAnthropic, true, true, false, true},
 		{"legacy budget", "claude-sonnet-4-5-20250929", apiAnthropic, true, false, true, false},
 		{"fixed variant", "claude-opus-5-5-thinking-high", apiAnthropic, false, false, false, false},
-		{"chat protocol", "claude-opus-5-5", apiChat, false, false, false, false},
+		{"chat protocol keeps official levels", "claude-opus-5-5", apiChat, true, false, false, true},
 		{"arbitrary alias", "private-claude-opus-5-5", apiAnthropic, false, false, false, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {

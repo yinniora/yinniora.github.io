@@ -57,6 +57,11 @@ type piRPCWorker struct {
 	extensionDialogs     map[string]*pendingExtensionDialog
 	extensionNotices     []workers.ExtensionNotice
 	extensionClosed      bool
+	// An empty final reply (no content, no output tokens) from a relay is
+	// continued once per user prompt instead of ending the task.
+	emptyReply      bool
+	emptyRecoveries int
+	recovering      bool
 }
 
 func (w *piRPCWorker) touch() {
@@ -205,6 +210,9 @@ func (w *piRPCWorker) Prompt(ctx context.Context, chat chat.Request) error {
 	}
 	revision := w.agentRevision
 	limits := w.modelLimits
+	if !streaming {
+		w.emptyRecoveries = 0
+	}
 	checkContext := !streaming && w.autoCompaction && limits.ContextWindow > 0 && limits.MaxTokens > 0 &&
 		!strings.HasPrefix(strings.TrimSpace(chat.Message), "/")
 	w.compacting = checkContext
@@ -633,10 +641,20 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 	case "message_end":
 		w.noteStreamActivity()
 		var message struct {
-			Role string `json:"role"`
+			Role       string            `json:"role"`
+			StopReason string            `json:"stopReason"`
+			Content    []json.RawMessage `json:"content"`
+			Usage      struct {
+				Output int `json:"output"`
+			} `json:"usage"`
 		}
 		if len(meta.Message) != 0 && json.Unmarshal(meta.Message, &message) != nil {
 			return
+		}
+		if message.Role == "assistant" {
+			w.mu.Lock()
+			w.emptyReply = isEmptyFinalReply(message.StopReason, len(message.Content), message.Usage.Output)
+			w.mu.Unlock()
 		}
 		if message.Role == "assistant" || message.Role == "" {
 			w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
@@ -659,6 +677,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type, ToolCallID: meta.ToolCallID, ToolName: meta.ToolName})
 	case "agent_start":
 		w.mu.Lock()
+		w.recovering = false
 		w.computerDenied = false
 		w.agentRevision++
 		w.status.State = workers.WorkerStateRunning
@@ -670,6 +689,20 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 			return
 		}
 		w.mu.Lock()
+		if meta.Type == "agent_end" && w.emptyReply && w.emptyRecoveries < maxEmptyReplyRecoveries {
+			w.emptyReply = false
+			w.emptyRecoveries++
+			w.recovering = true
+			w.agentRevision++
+			w.mu.Unlock()
+			go w.continueAfterEmptyReply()
+			return
+		}
+		if w.recovering {
+			w.mu.Unlock()
+			return
+		}
+		w.emptyReply = false
 		w.agentRevision++
 		w.status = workers.WorkerStatus{State: workers.WorkerStateIdle}
 		clear(w.computerRequests)
@@ -683,6 +716,36 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 			w.mu.Unlock()
 		}
 	}
+}
+
+const maxEmptyReplyRecoveries = 1
+
+// EmptyReplyContinuePrompt is sent when a provider ends a turn with an empty
+// reply. The web client shows it as a recovery note rather than a user turn.
+const EmptyReplyContinuePrompt = "Continue."
+
+// isEmptyFinalReply reports a turn a provider closed normally without any
+// content or output tokens. Relays send this when an upstream stream drops.
+func isEmptyFinalReply(stopReason string, blocks, outputTokens int) bool {
+	return stopReason == "stop" && blocks == 0 && outputTokens == 0
+}
+
+func (w *piRPCWorker) continueAfterEmptyReply() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	id := w.nextID()
+	_, err := w.request(ctx, map[string]any{"id": id, "type": "prompt", "message": EmptyReplyContinuePrompt})
+	if err == nil {
+		return
+	}
+	w.mu.Lock()
+	w.recovering = false
+	if w.status.State != workers.WorkerStateError {
+		w.status = workers.WorkerStatus{State: workers.WorkerStateIdle}
+	}
+	w.mu.Unlock()
+	w.lastStreamActivity.Store(0)
+	w.emitStreamPreview(assistantMessageEvent{Type: "agent_end"})
 }
 
 // transientTransportPattern matches network failures below the provider API:

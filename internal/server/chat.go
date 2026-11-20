@@ -270,14 +270,25 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// A model used before keeps its last effort (Pi applies it on the switch).
+	// A model never used starts at its official default instead of the
+	// previous model's effort.
+	if !s.hasModelThinkingLevel(body.Provider, body.ModelID) {
+		if level := officialDefaultLevel(body.ModelID); level != "" {
+			_ = s.chatSender.SetThinkingLevel(r.Context(), resolved.Session.ID, resolved.Path, level)
+		}
+	}
 	result := map[string]any{"ok": true}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
+	level := ""
 	if state, err := s.chatSender.GetState(ctx, resolved.Session.ID); err == nil &&
 		state.ModelProvider == body.Provider && state.Model == body.ModelID {
 		result["thinkingLevel"] = state.ThinkingLevel
 		result["thinkingLevels"] = state.ThinkingLevels
+		level = state.ThinkingLevel
 	}
+	s.rememberModelChoice(body.Provider, body.ModelID, level)
 	writeJSON(w, 0, result)
 }
 
@@ -307,6 +318,29 @@ func (s *Server) handleSetThinkingLevel(w http.ResponseWriter, r *http.Request) 
 	status := s.chatSender.Status(resolved.Session.ID)
 	if state, err := s.chatSender.GetState(r.Context(), resolved.Session.ID); err == nil {
 		status.ThinkingLevel = state.ThinkingLevel
+		s.rememberModelChoice(state.ModelProvider, state.Model, state.ThinkingLevel)
 	}
 	writeJSON(w, 0, map[string]any{"ok": true, "thinkingLevel": status.ThinkingLevel})
+}
+
+// Best effort: a failed write leaves the previous defaults in place.
+func (s *Server) rememberModelChoice(provider, modelID, level string) {
+	if s.agentDir == "" {
+		return
+	}
+	s.modelConfigMu.Lock()
+	defer s.modelConfigMu.Unlock()
+	_ = rememberModelChoice(s.agentDir, provider, modelID, level)
+}
+
+func (s *Server) hasModelThinkingLevel(provider, modelID string) bool {
+	if s.agentDir == "" {
+		return true
+	}
+	var settings struct{ ModelThinkingLevels map[string]string }
+	raw, err := os.ReadFile(filepath.Join(s.agentDir, "settings.json"))
+	if err != nil || json.Unmarshal(raw, &settings) != nil {
+		return false
+	}
+	return settings.ModelThinkingLevels[provider+"/"+modelID] != ""
 }

@@ -20,8 +20,15 @@
   const queuedCount = $derived(store.queuedCount);
   const steerCount = $derived(store.steerCount);
 
+  // Only steers: they ride the running turn, so queue pause/resume and the
+  // queue's editing hints do not apply to them.
+  const steersOnly = $derived(queuedCount === 0 && steerCount > 0);
   const statusLabel = $derived(
-    store.paused ? t('composer.queuePaused') : t('composer.queueActive'),
+    steersOnly
+      ? t('composer.queueSteeringCount')
+      : store.paused
+        ? t('composer.queuePaused')
+        : t('composer.queueActive'),
   );
   const countLabel = $derived(formatCount(queuedCount, steerCount));
   const activeDescendantId = $derived(
@@ -32,9 +39,9 @@
 
   function formatCount(queued, steers) {
     if (queued === 0 && steers === 0) return '';
-    if (queued === 0) return `${steers} ${t('composer.queueSteeringCount')}`;
+    if (queued === 0) return t('composer.steerOnlyHint');
     if (steers === 0) return `${queued} ${t('composer.queueQueuedCount')}`;
-    return `${queued} ${t('composer.queueQueuedCount')} · ${steers} ${t('composer.queueSteeringCount')}`;
+    return `${queued} · ${t('composer.steerTag')} ${steers}`;
   }
 
   function chipText(item) {
@@ -164,14 +171,15 @@
 {#if visible}
   <section
     class="pi-queue-panel"
-    class:pi-queue-panel--paused={store.paused}
+    class:pi-queue-panel--paused={store.paused && !steersOnly}
+    class:pi-queue-panel--steers={steersOnly}
     aria-label={t('composer.queueAria')}
   >
     <header class="pi-queue-header">
       <div class="pi-queue-status">
         <span class="pi-queue-status-label">{statusLabel}</span>
         {#if countLabel}<span class="pi-queue-status-count"> · {countLabel}</span>{/if}
-        {#if store.persistsLocally}
+        {#if store.persistsLocally && !steersOnly}
           <span
             class="pi-queue-status-saved"
             title={t('composer.queueSavedLocallyHint')}
@@ -182,7 +190,9 @@
         {/if}
       </div>
       <div class="pi-queue-header-actions">
-        {#if store.paused}
+        {#if steersOnly}
+          <!-- Steers have nothing to pause. -->
+        {:else if store.paused}
           <button
             type="button"
             class="pi-queue-toggle pi-queue-toggle--resume"
@@ -237,6 +247,8 @@
               <button
                 type="button"
                 class="pi-queue-item-action"
+                aria-label={t('composer.queueEdit')}
+                title={t('composer.queueEdit')}
                 onclick={(event) => {
                   event.stopPropagation();
                   store.actions.edit?.(item.id);
@@ -245,6 +257,8 @@
               <button
                 type="button"
                 class="pi-queue-item-action"
+                aria-label={t('composer.queueSendNow')}
+                title={t('composer.queueSendNow')}
                 onclick={(event) => {
                   event.stopPropagation();
                   store.actions.sendNow?.(item.id);
@@ -267,15 +281,17 @@
       {/each}
     </ul>
 
-    <footer class="pi-queue-touch-hint">{t('composer.queueTouchHint')}</footer>
-    <footer class="pi-queue-shortcuts" aria-hidden="true">
-      <span class="pi-queue-shortcut"><kbd>↑↓</kbd>{t('composer.queueNavigate')}</span>
-      <span class="pi-queue-shortcut"><kbd>E</kbd>{t('composer.queueEdit')}</span>
-      <span class="pi-queue-shortcut"><kbd>⌫</kbd>{t('composer.queueDelete')}</span>
-      <span class="pi-queue-shortcut"><kbd>↩</kbd>{t('composer.queueSendNow')}</span>
-      <span class="pi-queue-shortcut pi-queue-shortcut--right"
-        ><kbd>Esc</kbd>{t('composer.queueExit')}</span
-      >
-    </footer>
+    {#if !steersOnly}
+      <footer class="pi-queue-touch-hint">{t('composer.queueTouchHint')}</footer>
+      <footer class="pi-queue-shortcuts" aria-hidden="true">
+        <span class="pi-queue-shortcut"><kbd>↑↓</kbd>{t('composer.queueNavigate')}</span>
+        <span class="pi-queue-shortcut"><kbd>E</kbd>{t('composer.queueEdit')}</span>
+        <span class="pi-queue-shortcut"><kbd>⌫</kbd>{t('composer.queueDelete')}</span>
+        <span class="pi-queue-shortcut"><kbd>↩</kbd>{t('composer.queueSendNow')}</span>
+        <span class="pi-queue-shortcut pi-queue-shortcut--right"
+          ><kbd>Esc</kbd>{t('composer.queueExit')}</span
+        >
+      </footer>
+    {/if}
   </section>
 {/if}

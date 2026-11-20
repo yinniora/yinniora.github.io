@@ -3,7 +3,9 @@
     icon,
     CircleAlert,
     ChevronRight,
+    Gauge,
     Layers,
+    Play,
     RotateCcw,
     Square,
   } from '../../shared/icons.js';
@@ -17,6 +19,9 @@
     onChooseModel = null,
     onRetry = null,
     onCompact = null,
+    onContinue = null,
+    onChooseEffort = null,
+    actionsOnly = false,
   } = $props();
 </script>
 
@@ -27,7 +32,9 @@
   {#if model}<small>{model}</small>{/if}
 {/snippet}
 
-{#if error}
+{#if actionsOnly}
+  <!-- The surrounding block already names the state. -->
+{:else if error}
   <details class="reply-error" class:reply-interrupted={interrupted}>
     <summary>
       {@render label()}
@@ -42,18 +49,32 @@
     <div class="reply-error-label">{@render label()}</div>
   </div>
 {/if}
-{#if onChooseModel || onRetry || onCompact}
+{#if onChooseModel || onRetry || onCompact || onContinue}
   <div class="reply-error-actions">
+    {#if onContinue}<button class="reply-action-primary" type="button" onclick={onContinue}
+        >{@html icon(Play, { size: 14 })}<span>{t('activity.continue')}</span></button
+      >{/if}
     {#if onCompact}<button class="compact-action" type="button" onclick={onCompact}
         >{t('piSession.compact')}</button
       >{/if}
     {#if onChooseModel}<button
         type="button"
+        class:reply-action-labeled={onContinue}
         aria-label={t('models.title')}
         title={t('models.title')}
         onclick={onChooseModel}
       >
-        {@html icon(Layers, { size: 15 })}
+        {@html icon(Layers, { size: 15 })}{#if onContinue}<span>{t('activity.switchModel')}</span
+          >{/if}
+      </button>{/if}
+    {#if onChooseEffort}<button
+        type="button"
+        class="reply-action-labeled"
+        aria-label={t('composer.switchEffort')}
+        title={t('composer.switchEffort')}
+        onclick={onChooseEffort}
+      >
+        {@html icon(Gauge, { size: 15 })}<span>{t('composer.switchEffort')}</span>
       </button>{/if}
     {#if onRetry}<button
         type="button"
@@ -134,6 +155,28 @@
     background: transparent;
     color: inherit;
     cursor: pointer;
+  }
+  .reply-error-actions {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .reply-error-actions :is(.reply-action-primary, .reply-action-labeled) {
+    display: inline-flex;
+    gap: 6px;
+    width: auto;
+    padding: 0 12px;
+    border: 1px solid var(--dim);
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .reply-error-actions .reply-action-primary {
+    border-color: var(--text);
+    background: var(--text);
+    color: var(--body-bg, var(--bg));
+  }
+  .reply-error-actions .reply-action-primary:is(:hover, :focus-visible) {
+    background: color-mix(in srgb, var(--text) 82%, var(--bg));
   }
   .reply-error-actions button:hover,
   .reply-error-actions button:focus-visible {

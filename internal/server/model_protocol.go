@@ -329,4 +329,9 @@ func describeCatalogModel(model, raw map[string]any, id, api, base string) {
 	if model["reasoning"] == true && len(levels) > 0 {
 		model["thinkingLevelMap"] = declaredEffortLevels(levels)
 	}
+	// A relay that lists a known model without capability metadata still
+	// serves that model: use its official levels.
+	if model["reasoning"] != true {
+		applyOfficialEffort(model, id, api)
+	}
 }

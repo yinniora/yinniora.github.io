@@ -756,9 +756,16 @@ func deleteModelConfiguration(agent, provider, modelID string, config map[string
 func (s *Server) appliedModels(fallback []map[string]any) ([]map[string]any, error) {
 	s.modelConfigMu.Lock()
 	defer s.modelConfigMu.Unlock()
-	_, providers, _, err := readModelConfig(s.agentDir)
+	config, providers, _, err := readModelConfig(s.agentDir)
 	if err != nil {
 		return nil, err
+	}
+	if upgradeOfficialEfforts(providers) {
+		if err := writeModelConfig(s.agentDir, config); err == nil {
+			if manager, ok := s.chatSender.(interface{ ResourcesChanged() }); ok {
+				manager.ResourcesChanged()
+			}
+		}
 	}
 	result := []map[string]any{}
 	availableProviders := map[string]bool{}

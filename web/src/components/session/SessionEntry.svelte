@@ -32,6 +32,7 @@
     chatAvailable = false,
     retryContent = null,
     emptyReply = false,
+    latestTurn = false,
     skipActivity = false,
     outputs,
     renderOutputs = null,
@@ -75,6 +76,16 @@
     event.stopPropagation();
     document.getElementById('pi-chat-model-label')?.click();
   }
+  function chooseEffort(event) {
+    event.stopPropagation();
+    document.getElementById('pi-chat-thinking-label')?.click();
+  }
+  // Resume a stopped task where it left off, with whichever model and effort
+  // are selected now.
+  const continueTask = () =>
+    document
+      .getElementById('pi-chat-composer')
+      ?.dispatchEvent(new CustomEvent('pi:retry-prompt', { detail: t('activity.continuePrompt') }));
   const retry = () =>
     document
       .getElementById('pi-chat-composer')
@@ -160,7 +171,13 @@
     {/if}
     {#if msg.stopReason === 'aborted'}
       {#if live}
-        <ReplyError interrupted onRetry={chatAvailable && retryContent ? retry : null} />
+        <ReplyError
+          interrupted
+          onContinue={chatAvailable && latestTurn ? continueTask : null}
+          onChooseModel={chatAvailable && latestTurn ? chooseModel : null}
+          onChooseEffort={chatAvailable && latestTurn ? chooseEffort : null}
+          onRetry={chatAvailable && retryContent ? retry : null}
+        />
       {:else}
         <div class="error-text">{t('activity.interrupted')}</div>
       {/if}
@@ -179,9 +196,10 @@
     {:else if emptyReply && !outputs?.length}
       <ReplyError
         interrupted
-        labelKey="activity.unfinished"
-        error={msg.rawStopReason || ''}
+        labelKey="activity.emptyReply"
+        onContinue={chatAvailable && latestTurn ? continueTask : null}
         onChooseModel={chatAvailable ? chooseModel : null}
+        onChooseEffort={chatAvailable && latestTurn ? chooseEffort : null}
         onRetry={chatAvailable && retryContent ? retry : null}
       />
     {:else if msg.stopReason === 'error'}

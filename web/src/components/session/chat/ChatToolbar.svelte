@@ -3,6 +3,7 @@
     icon,
     Camera,
     ChevronDown,
+    Clock,
     Gauge,
     Paperclip,
     Plus,
@@ -124,17 +125,22 @@
           >{t('composer.stop')}</span
         ></button
       >
-      <button
-        type="button"
-        id="pi-chat-queue"
-        class="pi-chat-queue"
-        style:display={toolbar.isRunning ? '' : 'none'}
-        title={t('composer.queueHint')}
-        disabled>{t('composer.queue')}</button
-      >
-      <button type="submit" id="pi-chat-send" class="pi-chat-send" disabled
-        >{toolbar.isRunning ? t('composer.steer') : t('composer.send')}</button
-      >
+      <!-- Steer and Queue share one split button: Steer (submit) joins the
+           current run, the clock half queues the draft for later. -->
+      <div class="pi-chat-send-group" class:running={toolbar.isRunning}>
+        <button
+          type="button"
+          id="pi-chat-queue"
+          class="pi-chat-queue"
+          style:display={toolbar.isRunning ? '' : 'none'}
+          title={t('composer.queueHint')}
+          aria-label={t('composer.queue')}
+          disabled>{@html icon(Clock, { size: 16 })}<span>{t('composer.queue')}</span></button
+        >
+        <button type="submit" id="pi-chat-send" class="pi-chat-send" disabled
+          >{toolbar.isRunning ? t('composer.steer') : t('composer.send')}</button
+        >
+      </div>
     </div>
   </div>
 {/snippet}
