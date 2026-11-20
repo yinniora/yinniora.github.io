@@ -713,7 +713,7 @@ SOFTWARE.
 
 ==============================================================================
 
-Go runtime go1.27.4
+Go runtime go1.26.5
 Source: https://go.dev/LICENSE
 Declared license: BSD-3-Clause
 
