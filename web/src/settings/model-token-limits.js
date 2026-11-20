@@ -1,3 +1,5 @@
+export const MAX_TOKEN_LIMIT = 10000000;
+
 export function formatTokenLimit(tokens) {
   if (!Number.isSafeInteger(tokens) || tokens <= 0) return '';
   if (tokens >= 1000000) return tokens / 1000000 + 'M';

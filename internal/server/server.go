@@ -75,6 +75,7 @@ type Server struct {
 	pluginConfigMu        sync.Mutex
 	modelCatalogs         map[string]modelCatalog
 	modelBalances         modelBalanceCache
+	nativeModelLimits     nativeModelLimitCache
 	removedModelProviders map[string]struct{}
 	remoteControl         *relay.Controller
 	sessionManagementMu   sync.Mutex

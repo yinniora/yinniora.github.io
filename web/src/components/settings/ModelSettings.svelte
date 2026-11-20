@@ -4,7 +4,11 @@
   import { t } from '../../shared/i18n.js';
   import { supportedThinkingLevels } from '../../session/chat/chat-selectors.js';
   import { loadModelBalances, modelBalanceLabel } from '../../session/chat/model-balances.js';
-  import { formatTokenLimit, parseTokenLimit } from '../../settings/model-token-limits.js';
+  import {
+    formatTokenLimit,
+    parseTokenLimit,
+    MAX_TOKEN_LIMIT,
+  } from '../../settings/model-token-limits.js';
   import { icon, Pencil, Trash2 } from '../../shared/icons.js';
   const apiLabels = {
     'openai-completions': 'models.openaiCompatible',
@@ -196,8 +200,8 @@
     }
   }
   async function apply() {
-    const context = parseTokenLimit(contextWindow, 10000000);
-    const output = parseTokenLimit(maxTokens, 1000000);
+    const context = parseTokenLimit(contextWindow, MAX_TOKEN_LIMIT);
+    const output = parseTokenLimit(maxTokens, MAX_TOKEN_LIMIT);
     if (context === null || output === null) return;
     if (
       await action({
@@ -214,8 +218,8 @@
   async function saveLimits(event) {
     event.preventDefault();
     if (busy || !limitEditor) return;
-    const context = parseTokenLimit(limitEditor.contextWindow, 10000000);
-    const output = parseTokenLimit(limitEditor.maxTokens, 1000000);
+    const context = parseTokenLimit(limitEditor.contextWindow, MAX_TOKEN_LIMIT);
+    const output = parseTokenLimit(limitEditor.maxTokens, MAX_TOKEN_LIMIT);
     if (!context || !output) return;
     if (
       await action({
@@ -486,7 +490,7 @@
                 placeholder="1M"
                 maxlength="24"
                 autocomplete="off"
-                aria-invalid={parseTokenLimit(contextWindow, 10000000) === null}
+                aria-invalid={parseTokenLimit(contextWindow, MAX_TOKEN_LIMIT) === null}
                 bind:value={contextWindow}
                 disabled={busy}
               /></label
@@ -498,7 +502,7 @@
                 placeholder="128K"
                 maxlength="24"
                 autocomplete="off"
-                aria-invalid={parseTokenLimit(maxTokens, 1000000) === null}
+                aria-invalid={parseTokenLimit(maxTokens, MAX_TOKEN_LIMIT) === null}
                 bind:value={maxTokens}
                 disabled={busy}
               /></label
@@ -511,8 +515,8 @@
           class="primary"
           disabled={busy ||
             !selected.length ||
-            parseTokenLimit(contextWindow, 10000000) === null ||
-            parseTokenLimit(maxTokens, 1000000) === null}
+            parseTokenLimit(contextWindow, MAX_TOKEN_LIMIT) === null ||
+            parseTokenLimit(maxTokens, MAX_TOKEN_LIMIT) === null}
           onclick={apply}>{t('models.applySelected', { count: selected.length })}</button
         >
       </div>
@@ -587,7 +591,8 @@
                     placeholder="1M"
                     maxlength="24"
                     autocomplete="off"
-                    aria-invalid={parseTokenLimit(limitEditor.contextWindow, 10000000) === null}
+                    aria-invalid={parseTokenLimit(limitEditor.contextWindow, MAX_TOKEN_LIMIT) ===
+                      null}
                     required
                     bind:value={limitEditor.contextWindow}
                     disabled={busy}
@@ -612,7 +617,7 @@
                     placeholder="128K"
                     maxlength="24"
                     autocomplete="off"
-                    aria-invalid={parseTokenLimit(limitEditor.maxTokens, 1000000) === null}
+                    aria-invalid={parseTokenLimit(limitEditor.maxTokens, MAX_TOKEN_LIMIT) === null}
                     required
                     bind:value={limitEditor.maxTokens}
                     disabled={busy}
@@ -653,8 +658,9 @@
                   type="submit"
                   class="primary"
                   disabled={busy ||
-                    !parseTokenLimit(limitEditor.contextWindow, 10000000) ||
-                    !parseTokenLimit(limitEditor.maxTokens, 1000000)}>{t('common.save')}</button
+                    !parseTokenLimit(limitEditor.contextWindow, MAX_TOKEN_LIMIT) ||
+                    !parseTokenLimit(limitEditor.maxTokens, MAX_TOKEN_LIMIT)}
+                  >{t('common.save')}</button
                 >
               </div>
             </form>

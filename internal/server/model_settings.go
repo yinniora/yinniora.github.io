@@ -159,7 +159,7 @@ func publicModel(m map[string]any, provider, label string) map[string]any {
 	}
 	if id, ok := m["id"].(string); ok {
 		for i, name := range []string{"defaultContextWindow", "defaultMaxTokens"} {
-			if limit := bundledModelLimits[id][i]; limit > 0 {
+			if limit := modelLimitsForID(id)[i]; limit > 0 {
 				result[name] = limit
 			}
 		}
@@ -496,6 +496,14 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 				catalogAPI = apiAnthropic
 			}
 			describeCatalogModel(m, raw, id, catalogAPI, base)
+			if m["contextWindow"] == nil || m["maxTokens"] == nil {
+				limits := s.nativeModelLimits.lookup(ctx, id)
+				for i, field := range modelLimitFields {
+					if m[field] == nil && limits[i] > 0 {
+						m[field] = limits[i]
+					}
+				}
+			}
 			for _, field := range []string{"display_name", "displayName"} {
 				if name, ok := raw[field].(string); ok && len(name) <= 512 && !strings.Contains(name, key) {
 					m["name"] = name
@@ -1027,7 +1035,7 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, 400, "select between 1 and 1000 models")
 			return
 		}
-		if request.ContextWindow < 0 || request.ContextWindow > 10000000 || request.MaxTokens < 0 || request.MaxTokens > 1000000 {
+		if request.ContextWindow < 0 || request.ContextWindow > maximumTokenLimit || request.MaxTokens < 0 || request.MaxTokens > maximumTokenLimit {
 			writeJSONError(w, 400, "invalid model limits")
 			return
 		}
@@ -1087,7 +1095,7 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, 404, "model not found")
 			return
 		}
-		if request.ContextWindow < 1 || request.ContextWindow > 10000000 || request.MaxTokens < 1 || request.MaxTokens > 1000000 {
+		if request.ContextWindow < 1 || request.ContextWindow > maximumTokenLimit || request.MaxTokens < 1 || request.MaxTokens > maximumTokenLimit {
 			writeJSONError(w, 400, "invalid model limits")
 			return
 		}

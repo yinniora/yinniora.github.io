@@ -3,12 +3,34 @@ import { pathToFileURL } from 'node:url';
 
 // Pass the models.generated.js file shipped with Pi's pi-ai package.
 const { MODELS } = await import(pathToFileURL(resolve(process.argv[2])));
-const limits = new Map();
-for (const provider of [
+const providers = [
   'anthropic', 'openai', 'openai-codex', 'google', 'deepseek', 'xai',
   'moonshotai', 'kimi-coding', 'mistral', 'minimax', 'zai', 'meta', 'qwen-token-plan',
-]) {
-  for (const { id, contextWindow, maxTokens } of Object.values(MODELS[provider] ?? {})) {
+];
+const refresh = process.argv.includes('--refresh');
+const catalogs = await Promise.all(providers.map(async (provider) => {
+  const entries = new Map(Object.values(MODELS[provider] ?? {}).map((model) => [model.id, model]));
+  if (refresh) {
+    const response = await fetch(`https://pi.dev/api/models/providers/${provider}?types=chat`, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (response.ok) {
+      for (const model of await response.json()) {
+        if ((model.type === undefined || model.type === 'chat') &&
+            Number.isSafeInteger(model.contextWindow) && Number.isSafeInteger(model.maxTokens)) {
+          entries.set(model.id, model);
+        }
+      }
+    } else if (response.status !== 404 && response.status !== 501) {
+      throw new Error(`Could not refresh ${provider} (HTTP ${response.status})`);
+    }
+  }
+  return entries.values();
+}));
+const limits = new Map();
+for (const models of catalogs) {
+  for (const { id, contextWindow, maxTokens } of models) {
     if (!limits.has(id) && contextWindow > 0 && maxTokens > 0) {
       limits.set(id, [contextWindow, maxTokens]);
     }

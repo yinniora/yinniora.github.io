@@ -5,8 +5,47 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 )
+
+type modelCatalogTransport func(*http.Request) (*http.Response, error)
+
+func (transport modelCatalogTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return transport(request)
+}
+
+func TestDiscoverModelsUsesPublicLimitsForNewCanonicalModels(t *testing.T) {
+	var requests atomic.Int32
+	s := &Server{}
+	s.nativeModelLimits.client = &http.Client{Transport: modelCatalogTransport(func(r *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		if r.URL.String() != "https://pi.dev/api/models/providers/google?types=chat" ||
+			r.Header.Get("Authorization") != "" || r.Header.Get("x-api-key") != "" {
+			t.Errorf("public model lookup received unexpected arguments: %s", r.URL)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`[
+			{"id":"gemini-next-verified","contextWindow":2000000,"maxTokens":1048576}
+		]`))}, nil
+	})}
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[
+			{"id":"gemini-next-verified","max_output_tokens":65536},
+			{"id":"gemini-next-verified-high"},
+			{"id":"unknown-custom-model"}
+		]}`)
+	}))
+	defer gateway.Close()
+	models, err := s.discoverModels(context.Background(), map[string]any{"api": apiChat, "baseUrl": gateway.URL}, "fixture-key")
+	if err != nil || len(models) != 3 {
+		t.Fatalf("catalog discovery failed: models=%v, error=%v", models, err)
+	}
+	if models[0]["contextWindow"] != 2000000 || models[0]["maxTokens"] != float64(65536) ||
+		models[1]["maxTokens"] != 1048576 || models[2]["contextWindow"] != nil || requests.Load() != 1 {
+		t.Fatalf("model or route limits were overridden incorrectly: models=%v, public requests=%d", models, requests.Load())
+	}
+}
 
 func TestDetectMixedModelCatalog(t *testing.T) {
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -95,9 +134,14 @@ func TestBundledModelLimitsFillGapsInCatalog(t *testing.T) {
 		t.Fatalf("model defaults must remain available after editing: %+v", public)
 	}
 	alias := map[string]any{}
-	describeCatalogModel(alias, nil, "claude-opus-5-5-thinking-max", apiAnthropic, "https://example.invalid")
+	describeCatalogModel(alias, nil, "private-claude-opus-5-5-thinking-max", apiAnthropic, "https://example.invalid")
 	if alias["contextWindow"] != nil || alias["maxTokens"] != nil {
 		t.Fatalf("inferred unannounced alias limits: %+v", alias)
+	}
+	thinkingVariant := map[string]any{}
+	describeCatalogModel(thinkingVariant, nil, "gemini-4-carbon-high", apiGemini, "https://example.invalid")
+	if thinkingVariant["contextWindow"] != 1048576 || thinkingVariant["maxTokens"] != 32768 {
+		t.Fatalf("did not use the canonical Gemini defaults for its fixed-effort variant: %+v", thinkingVariant)
 	}
 	limited := map[string]any{}
 	describeCatalogModel(limited, map[string]any{"max_tokens": float64(64000)}, "claude-opus-5-5", apiAnthropic, "https://example.invalid")

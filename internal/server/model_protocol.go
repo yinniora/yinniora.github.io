@@ -174,19 +174,19 @@ func claudeEffortLevels(id string) map[string]bool {
 
 func describeCatalogModel(model, raw map[string]any, id, api, base string) {
 	for _, field := range []string{"contextWindow", "context_length", "context_window", "contextLength", "inputTokenLimit", "max_input_tokens"} {
-		if n, ok := raw[field].(float64); ok && n >= 1 && n <= 10000000 && float64(int(n)) == n {
+		if n, ok := raw[field].(float64); ok && n >= 1 && n <= maximumTokenLimit && float64(int(n)) == n {
 			model["contextWindow"] = n
 			break
 		}
 	}
 	for _, field := range []string{"maxTokens", "max_output_tokens", "max_completion_tokens", "outputTokenLimit", "max_tokens"} {
-		if n, ok := raw[field].(float64); ok && n >= 1 && n <= 1000000 && float64(int(n)) == n {
+		if n, ok := raw[field].(float64); ok && n >= 1 && n <= maximumTokenLimit && float64(int(n)) == n {
 			model["maxTokens"] = n
 			break
 		}
 	}
 	for i, field := range modelLimitFields {
-		if limit := bundledModelLimits[id][i]; model[field] == nil && limit > 0 {
+		if limit := modelLimitsForID(id)[i]; model[field] == nil && limit > 0 {
 			model[field] = limit
 		}
 	}

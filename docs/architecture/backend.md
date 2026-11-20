@@ -51,11 +51,14 @@ response sizes. HTTPS is required except on loopback; redirects never receive
 keys. Error responses do not include upstream response bodies. Refresh is a
 read-only model listing, not an inference request, and does not apply models.
 Advertised context and output limits take precedence, followed by the model's
-exact ID in the bundled Pi catalog. Unrecognized IDs with missing metadata use
+ID in the bundled Pi catalog. Fixed-effort suffixes can use the known base ID.
+If limits are still missing at discovery, known model families look them up in
+Pi's public catalog. The lookup sends only the public vendor name, without model
+credentials or private IDs. Unrecognized IDs with missing metadata use
 conservative local limits of 128K context and 32K output. The editor accepts K
 and M units and can restore known model limits. Editing updates the Pi model
 and refreshes idle workers on their next use. Update the bundled limits after a
-Pi upgrade by running `node scripts/update_model_limits.mjs <models.generated.js>`
+Pi upgrade by running `node scripts/update_model_limits.mjs <models.generated.js> --refresh`
 and saving the result to `internal/server/model_limits.json`.
 
 `/api/model-balances` reads New API token quota and OpenRouter key limits using
