@@ -45,6 +45,20 @@
     hydrated = true;
   }
 
+  // The user started answering the question: push the worker's deadline out so
+  // the countdown cannot expire under their hands. Best effort — a failure just
+  // leaves the original deadline in place.
+  async function extendQuestion() {
+    const id = active?.id;
+    if (!id) return;
+    try {
+      await postJSON('/api/extension-ui?id=' + encodeURIComponent(sessionId), { id, extend: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function reply(answer) {
     const id = active?.id;
     if (!id || pendingId) return;
@@ -77,6 +91,8 @@
 <FullScreenSheet
   open={!!active && hiddenQuestionId !== active.id}
   title={t(active?.method === 'question' ? 'piExtension.questionTitle' : 'piExtension.title')}
+  panelClass={active?.method === 'question' ? 'question-sheet' : ''}
+  bodyClass={active?.method === 'question' ? 'question-sheet-body' : ''}
   showBack={false}
   showClose={active?.method === 'question'}
   closeOnBackdrop={false}
@@ -91,6 +107,7 @@
         expires={active.expires}
         busy={!!pendingId}
         {reply}
+        extend={extendQuestion}
       />
     {/key}
   {:else if active}

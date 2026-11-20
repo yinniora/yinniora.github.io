@@ -47,6 +47,9 @@ type ExtensionAnswer struct {
 	Cancelled bool    `json:"cancelled,omitempty"`
 	Confirmed *bool   `json:"confirmed,omitempty"`
 	Value     *string `json:"value,omitempty"`
+	// Extend asks the worker to push the dialog's deadline out because the user
+	// has started answering. It is not a response; nothing is sent to pi.
+	Extend bool `json:"extend,omitempty"`
 }
 
 var ErrExtensionExpired = errors.New("Pi extension request expired")

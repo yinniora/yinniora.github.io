@@ -107,7 +107,16 @@ func (s *Server) maybeAutoTitleContext(ctx context.Context, sessID string) {
 	if eachTurn && inputs.LastUserText != "" {
 		basis = inputs.LastUserText
 	}
-	title := strings.ToValidUTF8(s.generateTitleContext(ctx, basis), "")
+	// Each-turn re-titling used to start a fresh `pi --mode rpc` subprocess (and
+	// its prompt) for every user message. Once a session already has an
+	// auto-title, the local heuristic is good enough: same visible result, no
+	// model round trip. The model is still used for the first title.
+	var title string
+	if eachTurn && titledBefore {
+		title = deriveTitleFromInput(basis)
+	} else {
+		title = strings.ToValidUTF8(s.generateTitleContext(ctx, basis), "")
+	}
 
 	s.autoTitle.mu.Lock()
 	delete(s.autoTitle.inFlight, sessID)

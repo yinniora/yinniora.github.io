@@ -4,7 +4,7 @@
   import { Brain } from '../../shared/icons.js';
   import { marked } from 'marked';
   import { safeMarkedParse } from '../../session/render/markdown.js';
-  let { id, text, live, running = false } = $props();
+  let { id, text, live, running = false, streaming = false } = $props();
   const preview = $derived.by(() => {
     const first =
       String(text || '')
@@ -26,9 +26,13 @@
     glyph={Brain}
     {running}
   >
-    <div class="activity-thinking-text markdown-content">
-      {@html safeMarkedParse(text, { marked })}
-    </div>
+    {#if streaming}
+      <div class="activity-thinking-text preview-thinking-text">{text}</div>
+    {:else}
+      <div class="activity-thinking-text markdown-content">
+        {@html safeMarkedParse(text, { marked })}
+      </div>
+    {/if}
   </ActivityDisclosure>
 {:else}
   <div class="thinking-block">

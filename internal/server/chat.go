@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"pi-web/internal/chat"
@@ -26,6 +27,8 @@ type ChatSender interface {
 	EnsureWorker(ctx context.Context, sessionID, sessionPath string) error
 }
 
+var chatRequestID = regexp.MustCompile(`^[a-zA-Z0-9_-]{12,80}$`)
+
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -38,6 +41,23 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if !resolved.Session.ChatAvailable {
 		writeJSONError(w, http.StatusConflict, resolved.Session.ChatDisabledReason)
 		return
+	}
+	ack := map[string]any{"ok": true, "status": "queued"}
+	requestID := r.URL.Query().Get("request")
+	receipt := ""
+	if requestID != "" {
+		if !chatRequestID.MatchString(requestID) {
+			writeJSONError(w, http.StatusBadRequest, "invalid chat request ID")
+			return
+		}
+		receipt = resolved.Session.ID + "\x00" + requestID
+		s.chatRequestMu.Lock()
+		accepted := s.acceptedChatRequests[receipt].After(time.Now())
+		s.chatRequestMu.Unlock()
+		if accepted {
+			writeJSON(w, http.StatusAccepted, ack)
+			return
+		}
 	}
 	if s.chatSender != nil && s.chatSender.Status(resolved.Session.ID).Compacting {
 		writeJSONError(w, 409, "session is busy")
@@ -70,7 +90,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "could not save attached files")
 		return
 	}
-	if !s.startTask(func(ctx context.Context) {
+	deliver := func(ctx context.Context) {
 		if err := s.chatSender.Send(ctx, sessionID, sessionPath, chatReq); err != nil && !errors.Is(err, context.Canceled) {
 			if errors.Is(err, workers.ErrPiContextCompaction) && s.chatQueue != nil && len(chatReq.Images) == 0 {
 				// Pi never received this prompt. Keep it available for a manual retry.
@@ -82,14 +102,44 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			}
 			fmt.Fprintf(os.Stderr, "chat send failed for %s: %v\n", sessionID, err)
 		}
-	}) {
-		if uploadDir != "" {
-			_ = os.RemoveAll(uploadDir)
+	}
+	if receipt != "" {
+		s.chatRequestMu.Lock()
+		now := time.Now()
+		accepted := s.acceptedChatRequests[receipt].After(now)
+		if accepted {
+			s.chatRequestMu.Unlock()
+			if uploadDir != "" {
+				_ = os.RemoveAll(uploadDir)
+			}
+			writeJSON(w, http.StatusAccepted, ack)
+			return
 		}
-		writeJSONError(w, http.StatusServiceUnavailable, "server is shutting down")
+		for key, expires := range s.acceptedChatRequests {
+			if !expires.After(now) {
+				delete(s.acceptedChatRequests, key)
+			}
+		}
+		started := len(s.acceptedChatRequests) < 4096 && s.startTask(deliver)
+		if started {
+			if s.acceptedChatRequests == nil {
+				s.acceptedChatRequests = make(map[string]time.Time)
+			}
+			s.acceptedChatRequests[receipt] = now.Add(5 * time.Minute)
+		}
+		s.chatRequestMu.Unlock()
+		if started {
+			writeJSON(w, http.StatusAccepted, ack)
+			return
+		}
+	} else if s.startTask(deliver) {
+		writeJSON(w, http.StatusAccepted, ack)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "status": "queued"})
+	if uploadDir != "" {
+		_ = os.RemoveAll(uploadDir)
+	}
+	writeJSONError(w, http.StatusServiceUnavailable, "could not submit chat right now")
 }
 
 // recentSessionActivityWindow is the grace period after a JSONL write during

@@ -27,9 +27,16 @@ func TestStructuredQuestionWaitsForValidatedUserAnswer(t *testing.T) {
 		sent.Len() != 0 || !w.Status().WaitingForInput {
 		t.Fatalf("request did not stay pending: %+v", dialogs)
 	}
-	for _, value := range []string{`[["Local"]]`, `[["Local","Remote"],["One"]]`, `[["Local"],["One","One"]]`, `[["Unknown"],["One"]]`, questionTimeoutReply} {
+	for _, value := range []string{`[["Local"]]`, `[["Local","Remote"],["One"]]`, `[["Local"],["One","One"]]`, `[[""],["One"]]`, questionTimeoutReply} {
 		if err := w.ReplyExtensionUI(workers.ExtensionAnswer{ID: "ask", Value: &value}); !errors.Is(err, workers.ErrExtensionAnswer) {
 			t.Errorf("answer %q: %v", value, err)
+		}
+	}
+	// A typed answer that is not one of the options, and an explicit skip, are
+	// both valid: the picker offers "something else" and "skip".
+	for _, value := range []string{`[["A scope pi did not offer"],["One"]]`, `[["Local"],[]]`, `[["Local"],["One","also this"]]`} {
+		if !validQuestionAnswer(value, dialogs[0].Questions) {
+			t.Errorf("custom/skipped answer %q rejected", value)
 		}
 	}
 	value := `[["Local"],["One","Two"]]`

@@ -1,10 +1,61 @@
 import { test, expect, collapseScratchpad } from "../lib/test";
 import {
+  appendEntry,
   buildSession,
   realWorkingDir,
   uniqueSessionName,
   writeSession,
 } from "../lib/sessions";
+
+test("streamed thinking stays in the same activity panel when saved", async ({ page, sessionsDir }, testInfo) => {
+  const { entries, lastId } = buildSession({ cwd: realWorkingDir() });
+  const name = uniqueSessionName(testInfo, "thinking-handoff");
+  const promptId = "new-prompt";
+  const timestamp = Date.now();
+  const id = writeSession(sessionsDir, name, [
+    ...entries,
+    { type: "message", id: promptId, parentId: lastId, timestamp: new Date().toISOString(),
+      message: { role: "user", timestamp, content: "Continue the task." } },
+  ]);
+  await page.addInitScript(() => {
+    const events = new Map<string, EventSource>();
+    const native = window.EventSource;
+    (window as any).sendFixtureEvent = (id: string, type: string, data: unknown) =>
+      events.get(id)?.dispatchEvent(new MessageEvent(type, { data: JSON.stringify(data) }));
+    window.EventSource = class extends native {
+      constructor(url: string | URL, options?: EventSourceInit) {
+        super(url, options);
+        const id = new URL(url, location.href).searchParams.get("id");
+        if (id) events.set(id, this);
+      }
+    };
+  });
+  await collapseScratchpad(page);
+  await page.goto(`/session?id=${encodeURIComponent(id)}`);
+  await expect(page.locator("#messages")).toContainText("Continue the task.");
+  const thought = page.locator("#messages-list .activity-thinking-text").filter({ hasText: "Fixture thought" });
+  const preview = { content: "", thinking: "Fixture thought", messageTimestamp: timestamp + 1, thinkingIndex: 0 };
+  await page.evaluate(({ id, preview }) => {
+    (window as any).sendFixtureEvent("__all__", "status-delta", { id, running: true });
+    (window as any).sendFixtureEvent(id, "chat-preview", { ...preview, phase: "thinking", revision: 9999 });
+  }, { id, preview });
+  await expect(thought).toBeVisible();
+  const panel = page.locator("#messages-list .activity-group").filter({ hasText: "Fixture thought" });
+  await panel.evaluate((el) => el.setAttribute("data-fixture-node", "original"));
+  appendEntry(sessionsDir, name, {
+    type: "message", id: "saved-thought", parentId: promptId, timestamp: new Date().toISOString(),
+    message: { role: "assistant", timestamp: timestamp + 1, stopReason: "toolUse",
+      content: [{ type: "thinking", thinking: "Fixture thought finished" },
+                { type: "toolCall", id: "fixture-tool", name: "bash", arguments: { command: "pwd" } }] },
+  });
+  await page.evaluate(({ id, preview }) => {
+    (window as any).sendFixtureEvent(id, "chat-preview", { ...preview, phase: "working", revision: 10000, done: true });
+  }, { id, preview });
+  await expect(thought).toHaveText("Fixture thought finished");
+  await expect(thought).toBeVisible();
+  await expect(thought).toHaveCount(1);
+  await expect(panel).toHaveAttribute("data-fixture-node", "original");
+});
 
 // Chat is driven by a `pi --mode rpc` worker. CI has no real pi, so a stub pi
 // (e2e/lib/stub-pi/pi, prepended to PATH by the server harness) answers the rpc

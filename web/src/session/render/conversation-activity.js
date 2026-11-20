@@ -48,7 +48,13 @@ function appendTimeline(timeline, item, results) {
     if (block.type === 'text' && block.text?.trim() && !item.blocks) {
       timeline.push({ kind: 'text', key, text: block.text });
     } else if (block.type === 'thinking' && block.thinking?.trim()) {
-      timeline.push({ kind: 'thinking', key, text: block.thinking });
+      const timestamp = item.entry.message?.timestamp;
+      timeline.push({
+        kind: 'thinking',
+        key: timestamp ? `thought:${timestamp}:${item.thinkingIndex ?? index}` : key,
+        text: block.thinking,
+        streaming: item.streaming,
+      });
     } else if (block.type === 'toolCall' && isQuestionTool(block.name)) {
       timeline.push({ kind: 'question', key, call: block });
     } else if (block.type === 'toolCall') {
@@ -78,7 +84,7 @@ function appendTimeline(timeline, item, results) {
   // Keep the entry's anchor (tree navigation, links to entries) on its first
   // step; a tool run merged from earlier entries carries extra anchors.
   const step = timeline[start] || timeline.at(-1);
-  if (step) (step.anchors ||= []).push(id);
+  if (step && !item.streaming && !item.retried) (step.anchors ||= []).push(id);
 }
 
 const STEER_GAP_MS = 15000;
@@ -91,7 +97,12 @@ function isSteer(before, entry) {
   return Number.isFinite(gap) && gap >= 0 && gap <= STEER_GAP_MS;
 }
 
-export function groupConversationActivity(entries, outputsByEntry, running = false) {
+export function groupConversationActivity(
+  entries,
+  outputsByEntry,
+  running = false,
+  thinkingPreviews = [],
+) {
   const results = new Map();
   for (const { entry } of entries) {
     const message = entry.type === 'message' && entry.message;
@@ -100,15 +111,17 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
 
   const sections = [];
   let activity = null;
+  let latestActivity = null;
   let turnStartedAt = 0;
   function addActivity(item, thoughts, tools) {
     if (!activity) {
       activity = {
-        key: 'activity:' + item.entry.id,
+        key: 'activity:' + (item.entry.message?.timestamp || item.entry.id),
         items: [],
         thinking: 0,
         toolCount: 0,
         failures: 0,
+        retries: 0,
         latestTool: '',
         outputs: [],
         timeline: [],
@@ -118,6 +131,7 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
         endedAt: 0,
       };
       sections.push(activity);
+      latestActivity = activity;
     }
     activity.items.push(item);
     appendTimeline(activity.timeline, item, results);
@@ -144,6 +158,21 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
       sections.push({ key: entry.id, item });
       continue;
     }
+    if (item.retried) {
+      const blocks = Array.isArray(message?.content)
+        ? message.content.map((block) => (block.type === 'thinking' ? block : {}))
+        : [];
+      addActivity(
+        { ...item, blocks },
+        blocks.filter((block) => block.type === 'thinking').length,
+        [],
+      );
+      activity.retries++;
+    }
+    if (item.retried || item.repeatedError) {
+      sections.push({ key: entry.id, item: { ...item, retried: true } });
+      continue;
+    }
     if (
       message?.role === 'toolResult' ||
       entry.type === 'thinking_level_change' ||
@@ -161,6 +190,7 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
         else if (!activity.needsResponse) activity.unfinished = true;
       }
       activity = null;
+      latestActivity = null;
       turnStartedAt = entryTime(entry);
     }
     if (message?.role === 'assistant' && !item.repeatedError) {
@@ -198,9 +228,32 @@ export function groupConversationActivity(entries, outputsByEntry, running = fal
     sections.push({ key: entry.id, item });
   }
 
+  if (thinkingPreviews.length) {
+    const persisted = new Set(
+      entries
+        .filter(({ entry }) => entry.message?.role === 'assistant')
+        .map(({ entry }) => entry.message.timestamp),
+    );
+    for (const { messageTimestamp, thinkingIndex, thinking } of thinkingPreviews) {
+      if (persisted.has(messageTimestamp)) continue;
+      addActivity(
+        {
+          entry: {
+            id: 'preview:' + messageTimestamp,
+            message: { timestamp: messageTimestamp, content: [{ type: 'thinking', thinking }] },
+          },
+          thinkingIndex,
+          streaming: true,
+        },
+        1,
+        [],
+      );
+    }
+  }
   for (const section of sections) {
     if (section.items) section.durationMs = Math.max(0, section.endedAt - section.startedAt);
   }
+  if (latestActivity && running) latestActivity.running = true;
   if (activity) {
     activity.running = running;
     // Not running and still no reply: the turn ended without finishing.

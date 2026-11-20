@@ -150,4 +150,93 @@ describe('chat preview', () => {
     expect(dom.window.document.getElementById('chat-preview-stream')).toBeNull();
     expect(state.chatPreviewEl).toBeNull();
   });
+
+  it('coalesces streamed markdown to a fixed cadence while keeping the final render', () => {
+    const dom = new JSDOM('<body><div id="messages"></div></body>');
+    let now = 1000;
+    const windowImpl = { performance: { now: () => now } };
+    const state = { chatPreviewEl: null, pendingUserEl: null, thinking: '' };
+    let renders = 0;
+    const opts = {
+      documentImpl: dom.window.document,
+      windowImpl,
+      renderMarkdown: (text) => {
+        renders += 1;
+        return text;
+      },
+      setIntervalImpl: () => 1,
+      markdownIntervalMs: 120,
+    };
+
+    renderChatPreview({ content: 'one', phase: 'working' }, state, opts);
+    const afterFirst = renders;
+
+    // Same frame burst: the progress line updates, the markdown does not.
+    now += 30;
+    renderChatPreview({ content: 'one two', phase: 'working' }, state, opts);
+    expect(renders).toBe(afterFirst);
+    expect(state.chatPreviewEl.querySelector('.preview-text').textContent).toBe('Thinking');
+
+    // Past the cadence the accumulated text paints once.
+    now += 120;
+    renderChatPreview({ content: 'one two three', phase: 'working' }, state, opts);
+    expect(renders).toBe(afterFirst + 1);
+
+    // A finished turn paints the final text regardless of the cadence.
+    renderChatPreview({ content: 'one two three four', phase: 'working', done: true }, state, opts);
+    expect(renders).toBe(afterFirst + 2);
+    expect(state.chatPreviewEl.querySelector('.message-content').textContent).toContain(
+      'one two three four',
+    );
+  });
+
+  it('streams thinking as plain text and never re-creates the block', () => {
+    const dom = new JSDOM('<body><div id="messages"></div></body>');
+    let now = 1000;
+    const windowImpl = { performance: { now: () => now } };
+    const state = { chatPreviewEl: null, pendingUserEl: null };
+    let renders = 0;
+    const opts = {
+      documentImpl: dom.window.document,
+      windowImpl,
+      renderMarkdown: (text) => {
+        renders += 1;
+        return text;
+      },
+      setIntervalImpl: () => 1,
+      markdownIntervalMs: 120,
+    };
+
+    renderChatPreview(
+      { content: 'answer', thinking: 'look at <the> file', phase: 'thinking' },
+      state,
+      opts,
+    );
+    const block = state.chatPreviewEl.querySelector('.preview-thinking');
+    expect(block.hidden).toBe(false);
+    expect(block.open).toBe(true);
+    const body = block.querySelector('.preview-thinking-text');
+    expect(body.textContent).toBe('look at <the> file');
+    expect(body.querySelector('the')).toBeNull();
+
+    const rendersAfterFirst = renders;
+    now += 20;
+    renderChatPreview(
+      { content: 'answer', thinking: 'look at <the> file and', phase: 'thinking' },
+      state,
+      opts,
+    );
+    // Throttled: neither the reply nor the thinking re-renders within the cadence.
+    expect(body.textContent).toBe('look at <the> file');
+    expect(renders).toBe(rendersAfterFirst);
+    expect(state.chatPreviewEl.querySelector('.preview-thinking')).toBe(block);
+
+    now += 200;
+    renderChatPreview(
+      { content: 'answer', thinking: 'look at <the> file and', phase: 'thinking' },
+      state,
+      opts,
+    );
+    expect(body.textContent).toBe('look at <the> file and');
+  });
 });

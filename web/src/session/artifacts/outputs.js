@@ -86,12 +86,37 @@ export function groupOutputsByReply(entries, outputs) {
     replyByEntry.set(entry.id, anchorId);
   }
 
+  // An output is anchored to the tool call that wrote it, so its entryId can
+  // point at a toolResult or any other entry in the turn. Walk forward and give
+  // every entry the reply anchor it belongs to; without this only assistant
+  // entryIds resolve and everything else piles up at the end of the transcript.
+  let currentAnchor = null;
+  for (const { entry } of entries) {
+    if (
+      entry.type === 'message' &&
+      entry.message?.role === 'assistant' &&
+      replyByEntry.has(entry.id)
+    )
+      currentAnchor = replyByEntry.get(entry.id) || currentAnchor;
+    if (!currentAnchor) continue;
+    if (!replyByEntry.has(entry.id)) replyByEntry.set(entry.id, currentAnchor);
+  }
+
   const byEntry = new Map();
   const unassigned = [];
   for (const output of outputs) {
     const id = replyByEntry.get(output.entryId);
     if (!id) {
-      unassigned.push(output);
+      // Files discovered from the assets API carry no entryId at all; anchor
+      // them to the newest reply so they scroll with the turn that produced
+      // them instead of sticking to the bottom of the session.
+      const fallback = currentAnchor;
+      if (!fallback) {
+        unassigned.push(output);
+        continue;
+      }
+      if (!byEntry.has(fallback)) byEntry.set(fallback, []);
+      byEntry.get(fallback).push(output);
       continue;
     }
     if (!byEntry.has(id)) byEntry.set(id, []);

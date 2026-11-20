@@ -16,6 +16,7 @@ export function setupWorkerStatusPolling({
   setCompacting = () => {},
   setWorkerRunning = () => {},
   setExtensionUI = () => {},
+  deliveryPending = () => false,
   setIntervalImpl = windowImpl.setInterval?.bind(windowImpl),
   clearIntervalImpl = windowImpl.clearInterval?.bind(windowImpl),
   CustomEventImpl = windowImpl.CustomEvent,
@@ -50,12 +51,13 @@ export function setupWorkerStatusPolling({
       if (data.thinkingLevel) setKnownThinkingLevel(data.thinkingLevel);
       setCompacting(Boolean(data.compacting));
       setWorkerRunning(data.state === 'running' && Boolean(data.model));
-      if (data.state === 'running') setStatus('running', 'running');
-      if (data.state === 'idle') {
+      const deliver = deliveryPending();
+      if (!deliver && data.state === 'running') setStatus('running', 'running');
+      if (!deliver && data.state === 'idle') {
         if (data.compactionFailed) setStatus(t('piSession.compactFailed'), 'error');
         else setStatus('idle', '');
       }
-      if (data.state === 'error')
+      if (!deliver && data.state === 'error')
         setStatus(
           data.error === 'context compaction failed'
             ? t('piSession.compactFailed')
@@ -63,6 +65,7 @@ export function setupWorkerStatusPolling({
           'error',
         );
       if (
+        !deliver &&
         (data.state === 'idle' || data.state === 'error') &&
         (lastWorkerState === 'running' ||
           (data.handledPrompt && lastHandledPrompt !== data.handledPrompt))
@@ -74,7 +77,7 @@ export function setupWorkerStatusPolling({
         }
       }
       lastHandledPrompt = data.handledPrompt || '';
-      if (data.state) lastWorkerState = data.state;
+      if (data.state && !deliver) lastWorkerState = data.state;
       setModelLabel(getKnownModelLabel());
       setThinkingLabel(getKnownThinkingLevel());
       updateContextUsage();
@@ -83,7 +86,7 @@ export function setupWorkerStatusPolling({
         onWorkerModelUpdate(data.modelProvider, data.model, data.thinkingLevels);
       }
     } catch {
-      if (!scope.signal.aborted) setStatus('status unavailable', 'error');
+      // A failed poll does not change the last known Pi run state.
     } finally {
       inflight = false;
       if (pending) {

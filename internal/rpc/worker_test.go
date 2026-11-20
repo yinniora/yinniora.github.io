@@ -151,8 +151,9 @@ func TestWorkerStaysRunningUntilPiSettles(t *testing.T) {
 func TestWorkerCancelsAutomaticRetry(t *testing.T) {
 	var sent bytes.Buffer
 	w := &piRPCWorker{
-		stdin:  nopWriteCloser{w: &sent},
-		status: workers.WorkerStatus{State: workers.WorkerStateRunning},
+		stdin:         nopWriteCloser{w: &sent},
+		status:        workers.WorkerStatus{State: workers.WorkerStateRunning},
+		streamPreview: &streamPreviewAccumulator{},
 	}
 	w.handleRPCLine(`{"type":"message_end","message":{"role":"assistant","provider":"key-one","model":"model-x","stopReason":"error","errorMessage":"503 {\"error\":{\"type\":\"model_not_found\"}}"}}`)
 	w.handleRPCLine(`{"type":"auto_retry_start","attempt":1}`)
@@ -185,6 +186,63 @@ func TestWorkerKeepsRetryingTransientNetworkErrors(t *testing.T) {
 		if isTransientTransportError(message) {
 			t.Fatalf("%q should not be transient", message)
 		}
+	}
+}
+
+func TestWorkerRetriesTimeoutsAndOverloadButNotBillingOrUserAbort(t *testing.T) {
+	for _, message := range []string{
+		"Request timed out.",
+		"503 Service Unavailable",
+		"429 rate limited",
+		"500 internal error",
+		"Connection error.: Client network socket disconnected before secure TLS connection was established (ECONNRESET)",
+	} {
+		if !isAutoRetryAllowed(message) {
+			t.Errorf("%q should be retried", message)
+		}
+	}
+	for _, message := range []string{
+		"insufficient balance",
+		"Insufficient credit",
+		"quota exceeded",
+		"401 Unauthorized",
+		"invalid api key",
+		`503 {"error":{"type":"model_not_found"}}`,
+		"Request aborted by user",
+		"",
+	} {
+		if isAutoRetryAllowed(message) {
+			t.Errorf("%q must not be retried", message)
+		}
+	}
+
+	var sent bytes.Buffer
+	w := &piRPCWorker{
+		stdin:         nopWriteCloser{w: &sent},
+		status:        workers.WorkerStatus{State: workers.WorkerStateRunning},
+		streamPreview: &streamPreviewAccumulator{},
+		streamSink:    func(StreamPreview) {},
+	}
+	w.handleRPCLine(`{"type":"auto_retry_start","attempt":2,"maxAttempts":5,"errorMessage":"Request timed out."}`)
+	if sent.Len() != 0 {
+		t.Fatalf("a timeout was cancelled instead of retried: %q", sent.String())
+	}
+	preview, ok := w.ChatPreview()
+	if !ok || preview.Phase != "retrying" || preview.RetryAttempt != 2 || preview.RetryLimit != 5 {
+		t.Fatalf("retry was not recorded in progress: %+v", preview)
+	}
+	if w.Status().Error != "" {
+		t.Fatalf("a retried turn must not report an error: %q", w.Status().Error)
+	}
+	w.handleRPCLine(`{"type":"auto_retry_end","success":true}`)
+	if preview, _ := w.ChatPreview(); preview.Phase == "retrying" {
+		t.Fatalf("retry notice outlived the successful attempt: %+v", preview)
+	}
+
+	sent.Reset()
+	w.handleRPCLine(`{"type":"auto_retry_start","attempt":1,"errorMessage":"insufficient balance"}`)
+	if sent.String() != "{\"type\":\"abort_retry\"}\n" {
+		t.Fatalf("a billing failure must not be retried: %q", sent.String())
 	}
 }
 

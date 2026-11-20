@@ -69,6 +69,8 @@
     <div class="ask-question-state error">{t('activity.timedOut')}</div>
   {:else if cancelled}
     <div class="ask-question-state error">{t('activity.stopped')}</div>
+  {:else if result?.details?.skipped}
+    <div class="ask-question-state">{t('piExtension.skip')}</div>
   {:else if awaitingChatReply}
     <div class="ask-question-state pending">{t('piExtension.waiting')}</div>
   {:else if result}

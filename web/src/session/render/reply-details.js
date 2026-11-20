@@ -42,8 +42,49 @@ function autoContinuedEntries(entries) {
   return ids;
 }
 
-export function entriesWithReplyDetails(entries) {
+// A failed attempt that the agent retried, and that a later reply in the same
+// turn already replaced, must not read as "the task ended with an error".
+function retriedErrors(entries, running) {
+  const superseded = new Set();
+  let pending = [];
+  for (const entry of entries) {
+    if (entry.type !== 'message') continue;
+    const message = entry.message;
+    if (message?.role === 'user') {
+      pending = [];
+      continue;
+    }
+    if (message?.role !== 'assistant') continue;
+    if (message.stopReason === 'error') {
+      const error = String(message.errorMessage || '');
+      if (
+        /ECONNRESET|ETIMEDOUT|connection error|timed out|timeout|overloaded|rate.?limit|\b(408|429|500|502|503|504|529)\b/i.test(
+          error,
+        ) &&
+        !/quota|billing|balance|permission|unauthorized|forbidden|model_not_found|aborted|cancelled/i.test(
+          error,
+        )
+      )
+        pending.push(entry.id);
+      continue;
+    }
+    const blocks = Array.isArray(message.content) ? message.content : [];
+    const recovered =
+      message.stopReason !== 'aborted' &&
+      (blocks.some((block) => block.type === 'text' && block.text?.trim()) ||
+        blocks.some((block) => block.type === 'toolCall'));
+    if (recovered && pending.length) {
+      for (const id of pending) superseded.add(id);
+      pending = [];
+    }
+  }
+  if (running) for (const id of pending) superseded.add(id);
+  return superseded;
+}
+
+export function entriesWithReplyDetails(entries, { running = false } = {}) {
   const autoContinued = autoContinuedEntries(entries);
+  const retried = retriedErrors(entries, running);
   const repeatedErrors = new Set();
   let nextError = '';
   for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -70,6 +111,7 @@ export function entriesWithReplyDetails(entries) {
     if (autoContinued.has(entry.id)) return { entry, autoContinued: true };
     if (message?.role === 'user') prompt = message.content;
     if (repeatedErrors.has(entry.id)) return { entry, repeatedError: true };
+    if (retried.has(entry.id)) return { entry, retried: true };
     if (message?.role === 'assistant' && message.stopReason === 'error') {
       return { entry, retryContent: prompt };
     }

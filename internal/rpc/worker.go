@@ -632,25 +632,38 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 	case "message_update":
 		var msg struct {
 			AssistantMessageEvent assistantMessageEvent `json:"assistantMessageEvent"`
+			Message               struct {
+				Timestamp int64 `json:"timestamp"`
+			} `json:"message"`
 		}
 		if err := json.Unmarshal([]byte(line), &msg); err == nil {
+			msg.AssistantMessageEvent.MessageTimestamp = msg.Message.Timestamp
 			w.emitStreamPreview(msg.AssistantMessageEvent)
 		}
 		w.noteStreamActivity()
 	case "auto_retry_start":
-		// Provider rejections (model routing, quota, 5xx) are shown at once with
-		// a resend card instead of waiting through Pi's backoff. Transport drops
-		// such as a reset TLS handshake usually succeed on the next attempt, so
-		// Pi keeps retrying those. CLI retry settings are never rewritten.
+		// Pi retries by itself; pi-web only gets to veto an attempt. A dropped TLS
+		// handshake, a timeout, an overloaded model or a 5xx all succeed on the
+		// next try, so they are left alone. Anything that will not improve by
+		// retrying (quota, billing, auth, an unknown model) or that the user asked
+		// for is shown at once with a resend card instead of burning attempts.
 		var retry struct {
 			ErrorMessage string `json:"errorMessage"`
+			Attempt      int    `json:"attempt"`
+			MaxAttempts  int    `json:"maxAttempts"`
 		}
 		_ = json.Unmarshal([]byte(line), &retry)
-		if !isTransientTransportError(retry.ErrorMessage) {
+		if !isAutoRetryAllowed(retry.ErrorMessage) {
 			w.writeMu.Lock()
 			_ = WriteCommand(w.stdin, map[string]any{"type": "abort_retry"})
 			w.writeMu.Unlock()
+			return
 		}
+		w.recordRetry(retry.Attempt, retry.MaxAttempts, retry.ErrorMessage)
+		w.noteStreamActivity()
+		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type, RetryAttempt: retry.Attempt, RetryLimit: retry.MaxAttempts})
+	case "auto_retry_end":
+		w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
 	case "message_end":
 		w.noteStreamActivity()
 		var message struct {
@@ -659,6 +672,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 			ToolName   string            `json:"toolName"`
 			Content    []json.RawMessage `json:"content"`
 			Details    json.RawMessage   `json:"details"`
+			Timestamp  int64             `json:"timestamp"`
 			Usage      struct {
 				Output int `json:"output"`
 			} `json:"usage"`
@@ -687,7 +701,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 			w.mu.Unlock()
 		}
 		if message.Role == "assistant" || message.Role == "" {
-			w.emitStreamPreview(assistantMessageEvent{Type: meta.Type})
+			w.emitStreamPreview(assistantMessageEvent{Type: meta.Type, MessageTimestamp: message.Timestamp})
 		}
 	case "turn_end":
 		w.noteStreamActivity()
@@ -719,7 +733,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 			return
 		}
 		w.mu.Lock()
-		if meta.Type == "agent_end" && !w.questionUnanswered && w.emptyReply && w.emptyRecoveries < maxEmptyReplyRecoveries {
+		if !w.questionUnanswered && w.emptyReply && w.emptyRecoveries < maxEmptyReplyRecoveries {
 			w.emptyReply = false
 			w.emptyRecoveries++
 			w.recovering = true
@@ -778,12 +792,51 @@ func (w *piRPCWorker) continueAfterEmptyReply() {
 	w.emitStreamPreview(assistantMessageEvent{Type: "agent_end"})
 }
 
-// transientTransportPattern matches network failures below the provider API:
-// the request never got an HTTP answer, so a retry is likely to succeed.
-var transientTransportPattern = regexp.MustCompile(`(?i)\b(ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|ENETUNREACH|EHOSTUNREACH|EAI_AGAIN|UND_ERR_[A-Z_]+)\b|socket hang up|socket disconnected|secure TLS connection|network socket|fetch failed|terminated|other side closed`)
+// transientTransportPattern matches failures below the provider API: the
+// request never got an HTTP answer, so a retry is likely to succeed.
+var transientTransportPattern = regexp.MustCompile(`(?i)\b(ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|ENETUNREACH|EHOSTUNREACH|EAI_AGAIN|UND_ERR_[A-Z_]+)\b|socket hang up|socket disconnected|secure TLS connection|network socket|fetch failed|other side closed`)
+
+// retryableErrorPattern covers everything worth another attempt: transport
+// drops, timeouts, an overloaded or rate-limited provider, and 5xx answers.
+var retryableErrorPattern = regexp.MustCompile(`(?i)request timed out|timed out|timeout|overloaded|rate.?limit|too many requests|\b(429|500|502|503|504)\b`)
+
+// terminalErrorPattern covers failures a retry cannot fix, plus the two cases
+// the user asked us to keep: no credit and an explicit interrupt.
+var terminalErrorPattern = regexp.MustCompile(`(?i)insufficient|quota|balance|billing|payment|no credit|credit balance|unauthorized|forbidden|invalid api key|model_not_found|not found|aborted|abort|cancell?ed|interrupted|authentication`)
 
 func isTransientTransportError(message string) bool {
 	return message != "" && transientTransportPattern.MatchString(message)
+}
+
+// isAutoRetryAllowed decides whether Pi may retry this failure on its own.
+func isAutoRetryAllowed(message string) bool {
+	trimmed := strings.TrimSpace(message)
+	if trimmed == "" {
+		// Pi reported a retry without a reason; that is the shape it uses when a
+		// terminal rejection arrives earlier in the turn, so keep failing fast.
+		return false
+	}
+	if terminalErrorPattern.MatchString(trimmed) {
+		return false
+	}
+	return isTransientTransportError(trimmed) || retryableErrorPattern.MatchString(trimmed)
+}
+
+// recordRetry keeps a retry attempt in the worker's notice list so the UI can
+// show that the task is still running and why, instead of failing the turn.
+func (w *piRPCWorker) recordRetry(attempt, maxAttempts int, message string) {
+	reason := strings.TrimSpace(message)
+	w.mu.Lock()
+	w.status.State = workers.WorkerStateRunning
+	w.status.Error = ""
+	w.mu.Unlock()
+	category := "provider"
+	if isTransientTransportError(reason) {
+		category = "transport"
+	} else if strings.Contains(strings.ToLower(reason), "timed out") {
+		category = "timeout"
+	}
+	fmt.Fprintf(os.Stderr, "pi %s retry %d/%d for %s\n", category, attempt, maxAttempts, filepath.Base(w.sessionPath))
 }
 
 func (w *piRPCWorker) noteStreamActivity() {

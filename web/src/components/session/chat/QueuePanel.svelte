@@ -9,6 +9,7 @@
     Layers,
     Pencil,
     Send,
+    ListPlus,
   } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
 
@@ -20,11 +21,17 @@
   const queuedCount = $derived(store.queuedCount);
   const steerCount = $derived(store.steerCount);
 
-  // Only steers: they ride the running turn, so queue pause/resume and the
-  // queue's editing hints do not apply to them.
-  const steersOnly = $derived(queuedCount === 0 && steerCount > 0);
+  // Steers ride the running turn; queued rows wait for it to finish. They are
+  // different promises to the user, so they get separate groups and actions.
+  // Groups follow the store order (queued first) so ↑/↓ and the visual order
+  // agree.
+  const queued = $derived(store.items.filter((item) => item.kind === 'queued'));
+  const steers = $derived(store.items.filter((item) => item.kind === 'steer'));
+  const indexById = $derived(new Map(store.items.map((item, index) => [item.id, index])));
+  const bothKinds = $derived(steerCount > 0 && queuedCount > 0);
+
   const statusLabel = $derived(
-    steersOnly
+    steerCount > 0 && queuedCount === 0
       ? t('composer.queueSteeringCount')
       : store.paused
         ? t('composer.queuePaused')
@@ -37,11 +44,11 @@
       : '',
   );
 
-  function formatCount(queued, steers) {
-    if (queued === 0 && steers === 0) return '';
-    if (queued === 0) return t('composer.steerOnlyHint');
-    if (steers === 0) return `${queued} ${t('composer.queueQueuedCount')}`;
-    return `${queued} · ${t('composer.steerTag')} ${steers}`;
+  function formatCount(queuedTotal, steerTotal) {
+    if (queuedTotal === 0 && steerTotal === 0) return '';
+    if (queuedTotal === 0) return t('composer.steerOnlyHint');
+    if (steerTotal === 0) return `${queuedTotal} ${t('composer.queueQueuedCount')}`;
+    return `${queuedTotal} ${t('composer.queueQueuedCount')} · ${steerTotal} ${t('composer.steerTag')}`;
   }
 
   function chipText(item) {
@@ -57,12 +64,19 @@
     store.setPaused(true);
   }
 
-  function onItemClick(index) {
-    store.setFocusIndex(index);
+  function onItemClick(item) {
+    store.setFocusIndex(indexById.get(item.id) ?? -1);
   }
 
   function onDelete(item) {
-    store.removeById(item.id);
+    if (item.kind === 'steer' && item.editable) store.actions.withdrawSteer?.(item.id);
+    else if (item.kind === 'steer') store.takeLocalById(item.id);
+    else store.removeById(item.id);
+  }
+
+  function onEdit(item) {
+    if (item.kind === 'steer' && item.editable) store.actions.editSteer?.(item.id);
+    else store.actions.edit?.(item.id);
   }
 
   // Document-level keyboard routing so the shortcuts work from anywhere on the
@@ -130,7 +144,7 @@
     if (key === 'Backspace' || key === 'Delete') {
       event.preventDefault();
       event.stopImmediatePropagation();
-      store.removeById(focused.id);
+      onDelete(focused);
       return;
     }
     if (key === 'Enter') {
@@ -142,7 +156,7 @@
     if (key === 'e' || key === 'E') {
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (focused.kind === 'queued') store.actions.edit?.(focused.id);
+      onEdit(focused);
     }
   }
 
@@ -171,15 +185,15 @@
 {#if visible}
   <section
     class="pi-queue-panel"
-    class:pi-queue-panel--paused={store.paused && !steersOnly}
-    class:pi-queue-panel--steers={steersOnly}
+    class:pi-queue-panel--paused={store.paused && queuedCount > 0}
+    class:pi-queue-panel--steers={steerCount > 0 && queuedCount === 0}
     aria-label={t('composer.queueAria')}
   >
     <header class="pi-queue-header">
       <div class="pi-queue-status">
         <span class="pi-queue-status-label">{statusLabel}</span>
         {#if countLabel}<span class="pi-queue-status-count"> · {countLabel}</span>{/if}
-        {#if store.persistsLocally && !steersOnly}
+        {#if store.persistsLocally && queuedCount > 0}
           <span
             class="pi-queue-status-saved"
             title={t('composer.queueSavedLocallyHint')}
@@ -190,99 +204,176 @@
         {/if}
       </div>
       <div class="pi-queue-header-actions">
-        {#if steersOnly}
-          <!-- Steers have nothing to pause. -->
-        {:else if store.paused}
-          <button
-            type="button"
-            class="pi-queue-toggle pi-queue-toggle--resume"
-            onclick={onResume}
-            title={t('composer.queueResumeHint')}
-          >
-            {@html icon(Play, { size: 13 })}<span>{t('composer.resume')}</span>
-          </button>
-        {:else}
-          <button
-            type="button"
-            class="pi-queue-toggle"
-            onclick={onPause}
-            title={t('composer.queuePauseHint')}
-          >
-            {@html icon(Pause, { size: 13 })}<span>{t('composer.pause')}</span>
-          </button>
+        {#if queuedCount > 0}
+          {#if store.paused}
+            <button
+              type="button"
+              class="pi-queue-toggle pi-queue-toggle--resume"
+              onclick={onResume}
+              title={t('composer.queueResumeHint')}
+            >
+              {@html icon(Play, { size: 13 })}<span>{t('composer.resume')}</span>
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="pi-queue-toggle"
+              onclick={onPause}
+              title={t('composer.queuePauseHint')}
+            >
+              {@html icon(Pause, { size: 13 })}<span>{t('composer.pause')}</span>
+            </button>
+          {/if}
         {/if}
       </div>
     </header>
 
-    <ul
-      class="pi-queue-list"
-      role="listbox"
-      tabindex="-1"
-      aria-label={t('composer.queueAria')}
-      aria-activedescendant={activeDescendantId || undefined}
-    >
-      {#each store.items as item, i (item.id)}
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- Keyboard navigation is handled at the document level. -->
-        <li
-          id={`pi-queue-item-${item.id}`}
-          class="pi-queue-item"
-          class:pi-queue-item--focused={store.focusIndex === i}
-          class:pi-queue-item--steer={item.kind === 'steer'}
-          role="option"
-          aria-selected={store.focusIndex === i}
-          onclick={() => onItemClick(i)}
-          onmousedown={(event) => event.preventDefault()}
+    {#if queued.length > 0}
+      <div class="pi-queue-section">
+        {#if bothKinds}
+          <div class="pi-queue-section-label">{t('composer.queueActive')}</div>
+        {/if}
+        <ul
+          class="pi-queue-list"
+          role="listbox"
+          tabindex="-1"
+          aria-label={t('composer.queueAria')}
+          aria-activedescendant={activeDescendantId || undefined}
         >
-          <span class="pi-queue-item-icon" aria-hidden="true">
-            {@html icon(item.kind === 'steer' ? CornerDownRight : Layers, { size: 12 })}
-          </span>
-          <span class="pi-queue-item-text">{chipText(item)}</span>
-          {#if item.kind === 'steer'}
-            <span class="pi-queue-item-tag">{t('composer.steerTag')}</span>
-          {/if}
-          {#if item.kind === 'queued' && store.focusIndex === i}
-            <!-- Touch screens have no ↩ / E keys: offer the same actions as buttons. -->
-            <span class="pi-queue-item-touch-actions">
-              <button
-                type="button"
-                class="pi-queue-item-action"
-                aria-label={t('composer.queueEdit')}
-                title={t('composer.queueEdit')}
-                onclick={(event) => {
-                  event.stopPropagation();
-                  store.actions.edit?.(item.id);
-                }}>{@html icon(Pencil, { size: 13 })}<span>{t('composer.queueEdit')}</span></button
-              >
-              <button
-                type="button"
-                class="pi-queue-item-action"
-                aria-label={t('composer.queueSendNow')}
-                title={t('composer.queueSendNow')}
-                onclick={(event) => {
-                  event.stopPropagation();
-                  store.actions.sendNow?.(item.id);
-                }}>{@html icon(Send, { size: 13 })}<span>{t('composer.queueSendNow')}</span></button
-              >
-            </span>
-          {/if}
-          <button
-            type="button"
-            class="pi-queue-item-remove"
-            aria-label={t('composer.removeQueued')}
-            onclick={(event) => {
-              event.stopPropagation();
-              onDelete(item);
-            }}
-          >
-            {@html icon(X, { size: 12 })}
-          </button>
-        </li>
-      {/each}
-    </ul>
+          {#each queued as item (item.id)}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- Keyboard navigation is handled at the document level. -->
+            <li
+              id={`pi-queue-item-${item.id}`}
+              class="pi-queue-item"
+              class:pi-queue-item--focused={store.focusIndex === indexById.get(item.id)}
+              role="option"
+              aria-selected={store.focusIndex === indexById.get(item.id)}
+              onclick={() => onItemClick(item)}
+              onmousedown={(event) => event.preventDefault()}
+            >
+              <span class="pi-queue-item-icon" aria-hidden="true">
+                {@html icon(Layers, { size: 13 })}
+              </span>
+              <span class="pi-queue-item-text">{chipText(item)}</span>
+              <span class="pi-queue-item-actions">
+                <button
+                  type="button"
+                  class="pi-queue-item-action"
+                  aria-label={t('composer.queueEdit')}
+                  title={t('composer.queueEdit')}
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    onEdit(item);
+                  }}>{@html icon(Pencil, { size: 14 })}</button
+                >
+                <button
+                  type="button"
+                  class="pi-queue-item-action"
+                  aria-label={t('composer.queueSendNow')}
+                  title={t('composer.queueSendNow')}
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    store.actions.sendNow?.(item.id);
+                  }}>{@html icon(Send, { size: 14 })}</button
+                >
+                <button
+                  type="button"
+                  class="pi-queue-item-action pi-queue-item-action--withdraw"
+                  aria-label={t('composer.removeQueued')}
+                  title={t('composer.removeQueued')}
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    onDelete(item);
+                  }}>{@html icon(X, { size: 14 })}</button
+                >
+              </span>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
 
-    {#if !steersOnly}
-      <footer class="pi-queue-touch-hint">{t('composer.queueTouchHint')}</footer>
+    {#if steers.length > 0}
+      <div class="pi-queue-section">
+        {#if bothKinds}
+          <div class="pi-queue-section-label">{t('composer.queueSteeringCount')}</div>
+        {/if}
+        <ul
+          class="pi-queue-list pi-queue-steer-list"
+          role="listbox"
+          tabindex="-1"
+          aria-label={t('composer.queueSteeringCount')}
+          aria-activedescendant={activeDescendantId || undefined}
+        >
+          {#each steers as item (item.id)}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <li
+              id={`pi-queue-item-${item.id}`}
+              class="pi-queue-item pi-queue-item--steer"
+              class:pi-queue-item--focused={store.focusIndex === indexById.get(item.id)}
+              role="option"
+              aria-selected={store.focusIndex === indexById.get(item.id)}
+              onclick={() => onItemClick(item)}
+              onmousedown={(event) => event.preventDefault()}
+            >
+              <span class="pi-queue-item-icon" aria-hidden="true">
+                {@html icon(CornerDownRight, { size: 13 })}
+              </span>
+              <span class="pi-queue-item-text">{chipText(item)}</span>
+              <span class="pi-queue-item-tag">{t('composer.steerTag')}</span>
+              <span class="pi-queue-item-actions">
+                {#if item.editable}
+                  <button
+                    type="button"
+                    class="pi-queue-item-action"
+                    aria-label={t('composer.steerEdit')}
+                    title={t('composer.steerEdit')}
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      onEdit(item);
+                    }}>{@html icon(Pencil, { size: 14 })}</button
+                  >
+                  <button
+                    type="button"
+                    class="pi-queue-item-action"
+                    aria-label={t('composer.steerToQueue')}
+                    title={t('composer.steerToQueue')}
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      store.actions.queueSteer?.(item.id);
+                    }}>{@html icon(ListPlus, { size: 14 })}</button
+                  >
+                  <button
+                    type="button"
+                    class="pi-queue-item-action pi-queue-item-action--withdraw"
+                    aria-label={t('composer.steerWithdraw')}
+                    title={t('composer.steerWithdraw')}
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      onDelete(item);
+                    }}>{@html icon(X, { size: 14 })}</button
+                  >
+                {:else}
+                  <button
+                    type="button"
+                    class="pi-queue-item-action"
+                    aria-label={t('common.close')}
+                    title={t('common.close')}
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      onDelete(item);
+                    }}>{@html icon(X, { size: 14 })}</button
+                  >
+                {/if}
+              </span>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
+    {#if queuedCount > 0}
       <footer class="pi-queue-shortcuts" aria-hidden="true">
         <span class="pi-queue-shortcut"><kbd>↑↓</kbd>{t('composer.queueNavigate')}</span>
         <span class="pi-queue-shortcut"><kbd>E</kbd>{t('composer.queueEdit')}</span>

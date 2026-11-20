@@ -204,6 +204,34 @@ func TestHandleChatRejectsUnknownSession(t *testing.T) {
 	}
 }
 
+func TestChatResendWithLostAcknowledgementIsDeliveredOnce(t *testing.T) {
+	root := t.TempDir()
+	writeSessionFile(t, root, "--tmp--project--", "session.jsonl")
+	fake := &fakeSender{sendCh: make(chan struct{}, 3)}
+	s := &Server{sessionsDir: root, chatSender: fake}
+	var group sync.WaitGroup
+	for i := 0; i < 3; i++ {
+		group.Go(func() {
+			var body bytes.Buffer
+			form := multipart.NewWriter(&body)
+			_ = form.WriteField("message", "hello")
+			_ = form.Close()
+			req := httptest.NewRequest(http.MethodPost, "/api/chat?id=session.jsonl&request=fixture-request-123", &body)
+			req.Header.Set("Content-Type", form.FormDataContentType())
+			w := httptest.NewRecorder()
+			s.handleChat(w, req)
+			if w.Code != http.StatusAccepted {
+				t.Errorf("resend status = %d body = %s", w.Code, w.Body.String())
+			}
+		})
+	}
+	group.Wait()
+	s.wg.Wait()
+	if got := len(fake.sendCh); got != 1 {
+		t.Fatalf("same request was delivered %d times", got)
+	}
+}
+
 func TestHandleChatRejectsBrokenSession(t *testing.T) {
 	root := t.TempDir()
 	dir := root + "/--tmp-project--"

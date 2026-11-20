@@ -4541,6 +4541,22 @@
     .pi-chat-collapse-icon { display: none; }
     .pi-chat-shell.expanded .pi-chat-expand-icon { display: none; }
     .pi-chat-shell.expanded .pi-chat-collapse-icon { display: inline-block; }
+    /* With the on-screen keyboard up, the transcript must not start a text
+       selection: long-pressing the space bar to move the caret used to grab the
+       message above it. Selection comes back as soon as the keyboard closes, so
+       copying transcript text still works. */
+    :root.pi-keyboard-open #messages,
+    :root.pi-keyboard-open #messages * {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    :root.pi-keyboard-open #pi-chat-composer,
+    :root.pi-keyboard-open #pi-chat-composer * {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
     .pi-chat-expand-button {
       position: absolute;
       top: 6px;
@@ -4776,6 +4792,56 @@
       text-transform: lowercase;
       color: color-mix(in srgb, var(--accent) 80%, var(--text));
       font-style: italic;
+    }
+
+    .pi-queue-section {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .pi-queue-section-label {
+      padding: 2px 8px 0;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* Row actions sit at the row end for both kinds: a steer can be reworded,
+       re-filed as a queued message, or dropped; a queued row can be edited,
+       sent now, or removed. */
+    .pi-queue-item-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      flex-shrink: 0;
+      margin-inline-start: auto;
+    }
+
+    .pi-queue-item-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .pi-queue-item-action:is(:hover, :focus-visible) {
+      background: color-mix(in srgb, var(--text) 10%, transparent);
+      color: var(--text);
+    }
+
+    .pi-queue-item--steer {
+      box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
     }
 
     .pi-queue-item--steer .pi-queue-item-icon {
@@ -5449,6 +5515,54 @@
       min-height: 0;
     }
 
+    /* Keep the answer controls reachable while a long question scrolls. */
+    .pi-sheet-body.question-sheet-body {
+      padding-bottom: 0;
+    }
+
+    /* One collapsible card for every file the session produced, shown once the
+       turn has finished. Inline output cards stay where they were written. */
+    .outputs-card {
+      margin: 10px 0 4px;
+      border: 1px solid var(--dim);
+      border-radius: 12px;
+      background: var(--container-bg);
+    }
+    .outputs-card > summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 8px 12px;
+      color: var(--text-soft);
+      font-size: 13px;
+      font-weight: 550;
+      cursor: pointer;
+      list-style: none;
+    }
+    .outputs-card > summary::-webkit-details-marker {
+      display: none;
+    }
+    .outputs-card-chevron {
+      display: inline-flex;
+      color: var(--muted);
+      transition: transform 140ms ease;
+    }
+    .outputs-card[open] > summary .outputs-card-chevron {
+      transform: rotate(90deg);
+    }
+    .outputs-card-body {
+      padding: 2px 10px 10px;
+    }
+    .question-sheet-body .question-picker-actions {
+      position: sticky;
+      bottom: 0;
+      margin-top: 4px;
+      padding: 10px 0 calc(12px + env(safe-area-inset-bottom));
+      background: var(--container-bg);
+      border-top: 1px solid var(--dim);
+    }
+
     /* Mobile: fullscreen bottom-sheet */
     .pi-sheet-backdrop.pi-sheet-mobile {
       align-items: flex-end;
@@ -5473,6 +5587,20 @@
 
     .pi-sheet-panel.pi-sheet-mobile .pi-sheet-header {
       padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    }
+
+    /* A question is a card, not a page: on phones it rises as a bottom sheet
+       sized to its content so the transcript behind it stays visible. */
+    .pi-sheet-panel.pi-sheet-mobile.question-sheet {
+      height: auto;
+      max-height: 88svh;
+      border-radius: 18px 18px 0 0;
+    }
+    .pi-sheet-panel.pi-sheet-mobile.question-sheet .pi-sheet-header {
+      padding: 10px 16px 6px;
+    }
+    .pi-sheet-panel.question-sheet {
+      max-width: 480px;
     }
 
     .pi-sheet-panel.pi-sheet-mobile .pi-sheet-body {

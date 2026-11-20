@@ -161,7 +161,7 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId, { questions }, signal, _onUpdate, ctx) {
       const response = await ctx.ui.input(structuredQuestionTitle, JSON.stringify(questions), {
         signal,
-        timeout: 125_000,
+        timeout: 425_000,
       });
       const questionCount = questions.length;
       if (response === "timedOut" || response === undefined) {
@@ -173,6 +173,12 @@ export default function (pi: ExtensionAPI) {
       }
       const selections: string[][] = JSON.parse(response);
       const answers = Object.fromEntries(questions.map((q, i) => [q.question, selections[i]]));
+      if (selections.every((items) => items.length === 0)) {
+        return {
+          content: [{ type: "text", text: "The user skipped these questions. No option was selected or authorized." }],
+          details: { questionCount, skipped: true },
+        };
+      }
       return {
         content: [{ type: "text", text: JSON.stringify(answers) }],
         details: { questionCount, answers },

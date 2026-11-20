@@ -5,6 +5,7 @@ export function progressLabel(phase) {
   if (phase === 'thinking') return t('activity.thinking');
   if (phase === 'tool') return t('activity.tools');
   if (phase === 'compacting') return t('piSession.compacting');
+  if (phase === 'retrying') return t('connection.reconnecting');
   return t('btw.working');
 }
 
@@ -170,10 +171,9 @@ function createAssistantPreview(documentImpl, { waiting = false, windowImpl = nu
   const thinking = documentImpl.createElement('details');
   thinking.className = 'preview-thinking';
   thinking.hidden = true;
-  thinking.append(
-    createPreviewLabel(documentImpl, config, 'thinking', 'summary'),
-    createMarkdownBlock(documentImpl, 'activity-thinking-text markdown-content'),
-  );
+  const thinkingBody = documentImpl.createElement('div');
+  thinkingBody.className = 'activity-thinking-text preview-thinking-text';
+  thinking.append(createPreviewLabel(documentImpl, config, 'thinking', 'summary'), thinkingBody);
   const progress = createPreviewLabel(documentImpl, config);
   progress.classList.add('preview-progress');
   const tool = documentImpl.createElement('span');
@@ -246,6 +246,7 @@ export function renderChatPreviewState(
     forceFollowToBottom = () => {},
     scrollAfterLayout = () => {},
     setIntervalImpl = setInterval,
+    markdownIntervalMs = 120,
   } = {},
 ) {
   if (!payload || typeof payload.content !== 'string') return false;
@@ -266,20 +267,35 @@ export function renderChatPreviewState(
   const phase = payload.phase || (payload.done ? '' : 'working');
   const thoughts = typeof payload.thinking === 'string' ? payload.thinking : '';
   const thinking = state.chatPreviewEl.querySelector('.preview-thinking');
-  const hasThoughts = Boolean(thoughts.trim());
-  if (hasThoughts && thinking.hidden) thinking.open = !payload.done;
-  if (payload.done) thinking.open = false;
-  thinking.hidden = !hasThoughts;
-  thinking.classList.toggle('is-thinking', phase === 'thinking');
-  const thinkingContent = thinking.querySelector('.activity-thinking-text');
-  if (state.thinking !== thoughts || !thinkingContent.hasChildNodes()) {
-    setMarkdownContent(thinkingContent, renderMarkdown(thoughts));
-    state.thinking = thoughts;
+  // Streamed thinking stays visible, but as plain text: re-parsing its markdown
+  // on every token was the expensive half of the streaming jank. It is written
+  // on the same cadence as the reply body and never re-created, so it grows in
+  // place instead of disappearing and coming back.
+  const dueForThinking =
+    !!payload.done ||
+    state.lastThinkingAt == null ||
+    nowMs(windowImpl) - state.lastThinkingAt >= markdownIntervalMs;
+  if (thinking) {
+    const hasThoughts = Boolean(thoughts.trim());
+    if (hasThoughts && thinking.hidden) thinking.open = !payload.done;
+    if (payload.done) thinking.open = false;
+    thinking.hidden = !hasThoughts;
+    thinking.classList.toggle('is-thinking', phase === 'thinking');
+    const body = thinking.querySelector('.preview-thinking-text');
+    if (dueForThinking && body && state.thinking !== thoughts) {
+      body.textContent = thoughts;
+      state.thinking = thoughts;
+      state.lastThinkingAt = nowMs(windowImpl);
+    }
   }
   const progress = state.chatPreviewEl.querySelector('.preview-progress');
   if (progress) {
-    progress.hidden = phase === 'thinking' && hasThoughts;
-    progress.querySelector('.preview-text').textContent = progressLabel(phase);
+    progress.hidden = phase === 'thinking' && Boolean(thoughts.trim());
+    const retryCount =
+      phase === 'retrying' && payload.retryAttempt && payload.retryLimit
+        ? ` · ${payload.retryAttempt}/${payload.retryLimit}`
+        : '';
+    progress.querySelector('.preview-text').textContent = progressLabel(phase) + retryCount;
     const toolName =
       phase === 'tool' && typeof payload.toolName === 'string' ? payload.toolName.trim() : '';
     if (toolName) {
@@ -300,9 +316,19 @@ export function renderChatPreviewState(
 
   state.chatPreviewEl.classList.remove('chat-preview-waiting');
   const content = state.chatPreviewEl.querySelector('.message-content');
-  if (state.content !== payload.content) {
+  // Re-parsing the whole reply for every token is what makes typing lag on a
+  // phone: markdown parsing plus a full relayout on each frame. Coalesce the
+  // text to a fixed cadence; the progress line above still updates per frame,
+  // and the final payload always renders.
+  const at = nowMs(windowImpl);
+  const dueToPaint =
+    !!payload.done ||
+    state.lastMarkdownAt == null ||
+    at - state.lastMarkdownAt >= markdownIntervalMs;
+  if (dueToPaint && state.content !== payload.content) {
     setMarkdownContent(content, renderMarkdown(payload.content));
     state.content = payload.content;
+    state.lastMarkdownAt = at;
   }
   if (!phase) finishChatPreviewState(state);
   else state.chatPreviewEl.classList.remove('done');

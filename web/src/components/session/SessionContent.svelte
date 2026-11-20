@@ -18,6 +18,7 @@
   import { groupOutputsByReply } from '../../session/artifacts/outputs.js';
   import { groupConversationActivity } from '../../session/render/conversation-activity.js';
   import { t } from '../../shared/i18n.js';
+  import { icon, ChevronRight } from '../../shared/icons.js';
   import { formatElapsed } from '../../session/render/entry-format.js';
 
   // Titled like "Worked for 1m 12s · 3 tool calls": the turn's duration says
@@ -27,9 +28,13 @@
   function activityText(section) {
     const tools = section.toolCount ? t('activity.toolCount', { count: section.toolCount }) : '';
     const failed = section.failures ? t('activity.failed') + ' ' + section.failures : '';
+    const retries = section.retries ? t('activity.retryCount', { count: section.retries }) : '';
     if (section.required) return { label: t('piExtension.waiting'), summary: tools };
     if (section.running)
-      return { label: t('activity.working'), summary: [tools, failed].filter(Boolean).join(' · ') };
+      return {
+        label: t('activity.working'),
+        summary: [tools, failed, retries].filter(Boolean).join(' · '),
+      };
     if (section.unfinished)
       return {
         label: t('activity.unfinished'),
@@ -40,13 +45,14 @@
         label: t('activity.worked', { duration: formatElapsed(section.durationMs) }),
         summary: [
           failed || tools,
+          retries,
           section.steered && t('activity.steered'),
           section.autoContinued && t('activity.autoContinued'),
         ]
           .filter(Boolean)
           .join(' · '),
       };
-    return { label: tools || t('activity.thinking'), summary: failed };
+    return { label: tools || retries || t('activity.thinking'), summary: failed };
   }
 
   let {
@@ -55,6 +61,7 @@
     live = false,
     chatAvailable = false,
     sessionRunning = false,
+    thinkingPreviews = [],
     outputs = [],
     renderOutputs = null,
     onCompact = null,
@@ -62,12 +69,14 @@
 
   let containerEl = $state(null);
   const entries = $derived(
-    live ? entriesWithReplyDetails(model.activePath) : model.activePath.map((entry) => ({ entry })),
+    live
+      ? entriesWithReplyDetails(model.activePath, { running: sessionRunning })
+      : model.activePath.map((entry) => ({ entry })),
   );
   const groups = $derived(outputs.length ? groupOutputsByReply(entries, outputs) : null);
   const sections = $derived(
     live
-      ? groupConversationActivity(entries, groups?.byEntry, sessionRunning)
+      ? groupConversationActivity(entries, groups?.byEntry, sessionRunning, thinkingPreviews)
       : entries.map((item) => ({ key: item.entry.id, item })),
   );
   // Sections after the last user message belong to the newest turn; only that
@@ -91,7 +100,9 @@
 
   // Re-run post-render side effects whenever the rendered path changes.
   $effect(() => {
-    sections;
+    entries;
+    sessionRunning;
+    outputs;
     if (containerEl && typeof afterRender === 'function') {
       afterRender(containerEl);
     }
@@ -99,11 +110,11 @@
 </script>
 
 {#snippet renderEntry(
-  { entry, reply, repeatedError, autoContinued, retryContent, skipActivity, emptyReply },
+  { entry, reply, repeatedError, retried, autoContinued, retryContent, skipActivity, emptyReply },
   inActivity = false,
   latestTurn = false,
 )}
-  {#if repeatedError || autoContinued}
+  {#if repeatedError || retried || autoContinued}
     <span id={`entry-${entry.id}`} hidden></span>
   {:else}
     <SessionEntry
@@ -152,6 +163,7 @@
               id={`thinking:${step.key}`}
               text={step.text}
               running={section.running}
+              streaming={!!step.streaming}
               live
             />
           {:else if step.kind === 'question'}
@@ -176,7 +188,20 @@
       {@render renderEntry(section.item, false, !sessionRunning && sectionIndex >= latestFrom)}
     {/if}
   {/each}
-  {#if groups?.unassigned.length}
+  {#if groups?.unassigned.length && sessionRunning}
     {@render renderOutputs?.(groups.unassigned)}
+  {/if}
+  <!-- After the turn ends, every file the session produced is also collected
+       into one collapsible card at the end; the inline cards above stay where
+       they were produced and scroll with the conversation. -->
+  {#if !sessionRunning && outputs.length > 0}
+    <details class="outputs-card" data-output-count={outputs.length}>
+      <summary>
+        <span class="outputs-card-chevron" aria-hidden="true"
+          >{@html icon(ChevronRight, { size: 14 })}</span
+        >{t('session.outputsSummary', { count: outputs.length })}
+      </summary>
+      <div class="outputs-card-body">{@render renderOutputs?.(outputs)}</div>
+    </details>
   {/if}
 </div>

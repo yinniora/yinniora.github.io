@@ -1,3 +1,25 @@
+// A phone that lost its link to the Mac usually reconnects on its own within a
+// few seconds. Rather than throwing the draft away on the first reset, keep the
+// request in flight and retry over this window before reporting anything.
+const DEFAULT_SEND_RETRY_DEADLINE_MS = 30_000;
+const SEND_RETRY_DELAYS_MS = [800, 1600, 3200, 5000, 8000];
+const STEER_EDIT_WINDOW_MS = 2400;
+
+// A missing response can happen before or after acceptance. Every retry uses
+// the same request ID so pi-web can acknowledge a delivery it already made.
+function isConnectionFailure(error) {
+  const message = String(error?.message || error || '');
+  return /failed to fetch|load failed|network|connection|econnreset|econnrefused|etimedout|socket|timeout|timed out|tls|offline/i.test(
+    message,
+  );
+}
+
+// A gateway that is still starting answers 502/503/504; the prompt never
+// reached the worker, so it is retried like a connection failure.
+function isRetryableStatus(status) {
+  return status === 502 || status === 503 || status === 504;
+}
+
 export function setupChatSubmission({
   windowImpl = window,
   form,
@@ -13,11 +35,15 @@ export function setupChatSubmission({
   updateSendEnabled = () => {},
   FormDataImpl = FormData,
   CustomEventImpl = CustomEvent,
+  sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  retryDeadlineMs = DEFAULT_SEND_RETRY_DEADLINE_MS,
 } = {}) {
   let refreshWorkerStatus = async () => {};
+  let delivery;
 
   if (cancelButton) {
     cancelButton.addEventListener('click', async () => {
+      delivery?.abort();
       cancelButton.disabled = true;
       setStatus('cancelling', 'running');
       try {
@@ -44,7 +70,7 @@ export function setupChatSubmission({
     });
   }
 
-  async function sendChatMessage(message, files = attachments.files()) {
+  async function sendChatMessage(message, files = attachments.files(), draft = null) {
     if (!message && files.length === 0) {
       setStatus('message or image required', 'error');
       return false;
@@ -57,20 +83,74 @@ export function setupChatSubmission({
     }
     sendButton.dataset.sending = '1';
     sendButton.disabled = true;
-    const detail = { message, steering: isSteering() };
+    const detail = { message, files, draft, steering: isSteering() };
+    const requestId =
+      windowImpl.crypto?.randomUUID?.() ||
+      `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    const scope = new AbortController();
+    delivery = scope;
+    let cancelStage;
+    const staged = new Promise((resolve) => {
+      cancelStage = resolve;
+    });
+    let editable = detail.steering;
+    detail.cancelBeforeSend = () => {
+      if (!editable || scope.signal.aborted) return false;
+      editable = false;
+      cancelStage();
+      return true;
+    };
     setStatus('sending', 'running');
     windowImpl.dispatchEvent(new CustomEventImpl('pi-chat-message-sent', { detail }));
     try {
-      const response = await chatApi.sendChat(sessionId, body);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'chat request failed');
-      setStatus(data.status || 'queued', 'running');
-      return true;
+      if (detail.steering) {
+        await Promise.race([sleepImpl(STEER_EDIT_WINDOW_MS), staged]);
+        if (!editable) return true;
+        editable = false;
+        windowImpl.dispatchEvent(new CustomEventImpl('pi-chat-message-delivering', { detail }));
+      }
+      const startedAt = Date.now();
+      let attempt = 0;
+      for (;;) {
+        try {
+          scope.signal.throwIfAborted();
+          const remaining = retryDeadlineMs - (Date.now() - startedAt);
+          if (remaining <= 0) throw new Error('connection timed out');
+          const response = await chatApi.sendChat(sessionId, body, {
+            requestId,
+            signal:
+              AbortSignal.any?.([scope.signal, AbortSignal.timeout(remaining)]) || scope.signal,
+          });
+          if (isRetryableStatus(response.status) && Date.now() - startedAt < retryDeadlineMs) {
+            const unavailable = new Error('gateway unavailable (' + response.status + ')');
+            unavailable.status = response.status;
+            throw unavailable;
+          }
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'chat request failed');
+          setStatus(data.status || 'queued', 'running');
+          return true;
+        } catch (error) {
+          if (scope.signal.aborted) {
+            windowImpl.dispatchEvent(new CustomEventImpl('pi-chat-message-failed', { detail }));
+            return false;
+          }
+          const retryable = isConnectionFailure(error) || isRetryableStatus(error?.status);
+          const delay = SEND_RETRY_DELAYS_MS[Math.min(attempt, SEND_RETRY_DELAYS_MS.length - 1)];
+          if (!retryable || Date.now() - startedAt + delay > retryDeadlineMs) throw error;
+          attempt += 1;
+          // The draft stays in flight instead of being handed back to the user;
+          // the status line says why nothing appears to happen yet.
+          setStatus('reconnecting', 'running');
+          await sleepImpl(delay);
+        }
+      }
     } catch (error) {
       windowImpl.dispatchEvent(new CustomEventImpl('pi-chat-message-failed', { detail }));
       setStatus(error.message || String(error), 'error');
       return false;
     } finally {
+      if (delivery === scope) delivery = null;
       delete sendButton.dataset.sending;
       sendButton.disabled = false;
       updateSendEnabled();
@@ -95,10 +175,17 @@ export function setupChatSubmission({
     autoResizeTextarea();
     updateSendEnabled();
 
-    const sent = await sendChatMessage(message, filesToSend);
+    const sent = await sendChatMessage(message, filesToSend, {
+      text: typed,
+      textAttachments: textAttachmentsToSend,
+    });
     if (!sent) {
-      textarea.value = typed;
-      attachments.restore({ files: filesToSend, textAttachments: textAttachmentsToSend });
+      const newerDraft = textarea.value;
+      textarea.value = [typed, newerDraft].filter(Boolean).join('\n\n');
+      attachments.restore({
+        files: [...new Set([...filesToSend, ...attachments.files()])],
+        textAttachments: [...new Set([...textAttachmentsToSend, ...attachments.textAttachments()])],
+      });
       autoResizeTextarea();
       updateSendEnabled();
     }

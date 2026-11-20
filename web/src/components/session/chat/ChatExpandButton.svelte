@@ -14,7 +14,7 @@
   title={t('composer.expand')}
   aria-label={t('composer.expand')}
   aria-pressed="false"
-  disabled={!chatAvailable}>{@html icon(Maximize2, { size: 14 })}</button
+  disabled={!chatAvailable}>{@html icon(Maximize2, { size: 16 })}</button
 >
 
 <button
@@ -24,7 +24,7 @@
   title={t('composer.dismissKeyboard')}
   onpointerdown={(event) => event.preventDefault()}
   onclick={() => document.getElementById('pi-chat-message')?.blur()}
-  disabled={!chatAvailable}>{@html icon(KeyboardOff, { size: 17 })}</button
+  disabled={!chatAvailable}>{@html icon(KeyboardOff, { size: 18 })}</button
 >
 
 <style>

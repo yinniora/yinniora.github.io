@@ -297,6 +297,7 @@ export function runChatComposer({
         updateSendEnabled();
       },
       setWorkerRunning: (running) => (workerRunning = running),
+      deliveryPending: () => sendButton.dataset.sending === '1',
       setExtensionUI: (ui) =>
         window.dispatchEvent(new CustomEvent('pi:extension-ui', { detail: { sessionId, ui } })),
       setIntervalImpl: setInterval,

@@ -10,8 +10,9 @@ import (
 )
 
 type pendingExtensionDialog struct {
-	dialog workers.ExtensionDialog
-	timer  *time.Timer
+	dialog   workers.ExtensionDialog
+	timer    *time.Timer
+	extended bool
 }
 
 const structuredQuestionTitle = "YuGo Pi structured questions"
@@ -46,6 +47,17 @@ func validQuestions(questions []workers.Question) bool {
 	return true
 }
 
+// maxCustomAnswer bounds one free-form answer. Options carry their own labels;
+// this only caps the text a user types into the "something else" field.
+const maxCustomAnswer = 2000
+
+// validQuestionAnswer accepts what the picker can actually produce: option
+// labels, a typed answer that is not an option, and an empty selection for a
+// question the user chose to skip.
+// extensionUIDefaultTimeout bounds how long an extension dialog stays open.
+const extensionUIDefaultTimeout = 2 * time.Minute
+const extensionQuestionAnswerTime = 5 * time.Minute
+
 func validQuestionAnswer(value string, questions []workers.Question) bool {
 	if len(value) > 64*1024 {
 		return false
@@ -56,15 +68,17 @@ func validQuestionAnswer(value string, questions []workers.Question) bool {
 	}
 	for index, selected := range selections {
 		question := questions[index]
-		if len(selected) == 0 || len(selected) > len(question.Options) || (!question.MultiSelect && len(selected) != 1) {
+		// One slot per option plus one typed answer.
+		if len(selected) > len(question.Options)+1 || (!question.MultiSelect && len(selected) > 1) {
 			return false
 		}
 		seen := make(map[string]bool, len(selected))
-		for _, label := range selected {
-			if seen[label] || !slices.ContainsFunc(question.Options, func(o workers.QuestionOption) bool { return o.Label == label }) {
+		for _, entry := range selected {
+			trimmed := strings.TrimSpace(entry)
+			if trimmed == "" || len(entry) > maxCustomAnswer || seen[trimmed] {
 				return false
 			}
-			seen[label] = true
+			seen[trimmed] = true
 		}
 	}
 	return true
@@ -124,7 +138,7 @@ func (w *piRPCWorker) handleExtensionUI(line string) {
 		request.Method = "question"
 		request.Placeholder = ""
 	}
-	timeout := 2 * time.Minute
+	timeout := extensionUIDefaultTimeout
 	if request.Timeout > 0 && request.Timeout < timeout.Milliseconds() {
 		timeout = time.Duration(request.Timeout) * time.Millisecond
 	}
@@ -145,7 +159,7 @@ func (w *piRPCWorker) handleExtensionUI(line string) {
 	pending := &pendingExtensionDialog{dialog: request.ExtensionDialog}
 	pending.timer = time.AfterFunc(timeout, func() {
 		w.mu.Lock()
-		if w.extensionDialogs[request.ID] != pending {
+		if w.extensionDialogs[request.ID] != pending || time.Now().Before(pending.dialog.Expires) {
 			w.mu.Unlock()
 			return
 		}
@@ -181,6 +195,21 @@ func (w *piRPCWorker) ReplyExtensionUI(answer workers.ExtensionAnswer) error {
 	if pending == nil || !time.Now().Before(pending.dialog.Expires) {
 		w.mu.Unlock()
 		return workers.ErrExtensionExpired
+	}
+	// "extend" is the user telling us they have started answering: push the
+	// deadline out so reading and typing never race the timer.
+	if answer.Extend {
+		if pending.dialog.Method != "question" || answer.Value != nil || answer.Cancelled || answer.Confirmed != nil {
+			w.mu.Unlock()
+			return workers.ErrExtensionAnswer
+		}
+		if !pending.extended {
+			pending.extended = true
+			pending.dialog.Expires = time.Now().Add(extensionQuestionAnswerTime)
+			pending.timer.Reset(extensionQuestionAnswerTime)
+		}
+		w.mu.Unlock()
+		return nil
 	}
 	valid := answer.Cancelled
 	if !answer.Cancelled {

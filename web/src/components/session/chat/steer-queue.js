@@ -113,6 +113,65 @@ export function setupSteerQueue({
     }
   }
 
+  function restoreDraft(item) {
+    if (!textarea) return;
+    const original = item.detail?.draft?.text ?? item.displayText ?? item.text ?? '';
+    textarea.value = [original, textarea.value].filter(Boolean).join('\n\n');
+    if (item.detail) {
+      attachments.restore?.({
+        files: [...item.detail.files, ...attachments.files()],
+        textAttachments: [
+          ...(item.detail.draft?.textAttachments || []),
+          ...(attachments.textAttachments?.() || []),
+        ],
+      });
+    }
+    autoResizeTextarea();
+    updateSendEnabled();
+    updateQueueEnabled();
+    if (typeof textarea.focus === 'function') textarea.focus();
+  }
+
+  // Only a draft that has not been dispatched can be edited or requeued.
+  function editSteer(id) {
+    const item = store.items.find((it) => it.id === id && it.kind === 'steer');
+    if (!item?.detail?.cancelBeforeSend?.()) return false;
+    store.takeLocalById(id);
+    restoreDraft(item);
+    return true;
+  }
+
+  function withdrawSteer(id) {
+    const item = store.items.find((it) => it.id === id && it.kind === 'steer');
+    if (!item?.detail?.cancelBeforeSend?.()) return false;
+    store.takeLocalById(id);
+    if (store.steerCount === 0 && store.queuedCount === 0 && textarea) {
+      textarea.focus({ preventScroll: true });
+    }
+    return true;
+  }
+
+  // Re-file the steer as a normal queued message: it runs after the current
+  // turn instead of being folded into it.
+  async function queueSteer(id) {
+    const item = store.items.find((it) => it.id === id && it.kind === 'steer');
+    if (!item?.detail?.cancelBeforeSend?.()) return false;
+    store.takeLocalById(id);
+    if (queueApi) {
+      const added = await store.enqueueQueued({
+        message: item.text,
+        displayText: item.displayText,
+        files: item.detail.files,
+      });
+      if (!added) {
+        restoreDraft(item);
+        setChatStatus(t('activity.failed'), 'error');
+        return false;
+      }
+    }
+    return true;
+  }
+
   async function resume() {
     await store.setPaused(false);
     // The server-side drainer kicks itself on PATCH, so no client-side
@@ -122,9 +181,17 @@ export function setupSteerQueue({
   const onMessageSent = (event) => {
     const detail = event.detail;
     if (detail && (detail.steering ?? activeRun)) {
-      steerRequests.set(detail, store.pushSteer({ text: detail.message }));
+      steerRequests.set(
+        detail,
+        store.pushSteer({ text: detail.message, detail, displayText: detail.draft?.text }),
+      );
     }
     activeRun = true;
+  };
+  const onMessageDelivering = (event) => {
+    const id = steerRequests.get(event.detail);
+    const row = store.items.find((item) => item.id === id);
+    if (row) row.editable = false;
   };
   const onMessageFailed = (event) => {
     if (!event.detail?.steering) activeRun = false;
@@ -160,12 +227,21 @@ export function setupSteerQueue({
     return ids;
   }
 
+  // Pi decorates the stored prompt in ways we do not control (a `[steer] `
+  // prefix, an appended `(with cwd context)`, an injected image note). Compare
+  // on normalised text so a decorated entry still clears its chip.
+  function normalizeSteerText(text) {
+    return String(text ?? '')
+      .replace(/^\[steer\]\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   function matchesSteer(text, draft) {
-    const own = String(draft || '').trim();
-    return (
-      own &&
-      (text === own || text.startsWith(own + '\n') || text.startsWith('[steer] ' + own + ' ('))
-    );
+    const own = normalizeSteerText(draft);
+    if (!own) return false;
+    const stored = normalizeSteerText(text);
+    return stored === own || stored.startsWith(own + ' (') || stored.startsWith(own + ' [Image');
   }
 
   // Track user entries by id, not by count: a compaction can shrink the live
@@ -186,20 +262,24 @@ export function setupSteerQueue({
 
     for (const text of fresh) {
       const chip = store.items.find(
-        (item) => item.kind === 'steer' && matchesSteer(text, item.text),
+        (item) => item.kind === 'steer' && !item.editable && matchesSteer(text, item.text),
       );
-      if (chip) store.removeById(chip.id);
+      if (chip) store.takeLocalById(chip.id);
     }
   }
 
   store.actions.sendNow = sendNow;
   store.actions.edit = edit;
   store.actions.resume = resume;
+  store.actions.editSteer = editSteer;
+  store.actions.withdrawSteer = withdrawSteer;
+  store.actions.queueSteer = queueSteer;
 
   queueButton?.addEventListener('click', enqueueFromComposer);
   textarea?.addEventListener('input', updateQueueEnabled);
   windowImpl.addEventListener('pi-chat-message-sent', onMessageSent);
   windowImpl.addEventListener('pi-chat-message-failed', onMessageFailed);
+  windowImpl.addEventListener('pi-chat-message-delivering', onMessageDelivering);
   windowImpl.addEventListener('pi-worker-done', onWorkerDone);
   windowImpl.addEventListener('pi-session-reload', reconcileSteersAgainstEntries);
 
@@ -209,12 +289,16 @@ export function setupSteerQueue({
     enqueueFromComposer,
     sendNow,
     edit,
+    editSteer,
+    withdrawSteer,
+    queueSteer,
     resume,
     queuedCount: () => store.queuedCount,
     steerCount: () => store.steerCount,
     dispose: () => {
       windowImpl.removeEventListener('pi-chat-message-sent', onMessageSent);
       windowImpl.removeEventListener('pi-chat-message-failed', onMessageFailed);
+      windowImpl.removeEventListener('pi-chat-message-delivering', onMessageDelivering);
       windowImpl.removeEventListener('pi-worker-done', onWorkerDone);
       windowImpl.removeEventListener('pi-session-reload', reconcileSteersAgainstEntries);
     },

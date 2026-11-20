@@ -438,28 +438,32 @@
 }
 #spa-root .personal-welcome h1 {
   color: var(--text);
-  font-size: clamp(24px, 3vw, 34px);
-  font-weight: 550;
-  letter-spacing: -1px;
-  line-height: 1.35;
-  margin-bottom: 28px;
+  font-size: clamp(23px, 2.6vw, 31px);
+  font-weight: 600;
+  letter-spacing: -0.6px;
+  line-height: 1.32;
+  margin-bottom: 22px;
 }
 #spa-root .personal-start-box {
-  padding: 14px 17px 13px;
-  border: 1px solid var(--dim);
-  border-radius: 22px;
+  padding: 13px 15px 11px;
+  border: 1px solid color-mix(in srgb, var(--dim) 85%, transparent);
+  border-radius: 18px;
   background: var(--input-bg);
-  box-shadow: 0 4px 25px #00000005;
+  box-shadow: 0 4px 22px #00000006;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
 }
 #spa-root .personal-start-box:focus-within {
-  border-color: var(--muted);
+  border-color: color-mix(in srgb, var(--text) 26%, var(--dim));
+  box-shadow: 0 6px 26px #0000000a;
 }
 #spa-root .personal-start-box textarea {
   border: 0;
   background: transparent;
   width: 100%;
   resize: vertical;
-  min-height: 72px;
+  min-height: 66px;
   max-height: 200px;
   outline: none;
   color: var(--text);
@@ -1376,6 +1380,12 @@
   max-height: 160px;
   overflow: auto;
   overflow-wrap: anywhere;
+}
+#spa-root .preview-thinking .preview-thinking-text {
+  white-space: pre-wrap;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
 }
 #spa-root .preview-spinner {
   color: var(--accent);
@@ -2859,10 +2869,26 @@ body .pi-btw-input {
   font-style: normal;
 }
 #spa-root .pi-queue-panel--steers .pi-queue-item--steer {
-  background: transparent;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
-#spa-root .pi-queue-panel--steers .pi-queue-item-tag {
-  display: none;
+#spa-root .pi-queue-section-label {
+  padding: 4px 10px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+#spa-root .pi-queue-item-actions {
+  gap: 0;
+}
+#spa-root .pi-queue-item-action {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+#spa-root .pi-queue-item-action--withdraw:is(:hover, :focus-visible) {
+  color: var(--danger, #e5484d);
 }
 #spa-root .pi-queue-panel--steers .pi-queue-status-label {
   color: color-mix(in srgb, var(--accent) 75%, var(--text));
@@ -2874,6 +2900,42 @@ body .pi-btw-input {
 /* Composer toolbar: the attach button never shrinks; the model label gives up
    space first. While a task runs with a draft, Stop turns into an icon and
    Queue + Steer share one split button so nothing is clipped on phones. */
+#spa-root .pi-chat-icon-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-soft);
+}
+#spa-root .pi-chat-icon-button:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text);
+  border-color: transparent;
+}
+#spa-root .pi-chat-icon-button:disabled {
+  opacity: 0.35;
+}
+#spa-root .pi-chat-expand-button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--text-soft);
+}
+#spa-root .pi-chat-expand-button:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text);
+  border-color: transparent;
+}
+#spa-root .pi-chat-toolbar svg,
+#spa-root .pi-chat-expand-button svg,
+#spa-root .pi-chat-icon-button svg {
+  stroke-width: 1.9;
+}
 #spa-root .pi-chat-toolbar-left {
   min-width: 42px;
 }
@@ -2891,6 +2953,85 @@ body .pi-btw-input {
   flex: none;
   gap: 6px;
   align-items: center;
+}
+/* Every control in the composer row shares one geometry: 36px tall, 10px
+   radius, 12.5px label. Mixed pill/rounded/bare controls read as noise. */
+#spa-root .pi-chat-toolbar-left .pi-chat-model-label {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  max-width: min(46vw, 250px);
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+#spa-root .pi-chat-toolbar-left .pi-chat-model-label:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+#spa-root .pi-chat-thinking-label {
+  min-height: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--dim) 80%, transparent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+#spa-root .pi-chat-thinking-label:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+#spa-root #pi-chat-cancel {
+  min-height: 36px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--dim) 80%, transparent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+#spa-root .pi-chat-send-group #pi-chat-send {
+  min-height: 36px;
+  height: 36px;
+  border-radius: 10px;
+  padding: 0 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+#spa-root .pi-chat-send-group .pi-chat-queue {
+  min-width: 36px;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 10px 0 0 10px;
+}
+#spa-root .pi-chat-send-group.running #pi-chat-send {
+  min-height: 36px;
+  height: 36px;
+  border-radius: 0 10px 10px 0;
+  padding: 0 14px 0 10px;
+}
+#spa-root .actions.running:has(.pi-chat-send:not(:disabled)) .pi-chat-cancel {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+@media (max-width: 760px) {
+  #spa-root .pi-chat-send-group:not(.running) #pi-chat-send {
+    width: 40px;
+    height: 40px;
+  }
 }
 #spa-root .pi-chat-send-group {
   display: inline-flex;

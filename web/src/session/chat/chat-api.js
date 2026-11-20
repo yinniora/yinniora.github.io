@@ -6,8 +6,11 @@ export function cancelChat(sessionId, { fetchImpl = fetch } = {}) {
   return fetchImpl(chatUrl('/api/chat/cancel', sessionId), { method: 'POST' });
 }
 
-export function sendChat(sessionId, body, { fetchImpl = fetch } = {}) {
-  return fetchImpl(chatUrl('/api/chat', sessionId), { method: 'POST', body });
+export function sendChat(sessionId, body, { fetchImpl = fetch, requestId, signal } = {}) {
+  const url =
+    chatUrl('/api/chat', sessionId) +
+    (requestId ? '&request=' + encodeURIComponent(requestId) : '');
+  return fetchImpl(url, { method: 'POST', body, ...(signal ? { signal } : {}) });
 }
 
 export function getWorkerStatus(sessionId, { fetchImpl = fetch, signal } = {}) {

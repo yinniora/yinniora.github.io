@@ -28,7 +28,7 @@
   import { getSessionRuntime } from '../../session/session-runtime-context.js';
   import { setSessionTitle } from '../../session/session-title.svelte.js';
 
-  let { sessionId } = $props();
+  let { sessionId, thinkingPreviews = $bindable([]) } = $props();
 
   onMount(() => {
     const scope = new AbortController();
@@ -127,13 +127,24 @@
     const CHAT_PREVIEW_STATE = { chatPreviewEl: null, pendingUserEl: null };
     cleanups.push(() => clearChatPreviewState(CHAT_PREVIEW_STATE));
 
-    function clearChatPreview() {
+    function clearChatPreview(entries = []) {
       const statusEl = documentImpl.getElementById('pi-chat-status');
       const isChatRunning = statusEl && statusEl.classList.contains('running');
       const hasDoneClass =
         CHAT_PREVIEW_STATE.chatPreviewEl &&
         CHAT_PREVIEW_STATE.chatPreviewEl.classList.contains('done');
       const keepAssistant = !!((CHAT_PREVIEW_STATE.phase || isChatRunning) && !hasDoneClass);
+      const timestamp = CHAT_PREVIEW_STATE.messageTimestamp;
+      if (
+        timestamp &&
+        entries.some(
+          ({ message }) => message?.role === 'assistant' && message.timestamp === timestamp,
+        )
+      ) {
+        const body = CHAT_PREVIEW_STATE.chatPreviewEl?.querySelector('.message-content');
+        if (body) body.replaceChildren();
+        CHAT_PREVIEW_STATE.content = '';
+      }
       return clearChatPreviewState(CHAT_PREVIEW_STATE, { keepAssistant });
     }
     let lastPhase = '';
@@ -149,34 +160,73 @@
       publishPhase('');
     }
     let previewFrame = 0;
+    let previewDelay = 0;
+    let lastPreviewPaint = -Infinity;
     let pendingPreview;
-    cleanups.push(() => windowImpl.cancelAnimationFrame(previewFrame));
+    const paintInterval = 100;
+    function cancelPreviewPaint() {
+      windowImpl.cancelAnimationFrame(previewFrame);
+      windowImpl.clearTimeout(previewDelay);
+      previewFrame = previewDelay = 0;
+    }
+    cleanups.push(cancelPreviewPaint);
     function applyChatPreview(payload) {
-      const rendered = renderChatPreviewState(payload, CHAT_PREVIEW_STATE, {
+      if (!payload) return;
+      lastPreviewPaint = windowImpl.performance.now();
+      const timestamp = payload.messageTimestamp;
+      const persisted =
+        timestamp &&
+        model?.entries?.some(
+          ({ message }) => message?.role === 'assistant' && message.timestamp === timestamp,
+        );
+      if (timestamp && payload.thinking?.trim() && !persisted) {
+        const previous = thinkingPreviews.find((item) => item.messageTimestamp === timestamp);
+        if (previous?.thinking !== payload.thinking) {
+          thinkingPreviews = [
+            ...thinkingPreviews.filter((item) => item.messageTimestamp !== timestamp),
+            {
+              messageTimestamp: timestamp,
+              thinkingIndex: payload.thinkingIndex || 0,
+              thinking: payload.thinking,
+            },
+          ].slice(-12);
+        }
+      }
+      CHAT_PREVIEW_STATE.messageTimestamp = timestamp || 0;
+      const effective = timestamp
+        ? { ...payload, thinking: '', content: persisted ? '' : payload.content }
+        : payload;
+      const rendered = renderChatPreviewState(effective, CHAT_PREVIEW_STATE, {
         documentImpl,
         windowImpl,
         renderMarkdown,
         shouldFollow,
         forceFollowToBottom,
         scrollAfterLayout,
+        markdownIntervalMs: 0,
       });
       if (rendered) publishPhase(CHAT_PREVIEW_STATE.phase, payload);
     }
     function renderChatPreview(payload) {
       if (payload?.done) {
-        windowImpl.cancelAnimationFrame(previewFrame);
-        previewFrame = 0;
+        cancelPreviewPaint();
         pendingPreview = null;
         applyChatPreview(payload);
         return;
       }
       pendingPreview = payload;
-      if (previewFrame) return;
-      previewFrame = requestAnimationFrame(() => {
-        previewFrame = 0;
-        applyChatPreview(pendingPreview);
-        pendingPreview = null;
-      });
+      if (previewFrame || previewDelay) return;
+      const paint = () => {
+        previewDelay = 0;
+        previewFrame = requestAnimationFrame(() => {
+          previewFrame = 0;
+          applyChatPreview(pendingPreview);
+          pendingPreview = null;
+        });
+      };
+      const wait = paintInterval - (windowImpl.performance.now() - lastPreviewPaint);
+      if (wait > 0) previewDelay = setTimeout(paint, wait);
+      else paint();
     }
     function renderPendingChat(message) {
       return renderPendingChatState(message, CHAT_PREVIEW_STATE, {
@@ -190,8 +240,10 @@
     }
 
     // ── Reload (fetch /api/session → reconcile the model) ──────────────────────
-    function triggerReload() {
-      return handleSessionReload({
+    let reloadInFlight;
+    let reloadRequested = false;
+    async function reloadOnce() {
+      await handleSessionReload({
         sessionId,
         fetchImpl,
         signal: scope.signal,
@@ -207,19 +259,39 @@
         showFollowButton,
         onReloaded: (data) => {
           reconcileEntries(data.entries);
+          if (thinkingPreviews.length) {
+            const timestamps = new Set(data.entries.map((entry) => entry.message?.timestamp));
+            const uncommitted = thinkingPreviews.filter(
+              (item) => !timestamps.has(item.messageTimestamp),
+            );
+            if (uncommitted.length !== thinkingPreviews.length) thinkingPreviews = uncommitted;
+          }
         },
         onNewEntries: highlightNewEntries,
       }).catch((err) => {
         if (!scope.signal.aborted) console.error('Live update failed:', err);
       });
     }
+    function triggerReload() {
+      reloadRequested = true;
+      if (!reloadInFlight) {
+        reloadInFlight = (async () => {
+          do {
+            reloadRequested = false;
+            await reloadOnce();
+          } while (reloadRequested && !scope.signal.aborted);
+        })().finally(() => {
+          reloadInFlight = null;
+        });
+      }
+      return reloadInFlight;
+    }
 
     on(windowImpl, 'pi-worker-done', () => {
       // If the final filesystem reload is missed/delayed, don't leave the
       // streaming preview "working"; proactively reconcile from /api/session.
       if (pendingPreview) {
-        windowImpl.cancelAnimationFrame(previewFrame);
-        previewFrame = 0;
+        cancelPreviewPaint();
         applyChatPreview(pendingPreview);
         pendingPreview = null;
       }

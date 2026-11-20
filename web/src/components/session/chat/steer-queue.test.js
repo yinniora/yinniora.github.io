@@ -266,6 +266,111 @@ describe('setupSteerQueue (server-backed)', () => {
     expect(store.steerCount).toBe(1);
   });
 
+  it('does not clear a steer when an unrelated user message is recorded', () => {
+    const { queueButton, textarea } = makeDom();
+    const store = new QueueStore();
+    const entries = [];
+    setupSteerQueue({ store, queueButton, textarea, getLiveEntries: () => entries });
+    window.dispatchEvent(new Event('pi-session-reload'));
+
+    window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
+    window.dispatchEvent(
+      new CustomEvent('pi-chat-message-sent', { detail: { message: 'try the other file' } }),
+    );
+    expect(store.steerCount).toBe(1);
+
+    entries.push({
+      id: 'u1',
+      type: 'message',
+      message: { role: 'user', content: 'Go ahead with the second option instead.' },
+    });
+    window.dispatchEvent(new Event('pi-session-reload'));
+
+    expect(store.steerCount).toBe(1);
+  });
+
+  it('clears one steer chip per landed user entry, oldest first', () => {
+    const { queueButton, textarea } = makeDom();
+    const store = new QueueStore();
+    const entries = [];
+    setupSteerQueue({ store, queueButton, textarea, getLiveEntries: () => entries });
+    window.dispatchEvent(new Event('pi-session-reload'));
+
+    window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
+    for (const message of ['one', 'two', 'three']) {
+      window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message } }));
+    }
+    expect(store.steerCount).toBe(3);
+
+    entries.push({ id: 'u1', type: 'message', message: { role: 'user', content: 'one' } });
+    window.dispatchEvent(new Event('pi-session-reload'));
+    expect(store.steerCount).toBe(2);
+    expect(store.items.filter((item) => item.kind === 'steer')[0].text).toBe('two');
+  });
+
+  it('editSteer pulls the text back into the composer and drops the chip', () => {
+    const { queueButton, textarea } = makeDom();
+    const store = new QueueStore();
+    const sent = [];
+    setupSteerQueue({
+      store,
+      queueButton,
+      textarea,
+      setChatStatus: (text) => sent.push(text),
+    });
+    window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
+    window.dispatchEvent(
+      new CustomEvent('pi-chat-message-sent', {
+        detail: { message: 'rename the route', cancelBeforeSend: () => true, files: [] },
+      }),
+    );
+    const id = store.items.find((item) => item.kind === 'steer').id;
+
+    expect(store.actions.editSteer(id)).toBe(true);
+    expect(store.steerCount).toBe(0);
+    expect(textarea.value).toBe('rename the route');
+    expect(queueButton.disabled).toBe(false);
+  });
+
+  it('withdrawSteer drops the chip without touching the api', async () => {
+    const { queueButton, textarea } = makeDom();
+    const api = makeApi();
+    const store = new QueueStore({ api });
+    setupSteerQueue({ store, queueButton, textarea, queueApi: api });
+    window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
+    window.dispatchEvent(
+      new CustomEvent('pi-chat-message-sent', {
+        detail: { message: 'stop', cancelBeforeSend: () => true, files: [] },
+      }),
+    );
+
+    const id = store.items.find((item) => item.kind === 'steer').id;
+    expect(store.actions.withdrawSteer(id)).toBe(true);
+    expect(store.steerCount).toBe(0);
+    expect(api.remove).not.toHaveBeenCalled();
+  });
+
+  it('queueSteer re-files the steer as a server-side queued message', async () => {
+    const { queueButton, textarea } = makeDom();
+    const api = makeApi();
+    const store = new QueueStore({ api });
+    setupSteerQueue({ store, queueButton, textarea, queueApi: api });
+    window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
+    window.dispatchEvent(
+      new CustomEvent('pi-chat-message-sent', {
+        detail: { message: 'after this turn', cancelBeforeSend: () => true, files: [] },
+      }),
+    );
+
+    const id = store.items.find((item) => item.kind === 'steer').id;
+    await store.actions.queueSteer(id);
+
+    expect(api.add).toHaveBeenCalledWith('after this turn', 'after this turn');
+    expect(store.steerCount).toBe(0);
+    expect(store.queuedCount).toBe(1);
+    expect(store.items[0]).toMatchObject({ kind: 'queued', text: 'after this turn' });
+  });
+
   it('resume PATCHes paused=false through the api', async () => {
     const { queueButton, textarea } = makeDom();
     const api = makeApi();

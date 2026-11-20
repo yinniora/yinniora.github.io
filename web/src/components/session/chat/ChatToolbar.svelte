@@ -6,6 +6,7 @@
     ChevronDown,
     Clock,
     CornerDownRight,
+    Image,
     Gauge,
     Paperclip,
     Plus,
@@ -57,14 +58,14 @@
       {#if chatAvailable}
         <details class="composer-add" bind:this={attachMenu}>
           <summary class="pi-chat-icon-button" aria-label={t('composer.addAttachment')}
-            >{@html icon(Plus, { size: 19 })}</summary
+            >{@html icon(Plus, { size: 18 })}</summary
           >
           <div class="composer-add-menu">
             <button type="button" onclick={() => chooseAttachment('pi-chat-files')}
               >{@html icon(Paperclip, { size: 16 })}{t('composer.uploadFiles')}</button
             >
             <button type="button" onclick={() => chooseAttachment('pi-chat-images')}
-              >{@html icon(Paperclip, { size: 16 })}{t('composer.attachPhotos')}</button
+              >{@html icon(Image, { size: 16 })}{t('composer.attachPhotos')}</button
             >
             <button type="button" onclick={() => chooseAttachment('pi-chat-camera')}
               >{@html icon(Camera, { size: 16 })}{t('composer.takePhoto')}</button
@@ -102,9 +103,9 @@
           aria-controls="pi-chat-thinking-popup"
           aria-expanded="false"
           disabled={!chatAvailable}
-          >{@html icon(Gauge, { size: 20, strokeWidth: 2.4 })}
+          >{@html icon(Gauge, { size: 18 })}
           <span>{effortLabel || t('composer.switchEffort')}</span>
-          {@html icon(ChevronDown, { size: 13 })}</button
+          {@html icon(ChevronDown, { size: 12 })}</button
         >
         <div id="pi-chat-thinking-popup" class="pi-chat-thinking-popup" style="display: none" inert>
           <div
@@ -123,7 +124,7 @@
         title={t('composer.stopHint')}
         aria-label={t('composer.cancelRunning')}
         disabled={toolbar.statusText === 'cancelling' || toolbar.compacting || !chatAvailable}
-        >{@html icon(Square, { size: 13, class: 'pi-chat-stop-glyph' })}<span
+        >{@html icon(Square, { size: 12, class: 'pi-chat-stop-glyph' })}<span
           >{t('composer.stop')}</span
         ></button
       >
@@ -141,7 +142,7 @@
         >
         <button type="submit" id="pi-chat-send" class="pi-chat-send" disabled>
           {@html icon(toolbar.isRunning ? CornerDownRight : ArrowUp, {
-            size: 17,
+            size: 18,
             class: 'composer-send-icon',
           })}
           <span>{toolbar.isRunning ? t('composer.steer') : t('composer.send')}</span>
@@ -221,9 +222,14 @@
     display: grid;
     place-items: center;
     min-width: 36px;
-    min-height: 36px;
+    height: 36px;
     list-style: none;
     cursor: pointer;
+    border-radius: 10px;
+  }
+  .composer-add summary:is(:hover, :focus-visible) {
+    background: color-mix(in srgb, var(--text) 10%, transparent);
+    color: var(--text);
   }
   .composer-add summary::-webkit-details-marker {
     display: none;
@@ -232,27 +238,33 @@
     position: absolute;
     z-index: 15;
     left: 0;
-    bottom: calc(100% + 6px);
+    bottom: calc(100% + 8px);
+    width: max(236px, min(300px, calc(100vw - 40px)));
     background: var(--surface);
     border: 1px solid var(--dim);
-    padding: 4px;
-    border-radius: 12px;
-    box-shadow: 0 8px 30px #0004;
+    padding: 6px;
+    border-radius: 14px;
+    box-shadow: 0 12px 34px #0006;
     white-space: nowrap;
   }
   .composer-add-menu button {
     display: flex;
     align-items: center;
-    gap: 9px;
-    min-height: 42px;
+    gap: 11px;
+    min-height: 46px;
     width: 100%;
     color: var(--text);
     background: transparent;
     border: 0;
-    border-radius: 8px;
-    padding: 6px 10px;
+    border-radius: 10px;
+    padding: 8px 12px;
     text-align: left;
+    font-size: 14px;
     cursor: pointer;
+  }
+  .composer-add-menu button :global(svg) {
+    flex: none;
+    opacity: 0.75;
   }
   .composer-add-menu button:is(:hover, :focus-visible) {
     background: var(--hover);

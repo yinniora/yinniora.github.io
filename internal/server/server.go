@@ -87,6 +87,8 @@ type Server struct {
 	fileMod               map[string]time.Time
 	fileModMu             sync.RWMutex
 	chatSender            ChatSender
+	chatRequestMu         sync.Mutex
+	acceptedChatRequests  map[string]time.Time
 	cache                 *sessions.Cache
 	auth                  *auth.Middleware
 	devices               *deviceAccess

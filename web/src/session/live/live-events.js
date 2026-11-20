@@ -73,7 +73,7 @@ export async function handleSessionReload({
   // entries have been appended/upserted (imperative) or merged into the model
   // (reactive). Clearing earlier creates a visible blank/flicker when a cold
   // worker finally writes the real message.
-  clearChatPreview();
+  clearChatPreview(entries);
 
   if (newCount > 0) {
     updateStats(entries);

@@ -139,12 +139,14 @@ test.describe("steer / queue (stubbed pi)", () => {
     const steerRow = page.locator(".pi-queue-item.pi-queue-item--steer");
     await expect(steerRow).toContainText(steerMsg);
 
-    // Removing the steer row from the panel hides the chip immediately. The
-    // message has already been sent to pi (and will still arrive in the
-    // conversation), but the in-flight indicator goes away.
-    await steerRow.locator(".pi-queue-item-remove").click();
+    const delivery = page
+      .waitForRequest((request) => request.url().includes("/api/chat?") && !!request.postData()?.includes(steerMsg), { timeout: 2800 })
+      .then(() => true, () => false);
+    await steerRow.getByRole("button", { name: "Withdraw pending guidance" }).click();
     await expect(steerRow).toHaveCount(0);
     await release();
+    expect(await delivery).toBe(false);
+    await expect(page.locator("#messages")).not.toContainText(steerMsg);
   });
 
   test("queued messages stack, are deletable, and auto-send after the run", async ({
@@ -166,7 +168,7 @@ test.describe("steer / queue (stubbed pi)", () => {
     await expect(queuedRows).toHaveCount(2);
 
     // Delete the second queued message before it is ever sent.
-    await queuedRows.filter({ hasText: drop }).locator(".pi-queue-item-remove").click();
+    await queuedRows.filter({ hasText: drop }).getByRole("button", { name: "Remove queued message" }).click();
     await expect(queuedRows).toHaveCount(1);
     await expect(queuedRows.filter({ hasText: keep })).toHaveCount(1);
 

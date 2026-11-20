@@ -22,6 +22,9 @@ export class QueueStore {
   actions = {
     sendNow: () => {},
     edit: () => {},
+    editSteer: () => {},
+    withdrawSteer: () => {},
+    queueSteer: () => {},
     resume: () => {},
   };
 
@@ -136,6 +139,8 @@ export class QueueStore {
       kind: 'steer',
       text: String(item.text ?? ''),
       displayText: String(item.displayText ?? item.text ?? ''),
+      editable: !!item.detail?.cancelBeforeSend,
+      detail: item.detail,
     });
     this.#clampFocus();
     return id;
@@ -143,7 +148,7 @@ export class QueueStore {
 
   clearSteers = () => {
     if (this.steerCount === 0) return;
-    this.items = this.items.filter((item) => item.kind !== 'steer');
+    this.items = this.items.filter((item) => item.kind !== 'steer' || item.editable);
     this.#clampFocus();
   };
 

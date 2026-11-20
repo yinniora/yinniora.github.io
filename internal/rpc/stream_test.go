@@ -37,7 +37,7 @@ func TestStreamPreviewAccumulatorUsesTextEndContentUntilTheMessageCommits(t *tes
 		t.Fatalf("preview = %+v, want final block content", preview)
 	}
 	checkpoint, ok := acc.handleAssistantEvent(assistantMessageEvent{Type: "message_end"})
-	if !ok || !checkpoint.Done || checkpoint.Phase != "working" || checkpoint.Content != "" {
+	if !ok || !checkpoint.Done || checkpoint.Phase != "working" || checkpoint.Content != "final" {
 		t.Fatalf("message checkpoint = %+v, want continuing progress", checkpoint)
 	}
 }

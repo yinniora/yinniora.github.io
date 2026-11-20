@@ -59,7 +59,9 @@ export function setupSessionLiveConnection({
       windowImpl,
       CustomEventImpl: windowImpl.CustomEvent,
     });
-    reconnectAttempt = 0;
+    source.addEventListener?.('open', () => {
+      if (eventSource === source) reconnectAttempt = 0;
+    });
     return eventSource;
   }
 

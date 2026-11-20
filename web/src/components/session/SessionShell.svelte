@@ -131,6 +131,7 @@
   });
 
   let transcript = $state(null);
+  let thinkingPreviews = $state.raw([]);
   onMount(() =>
     setupSwipeBack(transcript, { onBack: () => navigate('/'), enabled: isMobileLayout }),
   );
@@ -245,7 +246,7 @@
 
 <!-- Live reload (SSE) mounts before <ChatComposer> so its optimistic
      "message sent" listener is attached before the user can send. -->
-<LiveReload {sessionId} />
+<LiveReload {sessionId} bind:thinkingPreviews />
 
 <div id="sidebar-overlay"></div>
 <div id="app">
@@ -264,6 +265,7 @@
               {outputs}
               {renderOutputs}
               {chatAvailable}
+              {thinkingPreviews}
               onCompact={() => openPiTools('session')}
               sessionRunning={runningSessionIds.has(sessionId)}
               live

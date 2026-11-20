@@ -60,7 +60,13 @@ describe('chat submit', () => {
     form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sendChat).toHaveBeenCalledWith('s1', expect.any(dom.window.FormData));
+    expect(sendChat).toHaveBeenCalledWith(
+      's1',
+      expect.any(dom.window.FormData),
+      expect.objectContaining({
+        requestId: expect.any(String),
+      }),
+    );
     expect(sendChat.mock.calls[0][1].get('message')).toBe('hello');
     expect(dispatched).toEqual(['hello']);
     expect(attachments.clear).toHaveBeenCalled();
@@ -167,5 +173,115 @@ describe('chat submit', () => {
     expect(setStatus).toHaveBeenCalledWith('idle', '');
     expect(refresh).toHaveBeenCalled();
     expect(cancelButton.disabled).toBe(false);
+  });
+});
+
+describe('chat submit retries a phone that lost its link', () => {
+  it('keeps the draft in flight until the connection comes back', async () => {
+    const { dom, form, textarea, sendButton, cancelButton } = setupDom();
+    textarea.value = 'hello';
+    const attachments = createAttachments({ message: 'hello' });
+    const sendChat = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Load failed'))
+      .mockRejectedValueOnce(
+        new TypeError(
+          'Connection error.: Client network socket disconnected before secure TLS connection was established (ECONNRESET)',
+        ),
+      )
+      .mockResolvedValue(new Response('{"status":"queued"}', { status: 202 }));
+    const setStatus = vi.fn();
+    const sleepImpl = vi.fn(() => Promise.resolve());
+
+    setupChatSubmission({
+      windowImpl: dom.window,
+      form,
+      textarea,
+      sendButton,
+      cancelButton,
+      attachments,
+      chatApi: { sendChat },
+      sessionId: 's1',
+      setStatus,
+      autoResizeTextarea: vi.fn(),
+      updateSendEnabled: vi.fn(),
+      FormDataImpl: dom.window.FormData,
+      CustomEventImpl: dom.window.CustomEvent,
+      sleepImpl,
+    });
+
+    form.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+    await vi.waitFor(() => expect(sendChat).toHaveBeenCalledTimes(3));
+    expect(new Set(sendChat.mock.calls.map((call) => call[2].requestId)).size).toBe(1);
+
+    expect(setStatus).toHaveBeenCalledWith('reconnecting', 'running');
+    expect(setStatus).toHaveBeenLastCalledWith('queued', 'running');
+    expect(attachments.restore).not.toHaveBeenCalled();
+  });
+
+  it('gives up and hands the draft back after the grace window', async () => {
+    const { dom, form, textarea, sendButton, cancelButton } = setupDom();
+    textarea.value = 'hello';
+    const attachments = createAttachments({ message: 'hello' });
+    const sendChat = vi.fn().mockRejectedValue(new TypeError('Load failed'));
+    const setStatus = vi.fn();
+    const sleepImpl = vi.fn(() => Promise.resolve());
+    const failed = vi.fn();
+    dom.window.addEventListener('pi-chat-message-failed', failed);
+
+    setupChatSubmission({
+      windowImpl: dom.window,
+      form,
+      textarea,
+      sendButton,
+      cancelButton,
+      attachments,
+      chatApi: { sendChat },
+      sessionId: 's1',
+      setStatus,
+      autoResizeTextarea: vi.fn(),
+      updateSendEnabled: vi.fn(),
+      FormDataImpl: dom.window.FormData,
+      CustomEventImpl: dom.window.CustomEvent,
+      sleepImpl,
+      retryDeadlineMs: 3000,
+    });
+
+    form.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+    await vi.waitFor(() => expect(failed).toHaveBeenCalled());
+
+    expect(setStatus).toHaveBeenLastCalledWith('Load failed', 'error');
+    expect(attachments.restore).toHaveBeenCalled();
+    expect(sendChat.mock.calls.length).toBeLessThan(10);
+  });
+
+  it('fails at once on a rejected request instead of retrying it', async () => {
+    const { dom, form, textarea, sendButton, cancelButton } = setupDom();
+    textarea.value = 'hello';
+    const attachments = createAttachments({ message: 'hello' });
+    const sendChat = vi.fn(() =>
+      Promise.resolve(new Response('{"error":"session is busy"}', { status: 409 })),
+    );
+
+    setupChatSubmission({
+      windowImpl: dom.window,
+      form,
+      textarea,
+      sendButton,
+      cancelButton,
+      attachments,
+      chatApi: { sendChat },
+      sessionId: 's1',
+      setStatus: vi.fn(),
+      autoResizeTextarea: vi.fn(),
+      updateSendEnabled: vi.fn(),
+      FormDataImpl: dom.window.FormData,
+      CustomEventImpl: dom.window.CustomEvent,
+      sleepImpl: vi.fn(() => Promise.resolve()),
+    });
+
+    form.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+    await vi.waitFor(() => expect(attachments.restore).toHaveBeenCalled());
+    expect(sendChat).toHaveBeenCalledTimes(1);
   });
 });

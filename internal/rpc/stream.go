@@ -13,12 +13,15 @@ type StreamPreview = workers.LivePreview
 type StreamEventSink func(StreamPreview)
 
 type assistantMessageEvent struct {
-	Type         string `json:"type"`
-	Delta        string `json:"delta"`
-	Content      string `json:"content"`
-	ContentIndex int    `json:"contentIndex"`
-	ToolCallID   string `json:"toolCallId"`
-	ToolName     string `json:"toolName"`
+	Type             string `json:"type"`
+	Delta            string `json:"delta"`
+	Content          string `json:"content"`
+	ContentIndex     int    `json:"contentIndex"`
+	ToolCallID       string `json:"toolCallId"`
+	ToolName         string `json:"toolName"`
+	MessageTimestamp int64
+	RetryAttempt     int
+	RetryLimit       int
 }
 
 var previewRevision atomic.Uint64
@@ -58,10 +61,13 @@ func previewTail(text string) string {
 }
 
 type streamPreviewAccumulator struct {
-	content, thinking previewText
-	phase             string
-	revision          uint64
-	tools             map[string]runningTool
+	content, thinking        previewText
+	phase                    string
+	revision                 uint64
+	tools                    map[string]runningTool
+	messageTimestamp         int64
+	thinkingIndex            int
+	retryAttempt, retryLimit int
 }
 
 type runningTool struct {
@@ -74,6 +80,8 @@ func (a *streamPreviewAccumulator) snapshot() StreamPreview {
 		Content:  previewTail(a.content.previous + a.content.current),
 		Thinking: previewTail(a.thinking.previous + a.thinking.current),
 		Phase:    a.phase, Revision: a.revision,
+		MessageTimestamp: a.messageTimestamp, ThinkingIndex: a.thinkingIndex,
+		RetryAttempt: a.retryAttempt, RetryLimit: a.retryLimit,
 	}
 	if a.phase == "tool" {
 		var oldest runningTool
@@ -91,9 +99,26 @@ func (a *streamPreviewAccumulator) snapshot() StreamPreview {
 }
 
 func (a *streamPreviewAccumulator) handleAssistantEvent(event assistantMessageEvent) (StreamPreview, bool) {
+	if event.MessageTimestamp != 0 && a.messageTimestamp != event.MessageTimestamp {
+		a.content, a.thinking = previewText{}, previewText{}
+		a.messageTimestamp = event.MessageTimestamp
+		a.thinkingIndex = 0
+	}
 	switch event.Type {
 	case "agent_start":
-		*a = streamPreviewAccumulator{phase: "working"}
+		// A retry starts a new low-level agent run, while the user turn remains
+		// active. Keep its progress until another assistant message starts.
+		if a.phase != "retrying" {
+			*a = streamPreviewAccumulator{phase: "working"}
+		}
+	case "auto_retry_start":
+		a.phase = "retrying"
+		a.retryAttempt, a.retryLimit = event.RetryAttempt, event.RetryLimit
+	case "auto_retry_end":
+		a.retryAttempt, a.retryLimit = 0, 0
+		if a.phase == "retrying" {
+			a.phase = "working"
+		}
 	case "compaction_start":
 		a.phase = "compacting"
 	case "compaction_end":
@@ -102,6 +127,9 @@ func (a *streamPreviewAccumulator) handleAssistantEvent(event assistantMessageEv
 		}
 		a.phase = "working"
 	case "thinking_start", "thinking_delta", "thinking_end":
+		if a.thinking == (previewText{}) {
+			a.thinkingIndex = event.ContentIndex
+		}
 		a.thinking.update(event)
 		a.phase = "thinking"
 	case "text_start", "text_delta", "text_end":
@@ -125,7 +153,6 @@ func (a *streamPreviewAccumulator) handleAssistantEvent(event assistantMessageEv
 		if a.phase == "" || (a.content == (previewText{}) && a.thinking == (previewText{})) {
 			return StreamPreview{}, false
 		}
-		a.content, a.thinking = previewText{}, previewText{}
 		if len(a.tools) == 0 {
 			a.phase = "working"
 		}
@@ -137,6 +164,9 @@ func (a *streamPreviewAccumulator) handleAssistantEvent(event assistantMessageEv
 	a.revision = previewRevision.Add(1)
 	preview := a.snapshot()
 	preview.Done = event.Type == "message_end"
+	if preview.Done {
+		a.content, a.thinking = previewText{}, previewText{}
+	}
 	return preview, true
 }
 

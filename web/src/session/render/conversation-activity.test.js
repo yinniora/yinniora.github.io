@@ -6,6 +6,30 @@ import { formatElapsed, formatShortTime, stripImageNotes } from './entry-format.
 const at = (s) => new Date(Date.UTC(2026, 10, 19, 2, 0, s)).toISOString();
 const msg = (id, s, message) => ({ entry: { id, type: 'message', timestamp: at(s), message } });
 
+it('uses the same open activity and thought keys before and after a streamed message is written', () => {
+  const user = msg('user', 0, { role: 'user', content: 'go' });
+  const timestamp = Date.parse(at(1));
+  const live = [{ messageTimestamp: timestamp, thinkingIndex: 0, thinking: 'still streaming' }];
+  const [before] = groupConversationActivity([user], new Map(), true, live).filter((s) => s.items);
+  const assistant = msg('saved', 1, {
+    role: 'assistant',
+    timestamp,
+    stopReason: 'toolUse',
+    content: [{ type: 'thinking', thinking: 'still streaming but now recorded' }],
+  });
+  const [after] = groupConversationActivity([user, assistant], new Map(), true, live).filter(
+    (s) => s.items,
+  );
+  expect(before.running).toBe(true);
+  expect(after.running).toBe(true);
+  expect(after.key).toBe(before.key);
+  expect(after.timeline).toHaveLength(1);
+  expect(after.timeline[0]).toMatchObject({
+    key: before.timeline[0].key,
+    text: 'still streaming but now recorded',
+  });
+});
+
 describe('conversation activity duration', () => {
   it('keeps a no-text final response visible as an unsuccessful reply', () => {
     const user = msg('u', 0, { role: 'user', content: 'go' });
