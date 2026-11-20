@@ -467,6 +467,7 @@
               /><span
                 ><strong>{model.name || model.id}</strong
                 >{#if model.name && model.name !== model.id}<small>{model.id}</small>{/if}
+                {#if apiLabels[model.api]}<small>{t(apiLabels[model.api])}</small>{/if}
                 {#if model.contextWindow}<small
                     >{t('models.contextWindow')} · {formatTokenLimit(model.contextWindow)}</small
                   >{/if}</span
@@ -532,6 +533,7 @@
             <div>
               <strong>{model.name || model.id}</strong>
               {#if model.name && model.name !== model.id}<small>{model.id}</small>{/if}
+              {#if apiLabels[model.api]}<small>{t(apiLabels[model.api])}</small>{/if}
               {#if model.contextWindow}<small
                   >{t('models.contextWindow')} · {formatTokenLimit(model.contextWindow)}</small
                 >{/if}
@@ -539,7 +541,7 @@
                   >{t('models.maxTokens')} · {formatTokenLimit(model.maxTokens)}</small
                 >{/if}
               {#if supportedThinkingLevels(model).length > 1}<small>
-                  {t('models.effortAvailable')} · {t(apiLabels[model.api] || 'models.protocol')}
+                  {t('models.effortAvailable')}
                   {#if model.api === 'anthropic-messages'}
                     · {model.adaptiveThinking ? 'effort' : 'budget_tokens'}
                   {/if}

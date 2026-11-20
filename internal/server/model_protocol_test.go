@@ -67,7 +67,7 @@ func TestDetectMixedModelCatalog(t *testing.T) {
 	}))
 	defer provider.Close()
 
-	detection, err := (&Server{}).detectModelProtocol(context.Background(), provider.URL, "testing", "")
+	detection, err := (&Server{}).detectModelProtocol(context.Background(), provider.URL, "testing", "", "")
 	models := detection.Models
 	if err != nil || detection.API != apiChat || !detection.BearerAuth || len(models) != 5 {
 		t.Fatalf("detect catalog: api=%s models=%+v err=%v", detection.API, models, err)
@@ -88,10 +88,102 @@ func TestDetectMixedModelCatalog(t *testing.T) {
 	if models[4]["api"] != apiResponses || models[4]["reasoning"] != true {
 		t.Fatalf("wrong Responses configuration: %+v", models[4])
 	}
-	detection, err = (&Server{}).detectModelProtocol(context.Background(), provider.URL, "testing", apiAnthropic)
+	detection, err = (&Server{}).detectModelProtocol(context.Background(), provider.URL, "testing", apiAnthropic, "")
 	models = detection.Models
 	if err != nil || detection.API != apiAnthropic || !detection.BearerAuth || len(models) != 5 || models[2]["api"] != apiGemini || models[4]["api"] != apiResponses {
 		t.Fatalf("existing Claude profile lost mixed catalog routes: api=%s models=%+v err=%v", detection.API, models, err)
+	}
+}
+
+func TestDetectNativeRoutesForPlainGatewayCatalog(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/mount/v1/models" {
+			_, _ = io.WriteString(w, `{"data":[
+				{"id":"claude-opus-5-5"},
+				{"id":"gpt-5.4"},
+				{"id":"gpt-chat-only","supported_endpoint_types":["openai"]},
+				{"id":"gemini-3-pro-preview"},
+				{"id":"other-chat"}
+			]}`)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodPost || string(body) != "{}" {
+			t.Errorf("unexpected probe request on %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		switch r.URL.Path {
+		case "/mount/v1/messages":
+			if r.Header.Get("x-api-key") != "fixture" || r.Header.Get("anthropic-version") == "" {
+				t.Error("Claude probe used incorrect credentials")
+			}
+			w.WriteHeader(400)
+			_, _ = io.WriteString(w, `{"error":{"type":"invalid_request","message":"模型不能为空 (model)"}}`)
+		case "/mount/v1/responses":
+			if r.Header.Get("Authorization") != "Bearer fixture" {
+				t.Error("Responses probe used incorrect credentials")
+			}
+			w.WriteHeader(400)
+			_, _ = io.WriteString(w, `{"error":{"type":"invalid_request_error","param":"input","message":"missing input"}}`)
+		case "/mount/v1beta/models/gemini-3-pro-preview:countTokens":
+			if r.Header.Get("x-goog-api-key") != "fixture" {
+				t.Error("Gemini probe used incorrect credentials")
+			}
+			w.WriteHeader(400)
+			_, _ = io.WriteString(w, `{"error":{"status":"INVALID_ARGUMENT","message":"contents is required"}}`)
+		default:
+			t.Errorf("probed unexpected URL %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer provider.Close()
+	base := provider.URL + "/mount/v1"
+	detection, err := (&Server{}).detectModelProtocol(context.Background(), base, "fixture", "", "")
+	if err != nil || detection.API != apiChat || detection.BearerAuth || len(detection.Models) != 5 {
+		t.Fatalf("unexpected detection: %+v, %v", detection, err)
+	}
+	want := map[string][2]string{
+		"claude-opus-5-5":      {apiAnthropic, provider.URL + "/mount"},
+		"gpt-5.4":              {apiResponses, base},
+		"gpt-chat-only":        {apiChat, ""},
+		"gemini-3-pro-preview": {apiGemini, provider.URL + "/mount/v1beta"},
+		"other-chat":           {apiChat, ""},
+	}
+	for _, model := range detection.Models {
+		id := model["id"].(string)
+		baseURL, _ := model["baseUrl"].(string)
+		if got := [2]string{model["api"].(string), baseURL}; got != want[id] {
+			t.Errorf("%s route: got %q, want %q", id, got, want[id])
+		}
+	}
+	locked, err := (&Server{}).detectModelProtocol(context.Background(), base+"/chat/completions", "fixture", "", "")
+	if err != nil || locked.API != apiChat || len(locked.Models) != 5 {
+		t.Fatalf("explicit Chat Completions route was changed: %+v %v", locked, err)
+	}
+	for _, model := range locked.Models {
+		if model["api"] != apiChat {
+			t.Errorf("explicit protocol was not respected: %+v", model)
+		}
+	}
+}
+
+func TestNativeRouteValidationRequiresProtocolEvidence(t *testing.T) {
+	for _, item := range []struct {
+		status int
+		body   string
+	}{
+		{200, `{"error":{"type":"invalid_request","message":"model is required"}}`},
+		{400, `{"error":{"type":"invalid_request_error","message":"this group does not support model traffic"}}`},
+		{400, `{"error":{"type":"invalid_request_error","message":"model is not supported"}}`},
+		{400, `{"message":"model is required"}`},
+		{401, `{"error":{"type":"invalid_request","message":"model is required"}}`},
+		{404, `{"error":{"type":"invalid_request","message":"model is required"}}`},
+		{400, `<html>missing model</html>`},
+	} {
+		if nativeRouteValidation(item.status, []byte(item.body), apiAnthropic) {
+			t.Errorf("accepted %d %s as native protocol evidence", item.status, item.body)
+		}
 	}
 }
 

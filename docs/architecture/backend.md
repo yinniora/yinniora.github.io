@@ -29,8 +29,14 @@ move. Replacement clears a legacy API key from `auth.json` so Pi uses the new
 escaped literal in the mode-0600 atomic `models.json` write. Revision checks
 reject stale mutations and malformed/symlink configurations fail closed.
 Endpoint or key edits verify the model catalog before writing. The API check
-uses endpoint suffixes and advertised model metadata when available. Existing
-profiles can explicitly recheck their saved endpoint and key from Settings.
+prefers Claude Messages, OpenAI Responses, and Gemini's native API for their
+models. It uses per-model endpoint declarations from gateways such as New API.
+Gateways with plain catalogs, including Sub2API deployments, can be checked
+with bounded empty-body validation requests. These probes contain no prompts
+or conversation history. Missing routes, rejected credentials, and ambiguous
+responses retain the existing or advertised compatible protocol.
+Profiles can recheck their endpoint from Settings to upgrade applied models.
+An explicit operation URL pins the chosen protocol.
 
 The Anthropic SDK appends `/v1/messages` to the model's runtime base. YuGo
 keeps the gateway's mount prefix while removing its version suffix from
@@ -48,8 +54,8 @@ Startup also recognizes Packy's documented Bearer setting for saved profiles.
 Discovery supports OpenAI Chat/Responses and New API, Anthropic Messages and
 Google Gemini formats, with bounded same-endpoint pagination, timeouts and
 response sizes. HTTPS is required except on loopback; redirects never receive
-keys. Error responses do not include upstream response bodies. Refresh is a
-read-only model listing, not an inference request, and does not apply models.
+keys. Error responses do not include upstream response bodies. Refresh reports
+the catalog and route capabilities without generating a reply or applying models.
 Advertised context and output limits take precedence, followed by the model's
 ID in the bundled Pi catalog. Fixed-effort suffixes can use the known base ID.
 If limits are still missing at discovery, known model families look them up in

@@ -115,7 +115,7 @@ func (s *Server) modelProfileKey(id string, p map[string]any) string {
 }
 
 func profileSignature(p map[string]any, key string) string {
-	raw, _ := json.Marshal([]any{p["baseUrl"], p["api"], key})
+	raw, _ := json.Marshal([]any{p["baseUrl"], p["api"], p["yugoProtocol"], key})
 	hash := sha256.Sum256(raw)
 	return hex.EncodeToString(hash[:])
 }
@@ -358,7 +358,8 @@ func modelsWithOverrides(profile map[string]any) []map[string]any {
 	return models
 }
 
-func applyDetectedModelRoutes(profile map[string]any, models []map[string]any, previousAPI, defaultAPI string) {
+func applyDetectedModelRoutes(profile map[string]any, models []map[string]any, previousAPI, defaultAPI string, upgradeOnly bool) bool {
+	changed := false
 	detected := make(map[string]map[string]any, len(models))
 	for _, model := range models {
 		id, _ := model["id"].(string)
@@ -373,6 +374,15 @@ func applyDetectedModelRoutes(profile map[string]any, models []map[string]any, p
 		}
 		match := detected[id]
 		newAPI, _ := match["api"].(string)
+		if upgradeOnly {
+			if newAPI == "" || newAPI == apiChat || newAPI == oldAPI || model["headers"] != nil ||
+				(oldAPI != apiChat && newAPI != nativeModelProtocol(id)) {
+				continue
+			}
+			if custom, _ := model["baseUrl"].(string); custom != "" && custom != base {
+				continue
+			}
+		}
 		if newAPI == "" {
 			if oldAPI != previousAPI {
 				continue
@@ -381,10 +391,19 @@ func applyDetectedModelRoutes(profile map[string]any, models []map[string]any, p
 		}
 		if oldAPI != newAPI {
 			model["api"] = newAPI
+			changed = true
+			if match != nil {
+				model["reasoning"] = match["reasoning"] == true
+			}
 			for _, field := range []string{"compat", "thinkingLevelMap"} {
 				delete(model, field)
 				if match[field] != nil {
 					model[field] = match[field]
+				}
+			}
+			if upgradeOnly && match["baseUrl"] == nil {
+				if route, err := nativeModelBase(base, newAPI); err == nil {
+					model["baseUrl"] = route.String()
 				}
 			}
 			if oldAPI == apiGemini && strings.HasSuffix(base, "/v1") && model["baseUrl"] == strings.TrimSuffix(base, "/v1")+"/v1beta" {
@@ -392,9 +411,13 @@ func applyDetectedModelRoutes(profile map[string]any, models []map[string]any, p
 			}
 		}
 		if match["baseUrl"] != nil && (model["baseUrl"] == nil || model["baseUrl"] == base) {
-			model["baseUrl"] = match["baseUrl"]
+			if model["baseUrl"] != match["baseUrl"] {
+				model["baseUrl"] = match["baseUrl"]
+				changed = true
+			}
 		}
 	}
+	return changed
 }
 
 type modelCatalogHTTPError int
@@ -427,6 +450,7 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 	client := &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	models := []map[string]any{}
 	seen := map[string]bool{}
+	probed := map[string]string{}
 	cursor := ""
 	for page := 0; page < 10; page++ {
 		q := u.Query()
@@ -491,11 +515,28 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 			}
 			seen[id] = true
 			m := map[string]any{"id": id, "name": id}
-			catalogAPI := modelAPI
-			if catalogAPI == apiChat && raw["type"] == "model" && raw["display_name"] != nil && raw["created_at"] != nil {
+			catalogAPI, modelBase, nativeAuth := modelAPI, base, ""
+			if pinned, _ := p["yugoProtocol"].(string); pinned != "" {
+				delete(raw, "supported_endpoint_types")
+				catalogAPI = pinned
+			} else if catalogAPI == apiChat && raw["type"] == "model" && raw["display_name"] != nil && raw["created_at"] != nil {
 				catalogAPI = apiAnthropic
+			} else if p["preferNative"] == true && len(catalogStrings(raw["supported_endpoint_types"])) == 0 {
+				native := nativeModelProtocol(id)
+				if native != "" && native != catalogAPI {
+					if _, checked := probed[native]; !checked {
+						probed[native] = probeNativeModelRoute(ctx, client, base, native, id, key)
+					}
+					if nativeAuth = probed[native]; nativeAuth != "" {
+						if route, err := nativeModelBase(base, native); err == nil {
+							catalogAPI, modelBase = native, route.String()
+							m["baseUrl"] = modelBase
+							m["nativeAuth"] = nativeAuth
+						}
+					}
+				}
 			}
-			describeCatalogModel(m, raw, id, catalogAPI, base)
+			describeCatalogModel(m, raw, id, catalogAPI, modelBase)
 			if m["contextWindow"] == nil || m["maxTokens"] == nil {
 				limits := s.nativeModelLimits.lookup(ctx, id)
 				for i, field := range modelLimitFields {
@@ -858,22 +899,27 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		var u *url.URL
 		var e error
 		var bearerAuth bool
+		_, pinned := modelProtocolRoute(request.BaseURL)
 		if request.API == "" || request.API == "auto" {
 			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 			s.modelConfigMu.Unlock()
 			var detection modelProtocolDetection
-			detection, e = s.detectModelProtocol(ctx, request.BaseURL, request.Key, "")
+			detection, e = s.detectModelProtocol(ctx, request.BaseURL, request.Key, "", "")
 			u, request.API, models, bearerAuth = detection.BaseURL, detection.API, detection.Models, detection.BearerAuth
 			cancel()
 			s.modelConfigMu.Lock()
 		} else {
 			u, e = modelBaseURL(request.BaseURL, request.API)
+			pinned = request.API
 		}
 		if e != nil {
 			writeJSONError(w, 400, e.Error())
 			return
 		}
 		profile := map[string]any{"name": request.Label, "baseUrl": u.String(), "api": request.API, "apiKey": literalModelKey(request.Key), "models": []any{}}
+		if pinned != "" {
+			profile["yugoProtocol"] = pinned
+		}
 		if bearerAuth {
 			profile["authHeader"] = true
 		}
@@ -918,12 +964,17 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			preferred := api
+			pinned, _ := p["yugoProtocol"].(string)
 			if endpointChanged {
 				preferred = ""
+				pinned = ""
+			}
+			if explicit != "" {
+				pinned = explicit
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 			s.modelConfigMu.Unlock()
-			detection, checkErr := s.detectModelProtocol(ctx, request.BaseURL, key, preferred)
+			detection, checkErr := s.detectModelProtocol(ctx, request.BaseURL, key, preferred, pinned)
 			cancel()
 			s.modelConfigMu.Lock()
 			if checkErr != nil {
@@ -937,19 +988,32 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 				writeJSONError(w, 409, "model configuration changed; reload and try again")
 				return
 			}
+			// Checking an existing key can upgrade individual models while
+			// their catalog transport and unlisted routes continue to work.
+			upgradeOnly := request.CheckAPI && !endpointChanged && explicit == "" && request.Key == ""
+			if upgradeOnly {
+				checkedURL, _ = modelBaseURL(base, api)
+				checkedAPI = api
+			}
 			resolvedEndpointChanged, err := editModelEndpoint(p, checkedURL.String(), checkedAPI, request.Key != "")
 			if err != nil {
 				writeJSONError(w, 400, err.Error())
 				return
 			}
 			p["api"] = checkedAPI
+			if pinned != "" {
+				p["yugoProtocol"] = pinned
+			} else {
+				delete(p, "yugoProtocol")
+			}
 			if detection.BearerAuth && canInferBearerAuth(p) {
 				p["authHeader"] = true
 				configAffectsResources = true
 			}
-			if endpointChanged || resolvedEndpointChanged || api != checkedAPI {
-				applyDetectedModelRoutes(p, models, api, checkedAPI)
-				configAffectsResources = true
+			routesChanged := endpointChanged || resolvedEndpointChanged || api != checkedAPI
+			if routesChanged || pinned == "" {
+				configAffectsResources = applyDetectedModelRoutes(p, models, api, checkedAPI, upgradeOnly || !routesChanged) ||
+					configAffectsResources || routesChanged
 			}
 			editedCatalog = &modelCatalog{Signature: profileSignature(p, key), Models: models}
 		}
@@ -975,11 +1039,16 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		if p["api"] == apiAnthropic {
 			// Some dual-protocol services only attach capability metadata to
 			// their Bearer catalog. Keep the saved execution API as fallback.
-			models, _ = s.discoverModels(ctx, map[string]any{"api": apiChat, "baseUrl": p["baseUrl"], "catalogFallbackAPI": apiAnthropic}, key)
+			models, _ = s.discoverModels(ctx, map[string]any{
+				"api": apiChat, "baseUrl": p["baseUrl"], "catalogFallbackAPI": apiAnthropic, "yugoProtocol": p["yugoProtocol"],
+				"preferNative": p["yugoProtocol"] == nil,
+			}, key)
 		}
 		var e error
 		if models == nil {
-			models, e = s.discoverModels(ctx, p, key)
+			models, e = s.discoverModels(ctx, map[string]any{
+				"api": p["api"], "baseUrl": p["baseUrl"], "yugoProtocol": p["yugoProtocol"], "preferNative": p["yugoProtocol"] == nil,
+			}, key)
 		}
 		s.modelConfigMu.Lock()
 		if e != nil {
@@ -1074,6 +1143,11 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 				next[k] = v
 			}
 			delete(next, "supportsTools")
+			delete(next, "nativeAuth")
+			if next["api"] == apiAnthropic && m["nativeAuth"] == "bearer" && canInferBearerAuth(p) {
+				p["authHeader"] = true
+				configAffectsResources = true
+			}
 			if next["input"] == nil {
 				next["input"] = []string{"text"}
 			}

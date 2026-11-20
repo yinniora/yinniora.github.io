@@ -152,6 +152,56 @@ func TestModelDiscoveryDoesNotForwardKeysThroughRedirects(t *testing.T) {
 	}
 }
 
+func TestModelRecheckUpgradesOnlyVerifiedNativeRoutes(t *testing.T) {
+	s := newTestServer(t)
+	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			w.Write([]byte(`{"data":[{"id":"claude-opus-5-5"},{"id":"gpt-5.4"},{"id":"other-chat"}]}`))
+		case "/v1/messages":
+			w.WriteHeader(400)
+			w.Write([]byte(`{"error":{"type":"invalid_request","message":"missing model"}}`))
+		case "/v1/responses":
+			http.NotFound(w, r)
+		default:
+			t.Errorf("unexpected route %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer service.Close()
+	base := service.URL + "/v1"
+	profile := map[string]any{
+		"name": "Gateway", "api": apiChat, "baseUrl": base, "apiKey": "fixture",
+		"models": []any{
+			map[string]any{"id": "claude-opus-5-5", "api": apiChat, "contextWindow": 65432, "compat": map[string]any{"supportsReasoningEffort": true}},
+			map[string]any{"id": "gpt-5.4", "api": apiChat, "contextWindow": 123456},
+			map[string]any{"id": "other-chat", "api": apiChat, "baseUrl": "https://custom.invalid/v1"},
+		},
+	}
+	if err := writeModelConfig(s.agentDir, map[string]any{"providers": map[string]any{"gateway": profile}}); err != nil {
+		t.Fatal(err)
+	}
+	_, current, _ := modelSettingsCall(t, s, nil)
+	status, _, errBody := modelSettingsCall(t, s, map[string]any{
+		"action": "edit", "id": "gateway", "revision": current["revision"], "label": "Gateway", "baseUrl": base, "checkApi": true,
+	})
+	if status != 200 {
+		t.Fatalf("recheck failed (%d): %s", status, errBody)
+	}
+	_, providers, _, err := readModelConfig(s.agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := providers["gateway"].(map[string]any)
+	models := configuredModels(saved)
+	if saved["api"] != apiChat || models[0]["api"] != apiAnthropic || models[0]["contextWindow"] != float64(65432) ||
+		models[0]["baseUrl"] != service.URL || models[0]["compat"].(map[string]any)["forceAdaptiveThinking"] != true ||
+		models[0]["compat"].(map[string]any)["supportsReasoningEffort"] != nil ||
+		models[1]["api"] != apiChat || models[2]["baseUrl"] != "https://custom.invalid/v1" {
+		t.Fatalf("recheck changed a compatible/custom route or lost model settings: %+v", models)
+	}
+}
+
 func TestEditModelKeyChecksCompatibilityBeforeReplacingCredential(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		name := "inline"

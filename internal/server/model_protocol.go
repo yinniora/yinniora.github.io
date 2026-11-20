@@ -49,8 +49,11 @@ type modelProtocolDetection struct {
 	BearerAuth bool
 }
 
-func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred string) (modelProtocolDetection, error) {
+func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred, pinned string) (modelProtocolDetection, error) {
 	base, explicit := modelProtocolRoute(base)
+	if explicit == "" {
+		explicit = pinned
+	}
 	apis := []string{apiChat, apiAnthropic, apiGemini}
 	if explicit == apiAnthropic {
 		apis = []string{apiAnthropic, apiChat}
@@ -73,7 +76,10 @@ func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred s
 			return modelProtocolDetection{}, err
 		}
 		catalogAPI := api
-		profile := map[string]any{"baseUrl": u.String(), "api": api}
+		profile := map[string]any{"baseUrl": u.String(), "api": api, "preferNative": explicit == ""}
+		if explicit != "" {
+			profile["yugoProtocol"] = explicit
+		}
 		if api == apiChat && explicit == apiAnthropic {
 			profile["catalogFallbackAPI"] = apiAnthropic
 		} else if explicit == "" && api == apiChat && (preferred == apiAnthropic || preferred == apiResponses) {
@@ -87,7 +93,8 @@ func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred s
 			if fallback, ok := profile["catalogFallbackAPI"].(string); ok {
 				api = fallback
 			}
-			if explicit == "" && len(models) > 0 {
+			if explicit == "" && len(models) > 0 &&
+				!slices.ContainsFunc(models, func(model map[string]any) bool { return model["nativeAuth"] != nil }) {
 				catalogAPI, _ := models[0]["api"].(string)
 				if catalogAPI != "" && !slices.ContainsFunc(models, func(model map[string]any) bool { return model["api"] != catalogAPI }) {
 					api = catalogAPI
@@ -104,8 +111,11 @@ func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred s
 					return modelProtocolDetection{}, err
 				}
 			}
-			bearerAuth := false
-			if (catalogAPI == apiChat || catalogAPI == apiResponses) && (api == apiAnthropic || slices.ContainsFunc(models, func(model map[string]any) bool { return model["api"] == apiAnthropic })) {
+			bearerAuth := slices.ContainsFunc(models, func(model map[string]any) bool { return model["nativeAuth"] == "bearer" })
+			standardAuth := slices.ContainsFunc(models, func(model map[string]any) bool {
+				return model["api"] == apiAnthropic && model["nativeAuth"] == "standard"
+			})
+			if !bearerAuth && !standardAuth && (api == apiAnthropic || slices.ContainsFunc(models, func(model map[string]any) bool { return model["api"] == apiAnthropic })) {
 				if !nativeChecked {
 					probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 					_, nativeErr = s.discoverModels(probeCtx, map[string]any{"baseUrl": u.String(), "api": apiAnthropic}, key)
@@ -191,30 +201,11 @@ func describeCatalogModel(model, raw map[string]any, id, api, base string) {
 		}
 	}
 	catalogAPI := api
-	types := catalogStrings(raw["supported_endpoint_types"])
 	params := catalogStrings(raw["supported_parameters"])
-	// New API can expose Claude, Gemini and GPT through the same key.
-	if len(types) > 0 && api != apiResponses {
-		switch {
-		case types["anthropic"] && strings.Contains(strings.ToLower(id), "claude"):
-			api = apiAnthropic
-		case types["gemini"] && strings.Contains(strings.ToLower(id), "gemini"):
-			api = apiGemini
-		case types["openai-response"] || types["openai-responses"] || types["openai responses"]:
-			api = apiResponses
-		case types["openai"]:
-			api = apiChat
-		}
-	}
+	api = advertisedModelProtocol(catalogStrings(raw["supported_endpoint_types"]), id, api)
 	model["api"] = api
-	if api == apiAnthropic {
-		if u, err := modelBaseURL(base, apiAnthropic); err == nil && u.String() != base {
-			model["baseUrl"] = u.String()
-		}
-	}
-	if api == apiGemini && catalogAPI != apiGemini {
-		if u, err := url.Parse(base); err == nil && strings.HasSuffix(u.Path, "/v1") {
-			u.Path = strings.TrimSuffix(u.Path, "/v1") + "/v1beta"
+	if api != catalogAPI || api == apiAnthropic {
+		if u, err := nativeModelBase(base, api); err == nil && u.String() != base {
 			model["baseUrl"] = u.String()
 		}
 	}

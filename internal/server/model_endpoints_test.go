@@ -56,7 +56,7 @@ func TestAnthropicDiscoveryKeepsVersionInCatalogOnly(t *testing.T) {
 		w.Write([]byte(`{"data":[{"id":"claude-fixture","type":"model","display_name":"Claude","created_at":"2026-01-01T00:00:00Z"}]}`))
 	}))
 	defer service.Close()
-	detection, err := (&Server{}).detectModelProtocol(context.Background(), service.URL+"/gateway/v1/messages", "fixture-secret", "")
+	detection, err := (&Server{}).detectModelProtocol(context.Background(), service.URL+"/gateway/v1/messages", "fixture-secret", "", "")
 	if err != nil || detection.API != apiAnthropic || detection.BaseURL.String() != service.URL+"/gateway" || detection.BearerAuth || len(detection.Models) != 1 {
 		t.Fatalf("expected an unversioned runtime base and an Anthropic model, got %+v err=%v", detection, err)
 	}
@@ -74,7 +74,7 @@ func TestExplicitAnthropicURLCanUseBearerOnOtherGateways(t *testing.T) {
 		w.Write([]byte(`{"data":[{"id":"claude-fixture"}]}`))
 	}))
 	defer service.Close()
-	detection, err := (&Server{}).detectModelProtocol(context.Background(), service.URL+"/relay/v1/messages", "test-secret", "")
+	detection, err := (&Server{}).detectModelProtocol(context.Background(), service.URL+"/relay/v1/messages", "test-secret", "", "")
 	if err != nil || detection.API != apiAnthropic || detection.BaseURL.String() != service.URL+"/relay" || !detection.BearerAuth {
 		t.Fatalf("Bearer-only gateway was not detected: %+v err=%v", detection, err)
 	}
