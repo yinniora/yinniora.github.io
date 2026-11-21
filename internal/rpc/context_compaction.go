@@ -60,7 +60,7 @@ func needsCompaction(path string, model model, request chat.Request) bool {
 		if entry["type"] == "compaction" {
 			return false
 		}
-		if entry["type"] == "context_edit" {
+		if entry["type"] == "context_edit" && !archivesEmptyFailedReply(entry, byID) {
 			edited = true
 		}
 		message, _ := entry["message"].(map[string]any)
@@ -98,6 +98,31 @@ func needsCompaction(path string, model model, request chat.Request) bool {
 		return tokens+float64(trailingTokens) >= float64(threshold)
 	}
 	return false
+}
+
+func archivesEmptyFailedReply(edit map[string]any, byID map[string]map[string]any) bool {
+	if replacement, exists := edit["replacement"]; !exists || replacement != nil {
+		return false
+	}
+	targetID, _ := edit["targetId"].(string)
+	message, _ := byID[targetID]["message"].(map[string]any)
+	if message["role"] != "assistant" || message["stopReason"] != "error" {
+		return false
+	}
+	content, ok := message["content"].([]any)
+	if !ok || len(content) != 0 {
+		return false
+	}
+	usage, _ := message["usage"].(map[string]any)
+	if usage["totalTokens"] != float64(0) {
+		return false
+	}
+	for _, key := range []string{"input", "cacheRead", "cacheWrite", "output"} {
+		if tokens, _ := usage[key].(float64); tokens != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func estimatedContentTokens(content any) int {

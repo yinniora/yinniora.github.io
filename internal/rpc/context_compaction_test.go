@@ -50,3 +50,32 @@ func TestNeedsCompactionAccountsForInputAndCache(t *testing.T) {
 		})
 	}
 }
+
+func TestNeedsCompactionAfterArchivingFailedReply(t *testing.T) {
+	limits := model{ID: "opus", Provider: "local", ContextWindow: 128_000, MaxTokens: 32_000}
+	for _, test := range []struct {
+		name        string
+		content     string
+		replacement string
+		want        bool
+	}{
+		{name: "retain usage after empty network error", content: `[]`, replacement: `null`, want: true},
+		{name: "defer to Pi if omitted reply contained text", content: `[{"type":"text","text":"partial"}]`, replacement: `null`},
+		{name: "defer to Pi if content was replaced", content: `[]`, replacement: `[{"type":"text","text":"note"}]`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := fmt.Sprintf(`{"type":"session","version":3}
+{"type":"message","id":"last","parentId":null,"message":{"role":"assistant","stopReason":"stop","model":"opus","provider":"local","usage":{"totalTokens":95000}}}
+{"type":"message","id":"error","parentId":"last","message":{"role":"assistant","stopReason":"error","content":%s,"usage":{"totalTokens":0}}}
+{"type":"context_edit","id":"archive","parentId":"error","targetId":"error","replacement":%s}
+`, test.content, test.replacement)
+			path := filepath.Join(t.TempDir(), "session.jsonl")
+			if err := os.WriteFile(path, []byte(fixture), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if got := needsCompaction(path, limits, chat.Request{Message: "Continue"}); got != test.want {
+				t.Errorf("needsCompaction = %v, want %v", got, test.want)
+			}
+		})
+	}
+}

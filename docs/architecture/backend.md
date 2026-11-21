@@ -386,6 +386,7 @@ Native compaction events update the live progress preview. The context meter
 waits for a fresh provider measurement after a persisted compaction.
 With auto-compaction enabled, a fresh prompt checks the active branch's last
 measured provider usage, trailing messages and the incoming text and images.
+Archiving an empty, zero-usage error preserves the previous measurement.
 The selected model's output headroom applies after a model switch. A recent
 same-model cache hit that covers at least 80% of the measured input defers the
 early budget threshold while preserving output headroom. This can invoke Pi's

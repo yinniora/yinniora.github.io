@@ -2719,6 +2719,7 @@ body .pi-btw-input {
 #spa-root .composer-model-controls {
   flex: 1;
   min-width: 0;
+  justify-content: flex-end;
 }
 #spa-root .pi-chat-toolbar-left .computer-permission {
   flex: none;
@@ -2781,6 +2782,7 @@ body .pi-btw-input {
   stroke-width: 1.9;
 }
 #spa-root .pi-chat-toolbar .pi-chat-icon-button,
+#spa-root .pi-chat-toolbar .pi-chat-model-label,
 #spa-root .pi-chat-expand-button,
 #spa-root .pi-queue-item-action {
   width: var(--composer-control-size);
@@ -2791,28 +2793,6 @@ body .pi-btw-input {
   right: 3px;
   opacity: 0.82;
   touch-action: manipulation;
-}
-#spa-root .composer-model-controls .pi-chat-model-label {
-  justify-content: flex-start;
-  gap: 7px;
-  min-width: 0;
-  max-width: 310px;
-  flex: 0 1 auto;
-  padding-inline: 8px;
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 600;
-}
-#spa-root .composer-model-name {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-#spa-root .composer-effort-label {
-  flex: none;
-  color: var(--text);
-  font-size: 12px;
 }
 #spa-root .composer-model-controls .pi-chat-context-usage {
   justify-content: center;
@@ -2943,7 +2923,7 @@ body .pi-btw-input {
     display: none;
   }
 }
-@media (max-width: 430px) {
+@media (max-width: 370px) {
   #spa-root .pi-chat-toolbar:has(.actions.running #pi-chat-send:enabled) {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -2952,8 +2932,6 @@ body .pi-btw-input {
   #spa-root .pi-chat-toolbar:has(.actions.running #pi-chat-send:enabled) .actions {
     grid-column: 1 / -1;
   }
-}
-@media (max-width: 370px) {
   #spa-root .pi-chat-context-usage .pi-context-text {
     display: none;
   }

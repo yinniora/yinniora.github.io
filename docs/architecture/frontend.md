@@ -318,9 +318,9 @@ describe exact levels using the OpenCode/models.dev `capabilities.reasoning`
 or Anthropic's `capabilities.effort` and `capabilities.thinking` shapes.
 Model discovery uses the provider's read-only catalog, and switching
 reads the selected model's declared options locally. The model picker shows
-the available effort levels alongside the model list. The toolbar shows the
-current level and keeps the configured key label as
-worker status updates.
+the current model and available effort levels alongside the model list. The
+toolbar opens the picker with an icon, and its accessible name follows the
+worker's model and effort.
 
 Appearance settings can follow the device's light or dark preference in real
 time. Destructive controls share theme-aware colors, with solid buttons in

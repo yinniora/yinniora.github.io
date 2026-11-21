@@ -1299,12 +1299,11 @@ test("composer switches effort on model change and sends a file using the attach
   await collapseScratchpad(page);
   await page.goto("/session?id=" + encodeURIComponent(id));
   const modelControl = page.locator("#pi-chat-model-label");
-  const modelName = modelControl.locator(".composer-model-name");
-  const effortSummary = modelControl.locator(".composer-effort-label");
   const effortRow = page.locator("#pi-chat-effort-controls");
   const picker = page.locator("#pi-chat-model-popup");
   const search = page.locator("#pi-chat-model-search");
-  await expect(effortSummary).toBeHidden();
+  await expect(modelControl).toHaveText("");
+  await expect(modelControl.locator("svg")).toBeVisible();
   await modelControl.click();
   await expect(picker).toBeVisible();
   await expect(modelControl).toHaveAttribute("aria-expanded", "true");
@@ -1320,13 +1319,13 @@ test("composer switches effort on model change and sends a file using the attach
   const model = picker.locator('.model-item[data-provider="catalog"][data-model-id="parameter-model"]');
   await model.click();
   await expect(model).toHaveAttribute("aria-pressed", "true");
-  await expect(modelName).toHaveText("Pro key · parameter-model");
-  await expect(effortSummary).toHaveText("off");
+  await expect(modelControl).toHaveAccessibleName("Pro key · parameter-model · off");
+  await expect(picker.locator("#pi-chat-model-current")).toHaveText("parameter-model @ Pro key");
   await expect(picker.locator(".thinking-level-item")).toHaveCount(3);
   await expect(picker.locator(".thinking-level-item[data-level=high]")).toHaveCount(0);
   await expect(picker.locator(".thinking-level-item[data-level=off]")).toHaveAttribute("aria-pressed", "true");
   await picker.locator(".thinking-level-item[data-level=max]").click();
-  await expect(effortSummary).toHaveText("maximum");
+  await expect(modelControl).toHaveAccessibleName("Pro key · parameter-model · maximum");
   await expect(picker.locator(".thinking-level-item[data-level=max]")).toHaveAttribute("aria-pressed", "true");
   if (await isMobileLayout(page)) {
     await search.focus();
@@ -1344,7 +1343,7 @@ test("composer switches effort on model change and sends a file using the attach
   await expect(picker.locator(".thinking-level-item")).toHaveCount(2);
   await expect(picker.locator(".thinking-level-item[data-level=xhigh]")).toBeVisible();
   await picker.locator('.model-item[data-model-id="fixed-model-thinking"]').click();
-  await expect(effortSummary).toBeHidden();
+  await expect(modelControl).toHaveText("");
   await expect(effortRow).toBeHidden();
   await page.locator("#pi-chat-model-close").click();
   await expect(picker).toHaveAttribute("inert", "");

@@ -45,7 +45,9 @@
       ? t('thinking.' + toolbar.thinkingLevel)
       : '',
   );
-  const modelControlLabel = $derived(effortLabel ? `${modelTitle} · ${effortLabel}` : modelTitle);
+  const modelControlLabel = $derived(
+    toolbar.canAdjustThinking && effortLabel ? `${modelTitle} · ${effortLabel}` : modelTitle,
+  );
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
@@ -82,6 +84,7 @@
       {@render permissionControl?.()}
     </div>
     <div class="composer-model-controls">
+      <ContextUsage />
       <button
         type="button"
         id="pi-chat-model-label"
@@ -95,12 +98,7 @@
         disabled={!chatAvailable}
       >
         {@html icon(toolbar.canAdjustThinking ? Gauge : Layers, { size: 18 })}
-        <span class="composer-model-name">{modelTitle}</span>
-        {#if toolbar.canAdjustThinking && effortLabel}
-          <span class="composer-effort-label">{effortLabel}</span>
-        {/if}
       </button>
-      <ContextUsage />
     </div>
     <div class="actions" class:running={toolbar.isRunning}>
       <button

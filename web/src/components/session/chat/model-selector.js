@@ -102,6 +102,7 @@ export function setupModelSelector({
   const modelLabelBtn = documentImpl.getElementById('pi-chat-model-label');
   const backdrop = documentImpl.getElementById('pi-chat-model-backdrop');
   const closeButton = documentImpl.getElementById('pi-chat-model-close');
+  const currentLabel = documentImpl.getElementById('pi-chat-model-current');
   const note = documentImpl.getElementById('pi-chat-model-note');
   const mobileWidth = documentImpl.defaultView?.matchMedia?.('(max-width: 900px)');
   const isOpen = () => Boolean(popup && popup.style.display !== 'none');
@@ -113,6 +114,12 @@ export function setupModelSelector({
       Array.isArray(thinkingLevels) && thinkingLevels.length
         ? { provider, id: modelId, ...model, thinkingLevels }
         : model || null;
+    if (currentLabel) {
+      currentLabel.textContent = modelId
+        ? modelDisplayLabel(selectedModel || { provider, id: modelId })
+        : '';
+      currentLabel.hidden = !modelId;
+    }
     setCurrentModelForThinking(selectedModel);
   }
 

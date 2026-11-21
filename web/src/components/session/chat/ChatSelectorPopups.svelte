@@ -15,7 +15,10 @@
   inert
 >
   <header class="picker-heading">
-    <h2 id="pi-chat-model-title">{t('composer.switchModel')}</h2>
+    <div class="picker-heading-label">
+      <h2 id="pi-chat-model-title">{t('composer.switchModel')}</h2>
+      <p id="pi-chat-model-current" hidden></p>
+    </div>
     <button id="pi-chat-model-close" type="button" aria-label={t('common.close')}>
       {@html icon(X, { size: 18 })}
     </button>
@@ -85,11 +88,21 @@
     font-size: 16px;
     font-weight: 680;
   }
+  .picker-heading-label {
+    min-width: 0;
+  }
+  #pi-chat-model-current {
+    margin: 2px 0 7px;
+    color: var(--text-soft);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
   .picker-heading button {
     display: grid;
     place-items: center;
     width: 44px;
     height: 44px;
+    flex-shrink: 0;
     border: none;
     border-radius: 11px;
     background: transparent;
