@@ -247,14 +247,13 @@ export function renderChatPreviewState(
     documentImpl = document,
     windowImpl = typeof window !== 'undefined' ? window : null,
     renderMarkdown,
-    shouldFollow = () => false,
-    forceFollowToBottom = () => {},
-    scrollAfterLayout = () => {},
+    onLayoutChanged = () => {},
     setIntervalImpl = setInterval,
     markdownIntervalMs = 120,
   } = {},
 ) {
   if (!payload || typeof payload.content !== 'string') return false;
+  let layoutChanged = false;
   const container =
     documentImpl.getElementById('messages') ||
     documentImpl.getElementById('content') ||
@@ -267,6 +266,7 @@ export function renderChatPreviewState(
     state.chatPreviewEl = createAssistantPreview(documentImpl, { windowImpl });
     container.appendChild(state.chatPreviewEl);
     startWorkingAnimation(state, { setIntervalImpl, windowImpl });
+    layoutChanged = true;
   }
 
   const phase = payload.phase || (payload.done ? '' : 'working');
@@ -284,13 +284,17 @@ export function renderChatPreviewState(
     const hasThoughts = Boolean(thoughts.trim());
     if (hasThoughts && thinking.hidden) thinking.open = !payload.done;
     if (payload.done) thinking.open = false;
-    thinking.hidden = !hasThoughts;
+    if (thinking.hidden === hasThoughts) {
+      thinking.hidden = !hasThoughts;
+      layoutChanged = true;
+    }
     thinking.classList.toggle('is-thinking', phase === 'thinking');
     const body = thinking.querySelector('.preview-thinking-text');
     if (dueForThinking && body && state.thinking !== thoughts) {
       body.textContent = thoughts;
       state.thinking = thoughts;
       state.lastThinkingAt = nowMs(windowImpl);
+      layoutChanged = true;
     }
   }
   const progress = state.chatPreviewEl.querySelector('.preview-progress');
@@ -300,8 +304,12 @@ export function renderChatPreviewState(
       phase === 'retrying' && payload.retryAttempt && payload.retryLimit
         ? ` · ${payload.retryAttempt}/${payload.retryLimit}`
         : '';
-    progress.querySelector('.preview-text').textContent =
-      progressLabel(phase, payload.retryStage) + retryCount;
+    const label = progress.querySelector('.preview-text');
+    const labelText = progressLabel(phase, payload.retryStage) + retryCount;
+    if (label.textContent !== labelText) {
+      label.textContent = labelText;
+      layoutChanged = true;
+    }
     const toolName =
       phase === 'tool' && typeof payload.toolName === 'string' ? payload.toolName.trim() : '';
     if (toolName) {
@@ -316,31 +324,28 @@ export function renderChatPreviewState(
     if (toolEl.textContent !== (state.tool?.name || ''))
       toolEl.textContent = state.tool?.name || '';
     if (state.tool) updateToolDuration(state, windowImpl);
-    else durationEl.textContent = '';
+    else if (durationEl.textContent) durationEl.textContent = '';
   }
+  layoutChanged ||= state.phase !== phase;
   state.phase = phase;
 
   state.chatPreviewEl.classList.remove('chat-preview-waiting');
   const content = state.chatPreviewEl.querySelector('.message-content');
   // Re-parsing the whole reply for every token is what makes typing lag on a
-  // phone: markdown parsing plus a full relayout on each frame. Coalesce the
-  // text to a fixed cadence; the progress line above still updates per frame,
-  // and the final payload always renders.
+  // phone. The caller batches preview paints and the final payload always renders.
   const at = nowMs(windowImpl);
   const dueToPaint =
     !!payload.done ||
     state.lastMarkdownAt == null ||
     at - state.lastMarkdownAt >= markdownIntervalMs;
   if (dueToPaint && state.content !== payload.content) {
-    setMarkdownContent(content, renderMarkdown(payload.content));
+    setMarkdownContent(content, payload.content ? renderMarkdown(payload.content) : '');
     state.content = payload.content;
     state.lastMarkdownAt = at;
+    layoutChanged = true;
   }
   if (!phase) finishChatPreviewState(state);
   else state.chatPreviewEl.classList.remove('done');
-  if (shouldFollow()) {
-    forceFollowToBottom(false);
-    scrollAfterLayout(false, state.chatPreviewEl);
-  }
+  if (layoutChanged) onLayoutChanged();
   return true;
 }

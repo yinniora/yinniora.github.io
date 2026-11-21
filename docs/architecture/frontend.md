@@ -198,8 +198,11 @@ event-stream reconnect restores the timer from the worker snapshot. A shell
 timeout has a distinct label on the tool row, and its output is available in
 the expanded details alongside the other tools in the turn.
 In the transcript, a waiting label appears before the first model chunk.
-Reply and model-supplied thinking snapshots render at most once per animation
-frame, with the final transcript reconciled on the worker's completion event.
+The event stream coalesces same-phase text snapshots while delivering phase
+changes and completion immediately. Further chunks update the active thinking
+step without rebuilding conversation activity. When the user types or composes,
+preview paints run less frequently and the transient scroll follow yields to
+the input. Completion still reconciles the full saved transcript.
 Pending computer approval is shown directly above the composer toolbar, with
 separate controls for approving the action once and declining it.
 The toolbar shows the current permission mode after the server confirms it.

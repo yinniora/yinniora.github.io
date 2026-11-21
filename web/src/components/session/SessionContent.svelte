@@ -173,6 +173,7 @@
             <AssistantThinking
               id={`thinking:${step.key}`}
               text={step.text}
+              liveText={step.liveText}
               running={section.running}
               streaming={!!step.streaming}
               live

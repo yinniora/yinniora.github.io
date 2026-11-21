@@ -26,6 +26,7 @@ export function createFollowScrollController({
   let pendingCount = 0;
   let forcePreviewFollowUntil = 0;
   let lastScrollTop = 0;
+  let previewScrollQueued = false;
   const contentEl = documentImpl.getElementById('content');
   const cleanups = [];
   const on = (host, type, handler, opts) => {
@@ -61,7 +62,13 @@ export function createFollowScrollController({
   function disableFollowOnUserInteraction(e) {
     if (e.type === 'keydown') {
       const scrollingKeys = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '];
-      if (scrollingKeys.indexOf(e.key) === -1) return;
+      if (
+        !scrollingKeys.includes(e.key) ||
+        e.isComposing ||
+        e.target?.isContentEditable ||
+        e.target?.matches?.('textarea, input, select')
+      )
+        return;
     }
     forcePreviewFollowUntil = 0;
     if (isAtBottom(scrollImpls)) {
@@ -113,6 +120,21 @@ export function createFollowScrollController({
     scrollAfterLayout(!!smooth);
   }
 
+  function shouldFollow() {
+    return following || Date.now() < forcePreviewFollowUntil;
+  }
+
+  function followPreview(target, editing) {
+    if (previewScrollQueued || !shouldFollow() || editing()) return;
+    previewScrollQueued = true;
+    requestAnimationFrameImpl(() => {
+      previewScrollQueued = false;
+      if (active && shouldFollow() && !editing()) {
+        scrollElementAboveComposer(target, false, scrollImpls);
+      }
+    });
+  }
+
   on(contentEl || windowImpl, 'scroll', onScroll, { passive: true });
   on(windowImpl, 'wheel', disableFollowOnUserInteraction, { passive: true });
   on(windowImpl, 'touchmove', disableFollowOnUserInteraction, { passive: true });
@@ -123,7 +145,8 @@ export function createFollowScrollController({
   return {
     isFollowing: () => following,
     isAtBottom: () => isAtBottom(scrollImpls),
-    shouldFollow: () => following || Date.now() < forcePreviewFollowUntil,
+    shouldFollow,
+    followPreview,
     extendPreviewFollow: (ms = 30000) => {
       forcePreviewFollowUntil = Date.now() + ms;
     },

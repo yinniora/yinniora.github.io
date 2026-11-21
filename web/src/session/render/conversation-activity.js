@@ -54,6 +54,7 @@ function appendTimeline(timeline, item, results) {
         key: timestamp ? `thought:${timestamp}:${item.thinkingIndex ?? index}` : key,
         text: block.thinking,
         streaming: item.streaming,
+        liveText: item.liveText,
       });
     } else if (block.type === 'toolCall' && isQuestionTool(block.name)) {
       timeline.push({ kind: 'question', key, call: block });
@@ -234,7 +235,7 @@ export function groupConversationActivity(
         .filter(({ entry }) => entry.message?.role === 'assistant')
         .map(({ entry }) => entry.message.timestamp),
     );
-    for (const { messageTimestamp, thinkingIndex, thinking } of thinkingPreviews) {
+    for (const { messageTimestamp, thinkingIndex, thinking, liveText } of thinkingPreviews) {
       if (persisted.has(messageTimestamp)) continue;
       addActivity(
         {
@@ -244,6 +245,7 @@ export function groupConversationActivity(
           },
           thinkingIndex,
           streaming: true,
+          liveText,
         },
         1,
         [],

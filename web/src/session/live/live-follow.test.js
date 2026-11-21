@@ -112,6 +112,25 @@ describe('createFollowScrollController', () => {
     expect(controller.shouldFollow()).toBe(true);
   });
 
+  it('leaves textarea keystrokes and active composition out of transcript scrolling', () => {
+    const { content, controller, documentImpl, fire } = setup();
+    const textarea = documentImpl.createElement('textarea');
+    const preview = documentImpl.createElement('div');
+    content.append(preview);
+    preview.getBoundingClientRect = vi.fn(() => ({ bottom: 100 }));
+    content.scrollTo.mockClear();
+
+    fire('keydown', { key: ' ', target: textarea });
+    expect(controller.isFollowing()).toBe(true);
+    controller.followPreview(preview, () => true);
+    expect(preview.getBoundingClientRect).not.toHaveBeenCalled();
+    expect(content.scrollTo).not.toHaveBeenCalled();
+
+    controller.followPreview(preview, () => false);
+    expect(preview.getBoundingClientRect).toHaveBeenCalledTimes(1);
+    expect(content.scrollTo).toHaveBeenCalledTimes(1);
+  });
+
   it('forceFollowToBottom re-follows and scrolls', () => {
     const { content, fire, controller } = setup();
     fire('scroll');

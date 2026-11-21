@@ -59,16 +59,13 @@ describe('chat preview', () => {
   it('renders, updates, follows, and clears preview', () => {
     const dom = new JSDOM('<body><div id="messages"></div></body>');
     const state = { chatPreviewEl: null, pendingUserEl: null };
-    const forceFollowToBottom = vi.fn();
-    const scrollAfterLayout = vi.fn();
+    const onLayoutChanged = vi.fn();
 
     expect(
       renderChatPreview({ content: 'hello', done: false }, state, {
         documentImpl: dom.window.document,
         renderMarkdown: (text) => `<p>${text}</p>`,
-        shouldFollow: () => true,
-        forceFollowToBottom,
-        scrollAfterLayout,
+        onLayoutChanged,
       }),
     ).toBe(true);
 
@@ -79,12 +76,18 @@ describe('chat preview', () => {
     expect(
       state.chatPreviewEl.querySelector('.message-content').classList.contains('markdown-content'),
     ).toBe(true);
-    expect(forceFollowToBottom).toHaveBeenCalledWith(false);
+    expect(onLayoutChanged).toHaveBeenCalledTimes(1);
+
+    renderChatPreview({ content: 'hello', done: false }, state, {
+      documentImpl: dom.window.document,
+      renderMarkdown: (text) => text,
+      onLayoutChanged,
+    });
+    expect(onLayoutChanged).toHaveBeenCalledTimes(1);
 
     renderChatPreview({ content: 'done', done: true }, state, {
       documentImpl: dom.window.document,
       renderMarkdown: (text) => text,
-      shouldFollow: () => false,
     });
     expect(state.chatPreviewEl.classList.contains('done')).toBe(true);
     expect(state.chatPreviewEl.textContent.toLowerCase()).not.toContain('working');

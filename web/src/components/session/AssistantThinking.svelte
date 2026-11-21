@@ -4,13 +4,13 @@
   import { Brain } from '../../shared/icons.js';
   import { marked } from 'marked';
   import { safeMarkedParse } from '../../session/render/markdown.js';
-  let { id, text, live, running = false, streaming = false } = $props();
+  let { id, text, liveText = null, live, running = false, streaming = false } = $props();
+  const shownText = $derived($liveText ?? text);
   const preview = $derived.by(() => {
-    const first =
-      String(text || '')
-        .split('\n')
-        .map((line) => line.trim())
-        .find(Boolean) || '';
+    const first = String(shownText || '')
+      .trimStart()
+      .split('\n', 1)[0]
+      .trim();
     const title = /^(?:\*\*(.+?)\*\*|#{1,6}\s+(.+))$/.exec(first);
     return title ? (title[1] || title[2]).trim() : '';
   });
@@ -27,7 +27,7 @@
     {running}
   >
     {#if streaming}
-      <div class="activity-thinking-text preview-thinking-text">{text}</div>
+      <div class="activity-thinking-text preview-thinking-text">{shownText}</div>
     {:else}
       <div class="activity-thinking-text markdown-content">
         {@html safeMarkedParse(text, { marked })}

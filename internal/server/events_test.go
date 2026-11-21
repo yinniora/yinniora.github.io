@@ -8,7 +8,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
+
+	"pi-web/internal/workers"
 )
 
 // syncRecorder wraps httptest.ResponseRecorder so the handler goroutine's
@@ -117,6 +120,46 @@ func TestHandleEventsForwardsNamedDeltaEvents(t *testing.T) {
 	}
 }
 
+func TestHandleEventsCoalescesTextAndDiscardsPendingOnDetach(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := &Server{}
+		req := httptest.NewRequest(http.MethodGet, "/events?id=session.jsonl", nil)
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		w := newSyncRecorder()
+		done := make(chan struct{})
+		go func() {
+			s.handleEvents(w, req.WithContext(ctx))
+			close(done)
+		}()
+		synctest.Wait()
+
+		preview := workers.LivePreview{Phase: "thinking", MessageTimestamp: 1}
+		for revision, thought := range []string{"initial", "interim", "latest"} {
+			preview.Revision, preview.Thinking = uint64(revision+1), thought
+			s.BroadcastChatPreview("session.jsonl", preview)
+			synctest.Wait()
+		}
+		if body := w.body(); strings.Count(body, "event: chat-preview") != 1 || !strings.Contains(body, `"thinking":"initial"`) {
+			t.Fatalf("first event was not immediate or additional events were sent early: %s", body)
+		}
+		time.Sleep(chatPreviewInterval) // Virtual time inside synctest.
+		synctest.Wait()
+		if body := w.body(); strings.Count(body, "event: chat-preview") != 2 || !strings.Contains(body, `"thinking":"latest"`) {
+			t.Fatalf("latest preview was not sent after the deadline: %s", body)
+		}
+
+		preview.Revision, preview.Thinking = 4, "pending after close"
+		s.BroadcastChatPreview("session.jsonl", preview)
+		synctest.Wait()
+		cancel()
+		<-done
+		if body := w.body(); strings.Contains(body, "pending after close") {
+			t.Fatalf("unsubscribed client received pending preview: %s", body)
+		}
+	})
+}
+
 func TestRecordModTimeBroadcastsReloadForKnownZeroModTime(t *testing.T) {
 	s := &Server{
 		sessionsDir: t.TempDir(),
@@ -136,5 +179,83 @@ func TestRecordModTimeBroadcastsReloadForKnownZeroModTime(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for reload")
+	}
+}
+
+func TestChatPreviewBatchKeepsLatestTextAtDeadline(t *testing.T) {
+	var batch chatPreviewBatch
+	var emitted []pendingChatPreview
+	emit := func(snapshot pendingChatPreview) { emitted = append(emitted, snapshot) }
+	start := time.Now()
+	base := workers.LivePreview{Phase: "thinking", MessageTimestamp: 14, Revision: 10, Thinking: "a"}
+	if wait := batch.offer(start, pendingChatPreview{snapshot: base}, emit); wait != 0 {
+		t.Fatalf("initial preview delayed by %v", wait)
+	}
+	base.Revision, base.Thinking = 11, "ab"
+	if wait := batch.offer(start.Add(5*time.Millisecond), pendingChatPreview{snapshot: base}, emit); wait != 95*time.Millisecond {
+		t.Fatalf("first delta wait = %v", wait)
+	}
+	base.Revision, base.Thinking = 12, "abc"
+	if wait := batch.offer(start.Add(40*time.Millisecond), pendingChatPreview{snapshot: base}, emit); wait != 60*time.Millisecond {
+		t.Fatalf("second delta wait = %v", wait)
+	}
+	if len(emitted) != 1 {
+		t.Fatalf("should emit only the initial preview, got %v", emitted)
+	}
+	batch.flush(start.Add(chatPreviewInterval), emit)
+	batch.flush(start.Add(2*chatPreviewInterval), emit)
+	if len(emitted) != 2 || emitted[1].snapshot.Thinking != "abc" {
+		t.Fatalf("expected exactly the latest thought after the deadline, got %v", emitted)
+	}
+}
+
+func TestChatPreviewBatchFlushesBeforeStatusChangesAndCompletion(t *testing.T) {
+	var batch chatPreviewBatch
+	var emitted []pendingChatPreview
+	emit := func(snapshot pendingChatPreview) { emitted = append(emitted, snapshot) }
+	start := time.Now()
+	think := workers.LivePreview{Phase: "thinking", MessageTimestamp: 14, Revision: 10, Thinking: "a"}
+	batch.offer(start, pendingChatPreview{snapshot: think}, emit)
+	think.Revision, think.Thinking = 12, "abc"
+	batch.offer(start.Add(time.Millisecond), pendingChatPreview{snapshot: think}, emit)
+	stale := think
+	stale.Revision, stale.Thinking = 11, "ab"
+	batch.offer(start.Add(2*time.Millisecond), pendingChatPreview{snapshot: stale}, emit)
+	phaseChanges := []workers.LivePreview{
+		{Phase: "tool", ToolName: "read", Revision: 13},
+		{Phase: "retrying", RetryAttempt: 1, RetryLimit: 2, Revision: 14},
+		{Phase: "retrying", RetryAttempt: 2, RetryLimit: 2, Revision: 15},
+		{Done: true, Revision: 16},
+	}
+	for _, snapshot := range phaseChanges {
+		if wait := batch.offer(start.Add(3*time.Millisecond), pendingChatPreview{snapshot: snapshot}, emit); wait != 0 {
+			t.Fatalf("status preview %+v delayed by %v", snapshot, wait)
+		}
+	}
+	batch.flush(start.Add(chatPreviewInterval), emit)
+	if len(emitted) != 6 || emitted[1].snapshot.Thinking != "abc" {
+		t.Fatalf("should flush the newest thought and each status, got %v", emitted)
+	}
+	for idx, snapshot := range phaseChanges {
+		if emitted[idx+2].snapshot != snapshot {
+			t.Fatalf("emitted preview %+v, want %+v", emitted[idx+2], snapshot)
+		}
+	}
+}
+
+func TestChatPreviewBatchDoesNotLoseReloadWhenOldDoneIsDropped(t *testing.T) {
+	var batch chatPreviewBatch
+	var emitted []pendingChatPreview
+	emit := func(snapshot pendingChatPreview) { emitted = append(emitted, snapshot) }
+	start := time.Now()
+	reply := workers.LivePreview{Phase: "reply", MessageTimestamp: 19, Revision: 12, Content: "new"}
+	batch.offer(start, pendingChatPreview{snapshot: reply}, emit)
+	reply.Revision, reply.Content = 13, "new reply"
+	batch.offer(start.Add(time.Millisecond), pendingChatPreview{snapshot: reply}, emit)
+	dropped := pendingChatPreview{snapshot: workers.LivePreview{Done: true, Revision: 11}}
+	batch.offer(start.Add(2*time.Millisecond), dropped, emit)
+	batch.flush(start.Add(chatPreviewInterval), emit)
+	if len(emitted) != 2 || emitted[1].snapshot != reply || !emitted[1].reload {
+		t.Fatalf("expected newest text alongside the missed reload, got %v", emitted)
 	}
 }

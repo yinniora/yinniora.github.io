@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"pi-web/internal/workers"
 )
@@ -34,6 +35,14 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, ":ok\n\n")
 	flusher.Flush()
 
+	var previews chatPreviewBatch
+	writePreview := func(pending pendingChatPreview) {
+		writeChatPreview(w, flusher, pending.snapshot)
+		if pending.reload && !pending.snapshot.Done {
+			fmt.Fprint(w, "data: reload\n\n")
+			flusher.Flush()
+		}
+	}
 	if sessID == globalSessID {
 		s.writeStatusSnapshot(w)
 		flusher.Flush()
@@ -41,21 +50,44 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		ChatPreview(string) (workers.LivePreview, bool)
 	}); ok {
 		if preview, active := source.ChatPreview(sessID); active {
-			writeChatPreview(w, flusher, preview)
+			previews.offer(time.Now(), pendingChatPreview{snapshot: preview}, writePreview)
 		}
 	}
 
+	var timer *time.Timer
+	var previewDue <-chan time.Time
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
 	for {
 		select {
 		case pending := <-client.preview:
-			writeChatPreview(w, flusher, pending.snapshot)
-			if pending.reload && !pending.snapshot.Done {
-				fmt.Fprint(w, "data: reload\n\n")
-				flusher.Flush()
+			if wait := previews.offer(time.Now(), pending, writePreview); wait > 0 {
+				if previewDue == nil {
+					if timer == nil {
+						timer = time.NewTimer(wait)
+					} else {
+						timer.Reset(wait)
+					}
+					previewDue = timer.C
+				}
+			} else if previewDue != nil {
+				timer.Stop()
+				previewDue = nil
 			}
+		case <-previewDue:
+			previewDue = nil
+			previews.flush(time.Now(), writePreview)
 		case msg, open := <-client.ch:
 			if !open {
 				return
+			}
+			if msg == "reload" && previewDue != nil {
+				timer.Stop()
+				previewDue = nil
+				previews.flush(time.Now(), writePreview)
 			}
 			if key := eventKey(msg); key != "" {
 				client.mu.Lock()
@@ -74,6 +106,77 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+const chatPreviewInterval = 100 * time.Millisecond
+
+// Each text snapshot is cumulative. Coalesce updates of the same assistant
+// phase before serialization and delivery to local and encrypted clients.
+type chatPreviewBatch struct {
+	lastSent workers.LivePreview
+	sentAt   time.Time
+	pending  pendingChatPreview
+	buffered bool
+}
+
+func (b *chatPreviewBatch) offer(now time.Time, next pendingChatPreview, emit func(pendingChatPreview)) time.Duration {
+	wait := chatPreviewInterval - now.Sub(b.sentAt)
+	latest := b.lastSent
+	if b.buffered {
+		latest = b.pending.snapshot
+	}
+	if next.snapshot.Revision != 0 && next.snapshot.Revision < latest.Revision {
+		// Reconnect and concurrent producers can deliver an older revision.
+		// Never replace the newer text, but still reconcile after a dropped Done.
+		if next.reload || next.snapshot.Done {
+			next = pendingChatPreview{snapshot: latest, reload: true}
+			b.buffered = false
+			b.pending = pendingChatPreview{}
+		} else {
+			if b.buffered && wait > 0 {
+				return wait
+			}
+			b.flush(now, emit)
+			return 0
+		}
+	}
+	if !next.reload && sameStreamingActivity(b.lastSent, next.snapshot) {
+		if wait > 0 {
+			b.pending = next
+			b.buffered = true
+			return wait
+		}
+		// This is a newer complete snapshot of the same text. A due timer can
+		// race this event, so use it instead of writing the older pending text.
+		b.pending = pendingChatPreview{}
+		b.buffered = false
+	} else {
+		b.flush(now, emit)
+	}
+	b.lastSent, b.sentAt = next.snapshot, now
+	emit(next)
+	return 0
+}
+
+func (b *chatPreviewBatch) flush(now time.Time, emit func(pendingChatPreview)) {
+	if !b.buffered {
+		return
+	}
+	next := b.pending
+	b.pending = pendingChatPreview{}
+	b.buffered = false
+	b.lastSent, b.sentAt = next.snapshot, now
+	emit(next)
+}
+
+func sameStreamingActivity(a, b workers.LivePreview) bool {
+	if b.Done || (b.Phase != "thinking" && b.Phase != "reply") {
+		return false
+	}
+	a.Content, b.Content = "", ""
+	a.Thinking, b.Thinking = "", ""
+	a.Revision, b.Revision = 0, 0
+	return a == b
 }
 
 func writeChatPreview(w http.ResponseWriter, flusher http.Flusher, preview workers.LivePreview) {

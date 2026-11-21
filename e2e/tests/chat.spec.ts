@@ -9,7 +9,7 @@ import {
   writeSession,
 } from "../lib/sessions";
 
-test("streamed thinking stays in the same activity panel when saved", async ({ page, sessionsDir }, testInfo) => {
+test("streamed thinking preserves composition and stays in the same panel when saved", async ({ page, sessionsDir }, testInfo) => {
   const { entries, lastId } = buildSession({ cwd: realWorkingDir() });
   const name = uniqueSessionName(testInfo, "thinking-handoff");
   const promptId = "new-prompt";
@@ -68,6 +68,44 @@ test("streamed thinking stays in the same activity panel when saved", async ({ p
     const panel = page.locator("#messages-list .activity-group").filter({ hasText: "Fixture thought" });
     await expect(panel).toHaveAttribute("data-running", "true");
     await panel.evaluate((el) => el.setAttribute("data-fixture-node", "original"));
+
+    const composer = page.locator("#pi-chat-message");
+    const draft = "未发送的";
+    await composer.fill(draft);
+    await composer.evaluate((field: HTMLTextAreaElement) => {
+      field.setAttribute("data-fixture-node", "original");
+      field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      field.setRangeText("草", field.value.length, field.value.length, "end");
+      field.dispatchEvent(new InputEvent("input", {
+        data: "草", inputType: "insertCompositionText", isComposing: true, bubbles: true,
+      }));
+    });
+    const history = page.locator(`#entry-${lastId} .markdown-content`).first();
+    const historicalText = await history.elementHandle();
+    await page.evaluate(async ({ id, preview }) => {
+      for (let index = 1; index <= 32; index++) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        (window as any).sendFixturePreview(id, {
+          ...preview,
+          thinking: `Fixture thought ${index}`,
+          phase: "thinking",
+          revision: 9999 + index,
+        });
+      }
+    }, { id, preview });
+    await expect(thought).toHaveText("Fixture thought 32");
+    await expect(thought).toBeVisible();
+    await expect(composer).toBeFocused();
+    await expect(composer).toHaveValue(`${draft}草`);
+    expect(await composer.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd]))
+      .toEqual([draft.length + 1, draft.length + 1]);
+    expect(await history.evaluate((current, original) => current === original, historicalText)).toBe(true);
+    await composer.evaluate((field: HTMLTextAreaElement) => {
+      field.setRangeText("草稿", field.value.length - 1, field.value.length, "end");
+      field.dispatchEvent(new CompositionEvent("compositionend", { data: "草稿", bubbles: true }));
+      field.dispatchEvent(new InputEvent("input", { data: "草稿", inputType: "insertText", bubbles: true }));
+    });
+
     appendEntry(sessionsDir, name, {
       type: "message", id: "saved-thought", parentId: promptId, timestamp: new Date().toISOString(),
       message: { role: "assistant", timestamp: timestamp + 1, stopReason: "toolUse",
@@ -75,12 +113,15 @@ test("streamed thinking stays in the same activity panel when saved", async ({ p
                   { type: "toolCall", id: "fixture-tool", name: "bash", arguments: { command: "pwd" } }] },
     });
     await page.evaluate(({ id, preview }) => {
-      (window as any).sendFixturePreview(id, { ...preview, phase: "working", revision: 10000, done: true });
+      (window as any).sendFixturePreview(id, { ...preview, phase: "working", revision: 10040, done: true });
     }, { id, preview });
     await expect(thought).toHaveText("Fixture thought finished");
     await expect(thought).toBeVisible();
     await expect(thought).toHaveCount(1);
     await expect(panel).toHaveAttribute("data-fixture-node", "original");
+    await expect(composer).toBeFocused();
+    await expect(composer).toHaveAttribute("data-fixture-node", "original");
+    await expect(composer).toHaveValue(`${draft}草稿`);
   } finally {
     rmSync(statusFile, { force: true });
   }

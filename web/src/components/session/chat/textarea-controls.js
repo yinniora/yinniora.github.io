@@ -13,20 +13,44 @@ export function setupTextareaControls({
   updateSendEnabled = () => {},
   updateComposerHeight = () => {},
 } = {}) {
-  function autoResize() {
-    if (!textarea || (shell && shell.classList.contains('expanded'))) return;
+  let resizeFrame = null;
+  let disposed = false;
+
+  function resize(forceComposerMeasure = false) {
+    if (disposed || !textarea || shell?.classList.contains('expanded')) return;
+    const previousHeight = textarea.style.height;
     textarea.style.height = 'auto';
     const cs = windowImpl.getComputedStyle(textarea);
     const max = parseFloat(cs.maxHeight) || 200;
     const min = parseFloat(cs.minHeight) || 48;
-    const next = Math.max(min, Math.min(textarea.scrollHeight, max));
-    textarea.style.height = next + 'px';
-    updateComposerHeight();
+    const nextHeight = `${Math.max(min, Math.min(textarea.scrollHeight, max))}px`;
+    textarea.style.height = nextHeight;
+    if (forceComposerMeasure || previousHeight !== nextHeight) updateComposerHeight();
+  }
+
+  function cancelResize() {
+    if (resizeFrame === null) return;
+    windowImpl.cancelAnimationFrame?.(resizeFrame);
+    resizeFrame = null;
+  }
+
+  function autoResize() {
+    cancelResize();
+    // Explicit updates can change the form size without changing the textarea.
+    resize(true);
   }
 
   const onInput = () => {
-    autoResize();
     updateSendEnabled();
+    if (resizeFrame !== null) return;
+    if (!windowImpl.requestAnimationFrame) {
+      resize();
+      return;
+    }
+    resizeFrame = windowImpl.requestAnimationFrame(() => {
+      resizeFrame = null;
+      resize();
+    });
   };
 
   const onKeydown = (event) => {
@@ -57,6 +81,8 @@ export function setupTextareaControls({
   return {
     autoResize,
     dispose: () => {
+      disposed = true;
+      cancelResize();
       textarea?.removeEventListener('input', onInput);
       textarea?.removeEventListener('keydown', onKeydown);
     },

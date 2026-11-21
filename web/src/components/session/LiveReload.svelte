@@ -11,6 +11,7 @@
   // live-only helpers in session/live/: connection/reconnect lifecycle, reload
   // events, follow-scroll, stats, and chat-preview all have focused unit tests.
   import { onMount } from 'svelte';
+  import { writable } from 'svelte/store';
   import { marked } from 'marked';
   import { escapeHtml } from '../../session/render/session-format.js';
   import { safeMarkedParse } from '../../session/render/markdown.js';
@@ -126,6 +127,38 @@
     // ── Streaming chat preview ─────────────────────────────────────────────────
     const CHAT_PREVIEW_STATE = { chatPreviewEl: null, pendingUserEl: null };
     cleanups.push(() => clearChatPreviewState(CHAT_PREVIEW_STATE));
+    const assistantTimestamps = (entries) =>
+      new Set(
+        entries
+          .filter(({ message }) => message?.role === 'assistant')
+          .map(({ message }) => message.timestamp),
+      );
+    let persistedAssistantTimestamps = assistantTimestamps(model?.entries || []);
+
+    let lastComposerInput = -Infinity;
+    let composing = false;
+    on(documentImpl, 'input', ({ target }) => {
+      if (target?.id === 'pi-chat-message') lastComposerInput = windowImpl.performance.now();
+    });
+    on(documentImpl, 'compositionstart', ({ target }) => {
+      if (target?.id === 'pi-chat-message') composing = true;
+    });
+    on(documentImpl, 'compositionend', ({ target }) => {
+      if (target?.id !== 'pi-chat-message') return;
+      composing = false;
+      lastComposerInput = windowImpl.performance.now();
+    });
+    on(documentImpl, 'focusout', ({ target }) => {
+      if (target?.id === 'pi-chat-message') composing = false;
+    });
+    function editingMessage() {
+      return (
+        documentImpl.activeElement?.id === 'pi-chat-message' &&
+        (composing ||
+          documentImpl.documentElement.classList.contains('pi-keyboard-open') ||
+          windowImpl.performance.now() - lastComposerInput < 240)
+      );
+    }
 
     function clearChatPreview(entries = []) {
       const statusEl = documentImpl.getElementById('pi-chat-status');
@@ -163,7 +196,6 @@
     let previewDelay = 0;
     let lastPreviewPaint = -Infinity;
     let pendingPreview;
-    const paintInterval = 100;
     function cancelPreviewPaint() {
       windowImpl.cancelAnimationFrame(previewFrame);
       windowImpl.clearTimeout(previewDelay);
@@ -174,22 +206,30 @@
       if (!payload) return;
       lastPreviewPaint = windowImpl.performance.now();
       const timestamp = payload.messageTimestamp;
-      const persisted =
-        timestamp &&
-        model?.entries?.some(
-          ({ message }) => message?.role === 'assistant' && message.timestamp === timestamp,
-        );
+      const persisted = persistedAssistantTimestamps.has(timestamp);
+      let layoutChanged = false;
       if (timestamp && payload.thinking?.trim() && !persisted) {
         const previous = thinkingPreviews.find((item) => item.messageTimestamp === timestamp);
-        if (previous?.thinking !== payload.thinking) {
+        if (previous) {
+          if (previous.latest !== payload.thinking) {
+            previous.latest = payload.thinking;
+            previous.liveText.set(payload.thinking);
+            layoutChanged = true;
+          }
+        } else {
+          // Only the first chunk adds an activity step. Later updates reach its leaf
+          // directly without walking every already rendered message and tool run.
           thinkingPreviews = [
-            ...thinkingPreviews.filter((item) => item.messageTimestamp !== timestamp),
+            ...thinkingPreviews,
             {
               messageTimestamp: timestamp,
               thinkingIndex: payload.thinkingIndex || 0,
               thinking: payload.thinking,
+              latest: payload.thinking,
+              liveText: writable(payload.thinking),
             },
           ].slice(-12);
+          layoutChanged = true;
         }
       }
       CHAT_PREVIEW_STATE.messageTimestamp = timestamp || 0;
@@ -200,11 +240,11 @@
         documentImpl,
         windowImpl,
         renderMarkdown,
-        shouldFollow,
-        forceFollowToBottom,
-        scrollAfterLayout,
+        onLayoutChanged: () => (layoutChanged = true),
         markdownIntervalMs: 0,
       });
+      if (layoutChanged)
+        followScroll.followPreview(CHAT_PREVIEW_STATE.chatPreviewEl, editingMessage);
       if (rendered) publishPhase(CHAT_PREVIEW_STATE.phase, payload);
     }
     function renderChatPreview(payload) {
@@ -224,6 +264,7 @@
           pendingPreview = null;
         });
       };
+      const paintInterval = editingMessage() ? 240 : 100;
       const wait = paintInterval - (windowImpl.performance.now() - lastPreviewPaint);
       if (wait > 0) previewDelay = setTimeout(paint, wait);
       else paint();
@@ -258,11 +299,11 @@
         incrementPending,
         showFollowButton,
         onReloaded: (data) => {
+          persistedAssistantTimestamps = assistantTimestamps(data.entries);
           reconcileEntries(data.entries);
           if (thinkingPreviews.length) {
-            const timestamps = new Set(data.entries.map((entry) => entry.message?.timestamp));
             const uncommitted = thinkingPreviews.filter(
-              (item) => !timestamps.has(item.messageTimestamp),
+              (item) => !persistedAssistantTimestamps.has(item.messageTimestamp),
             );
             if (uncommitted.length !== thinkingPreviews.length) thinkingPreviews = uncommitted;
           }
