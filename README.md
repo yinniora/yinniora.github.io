@@ -38,8 +38,9 @@ Bug reports and contributions for this variant belong in this repository.
    **Enable Tailscale connection**. To use your own relay, run the [relay
    installer](docs/architecture/self-hosted-remote.md) and paste its activation
    code in **Connect with your server**. You can also deploy to an existing,
-   trusted SSH destination from the desktop. On the same Wi-Fi network, the
-   native iOS and iPadOS client can pair with the host's local connection.
+   trusted SSH destination from the desktop. On the same local network, the
+   native YuGo Pi Client for Android, iOS, iPadOS, Windows, macOS or Linux
+   can connect to the host without Tailscale or a relay.
 3. In **Devices**, authenticate on the host to show one code for the enabled
    connections. Scan it from the client. Android users can install the release APK. iPhone and iPad users
    can open the [web app](https://yinniora.github.io/) in Safari and add it to the

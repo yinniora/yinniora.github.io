@@ -6,10 +6,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const host = require('./host');
 const { checkClientUpdate, downloadClientUpdate, RELEASES } = require('./client-update');
+const { TRUSTED_VIEWER, connectViewerLAN } = require('./lan-signal');
 
 const HOST_APP = fs.existsSync(host.BINARY);
-const CLIENT_URL = HOST_APP ? host.HOST_ORIGIN : process.env.YUGO_PI_CLIENT_URL || 'https://yinniora.github.io/';
+const CLIENT_URL = HOST_APP ? host.HOST_ORIGIN : process.env.YUGO_PI_CLIENT_URL || `${TRUSTED_VIEWER}/`;
 const CLIENT_ORIGIN = new URL(CLIENT_URL).origin;
+const NATIVE_LAN = !HOST_APP && CLIENT_ORIGIN === TRUSTED_VIEWER;
 const ALLOWED_PERMISSIONS = new Set([
   'media', // camera for scanning the pairing QR code
   'clipboard-read',
@@ -111,9 +113,12 @@ function createWindow(initialUrl) {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      ...(NATIVE_LAN ? { preload: path.join(__dirname, 'lan-preload.js') } : {}),
       spellcheck: false,
     },
   });
+  if (!HOST_APP) win.webContents.setUserAgent(`${win.webContents.getUserAgent()} YuGoPi-Desktop`);
+  if (NATIVE_LAN) connectViewerLAN(win.webContents);
   if (HOST_APP) {
     win.on('close', (event) => {
       if (quitting || !tray) return;

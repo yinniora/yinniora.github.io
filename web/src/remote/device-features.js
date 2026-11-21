@@ -10,11 +10,13 @@ export function deviceFeatures({
   const android = /Android ([\d.]+)/.exec(ua);
   if (ios) os = /iPad/.test(ua) ? 'iPad · iPadOS' : 'iPhone · iOS';
   else if (/Macintosh/.test(ua) && navigatorImpl.maxTouchPoints > 1) os = 'iPad · iPadOS';
-  else if (android) os = 'Android';
+  else if (android || /\bYuGoPi-Android\b/.test(ua)) os = 'Android';
   else if (mac) os = 'Mac · macOS';
   else if (/Windows/.test(ua)) os = 'Windows';
   else if (/Linux/.test(ua)) os = 'Linux';
-  if (/\bYuGoPi-iOS\b/.test(ua)) return { os, browser: 'YuGo Pi', app: 'standalone' };
+  if (/\bYuGoPi-(?:iOS|Android|Desktop)\b/.test(ua)) {
+    return { os, browser: 'YuGo Pi', app: 'standalone' };
+  }
   let browser = '';
   for (const [name, pattern] of [
     ['Edge', /(?:Edg|EdgiOS|EdgA)\/([\d]+)/],

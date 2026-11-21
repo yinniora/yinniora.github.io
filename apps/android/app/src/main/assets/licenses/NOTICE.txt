@@ -1,0 +1,15 @@
+YuGo Pi Android runtime dependencies
+
+AndroidX WebKit and the AndroidX libraries it uses are from the Android Open
+Source Project and are distributed under Apache License 2.0.
+Source: https://android.googlesource.com/platform/frameworks/support/
+
+The Kotlin standard library and JetBrains annotations are distributed under
+Apache License 2.0. See Kotlin-NOTICE.txt for Kotlin's upstream notice.
+Source: https://github.com/JetBrains/kotlin and https://github.com/JetBrains/java-annotations
+
+Java-WebSocket 1.6.0 is distributed under the MIT License.
+Source: https://github.com/TooTallNate/Java-WebSocket/tree/v1.6.0
+
+SLF4J API 2.0.13 is distributed under the MIT License.
+Source: https://github.com/qos-ch/slf4j/tree/v_2.0.13

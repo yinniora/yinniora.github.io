@@ -14,7 +14,7 @@
 | 主机和手机已加入同一个 Tailscale 网络 | 点「启用 Tailscale 连接」，按提示授权 Tailscale HTTPS。 |
 | 只有自己的 VPS | 在服务器运行发行版自带的中继安装器，把一次性配置码粘贴到主机。已配置 SSH 密钥和主机指纹时，也可从主机界面部署。 [中继安装说明](architecture/self-hosted-remote.md) |
 | Tailscale 和 VPS 都可用 | 两项都启用。客户端在已授权的线路中尝试连接。 |
-| 仅同一 Wi‑Fi | 在主机启用局域网，用 iOS 或 iPadOS 原生客户端扫码并允许本地网络访问。原生客户端需要 Apple 签名。 [iOS 安装说明](../apps/ios/README.md) |
+| 仅同一 Wi‑Fi | 在主机启用局域网，两端接入同一网络。Android、iOS、iPadOS、Windows、macOS 和 Linux 原生客户端可扫码或粘贴配对链接。网页客户端可使用 Tailscale 或中继。 [iOS 安装说明](../apps/ios/README.md) |
 
 在主机的「设备」中完成系统认证，生成一个二维码，然后用远程设备上要长期使用的 YuGo Pi 客户端扫码。二维码涵盖当时已启用的连接方式。以后添加 VPS 或 Tailscale 时，用同一个客户端重新扫码即可补上线路，保留设备名称和原有授权。浏览器、主屏幕网页和原生 App 各有自己的设备身份。
 

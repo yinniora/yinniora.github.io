@@ -902,7 +902,7 @@ export default {
   'remote.startFailed': 'The secure app could not start. Check the connection, then retry.',
   'devices.copyPairLink': 'Copy pairing link',
   'devices.appPairHint':
-    'In YuGo Pi on your mobile device, tap Scan QR code. You can also copy the link and paste it into the client.',
+    'In the YuGo Pi client, select Scan QR code. You can also copy and paste the pairing link.',
   'remote.pairFirst':
     'On your host, open YuGo Pi → Devices, authenticate, then scan the single-use QR code.',
   'remote.connecting': 'Verifying the host and opening an encrypted connection…',
@@ -926,7 +926,7 @@ export default {
   'devices.authHint':
     'The host requires system authentication each time you create a pairing code.',
   'devices.qrAlt': 'Single-use device pairing QR code',
-  'devices.scan': 'Scan in YuGo Pi on your mobile device',
+  'devices.scan': 'Scan in the YuGo Pi client',
   'devices.expires': 'Single use · expires in {seconds}s',
   'devices.expired': 'This code has expired. Authenticate on the Mac to create another.',
   'devices.whitelist': 'Approved devices',
@@ -1033,6 +1033,7 @@ export default {
   'devices.connected': 'Connected',
   'devices.offline': 'Offline',
   'devices.standalone': 'Home Screen app',
+  'devices.nativeApp': 'Native client',
   'devices.browser': 'Browser',
   'devices.featuresPending':
     'System details appear after this device reopens the latest YuGo Pi page.',
@@ -1095,14 +1096,14 @@ export default {
     'Could not enable Tailscale. Check that it is signed in, HTTPS is enabled and the host can configure Serve.',
   'remoteSettings.lan': 'Connect on the same network',
   'remoteSettings.lanHint':
-    'Connect both devices to the same network and scan in YuGo Pi on your mobile device. The native iOS and iPadOS app currently supports local-network pairing.',
+    'Connect the host and client to the same local network, then scan or paste the pairing link in the native YuGo Pi client.',
   'remoteSettings.lanReady':
-    'Local pairing is enabled. Scan using the native YuGo Pi app for iOS or iPadOS.',
+    'Local pairing is enabled. Scan or paste the pairing link in the native YuGo Pi client.',
   'remoteSettings.enableLAN': 'Enable local connection',
   'remoteSettings.lanFailed':
     'Could not enable the local connection. Check that this host is on a private IPv4 network.',
   'remote.lanNeedsApp':
-    'Scan in the native YuGo Pi app for iOS or iPadOS to connect over the local network.',
+    'Scan or paste the pairing link in the native YuGo Pi client for local-network access. The browser client supports Tailscale and relays.',
   'remoteSettings.relaySetup': 'Connect with your server',
   'remoteSettings.relayReady': 'Connected server · {server}',
   'remoteSettings.activation': 'Relay activation code or private configuration',

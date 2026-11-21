@@ -47,8 +47,13 @@ The Android, Windows, macOS and Linux client apps all open the published
 encrypted remote client at <https://yinniora.github.io/>. Each app keeps its own
 pairing, so the first time you open it, pair it the same way as a browser:
 
-1. On the Mac, create a pairing QR code (Settings › Devices).
+1. On the host, create a pairing QR code (Settings › Devices).
 2. In the app, scan the code with the camera, or paste the pairing link.
+
+For LAN-only connections, enable the local connection on the host and join
+the same network on both devices. The Android, iOS, iPadOS and desktop native
+clients verify the host certificate in the pairing code. Browsers connect
+through Tailscale or a configured relay.
 
 The apps never contain host credentials. The pairing keys live in the web
 client's storage inside each app, just as they do in a browser.

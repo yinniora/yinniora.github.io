@@ -54,10 +54,11 @@
   }
   function featureLabel(device) {
     const { os, browser, app } = device.features || {};
+    const appLabel =
+      browser === 'YuGo Pi' ? 'nativeApp' : app === 'standalone' ? 'standalone' : 'browser';
     return (
-      [os, browser, app ? t(`devices.${app === 'standalone' ? 'standalone' : 'browser'}`) : '']
-        .filter(Boolean)
-        .join(' · ') || t('devices.featuresPending')
+      [os, browser, app ? t(`devices.${appLabel}`) : ''].filter(Boolean).join(' · ') ||
+      t('devices.featuresPending')
     );
   }
   async function show() {

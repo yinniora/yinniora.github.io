@@ -26,3 +26,18 @@ it('labels the native iPhone app without storing its user-agent string', () => {
     app: 'standalone',
   });
 });
+
+it.each([
+  ['Linux; Android 15', 'Android', 'Android'],
+  ['Windows NT 10.0', 'Desktop', 'Windows'],
+  ['Macintosh; Intel Mac OS X 15_0', 'Desktop', 'Mac · macOS'],
+])('labels the YuGo Pi client running on %s', (platform, client, os) => {
+  const navigatorImpl = {
+    userAgent: `Mozilla/5.0 (${platform}) AppleWebKit/537.36 Chrome/142.0.0 YuGoPi-${client}`,
+  };
+  expect(deviceFeatures({ navigatorImpl, standalone: false })).toEqual({
+    os,
+    browser: 'YuGo Pi',
+    app: 'standalone',
+  });
+});

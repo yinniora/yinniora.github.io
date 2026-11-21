@@ -41,6 +41,7 @@ async function main() {
     nsis: {
       oneClick: true,
       perMachine: false,
+      allowToChangeInstallationDirectory: false,
       runAfterFinish: true,
       artifactName: 'yugo-pi-host-${version}-windows-${arch}-setup.${ext}',
     },
