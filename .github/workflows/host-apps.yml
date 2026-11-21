@@ -97,7 +97,7 @@ jobs:
         with:
           name: yugo-host-${{ matrix.platform }}-${{ matrix.arch }}
           if-no-files-found: error
-          path: |
-            dist/yugo-pi-host-*.pkg
-            apps/desktop/dist/host/yugo-pi-host-*.deb
-            apps/desktop/dist/host/yugo-pi-host-*.exe
+          path: >-
+            ${{ matrix.platform == 'darwin' && 'dist/yugo-pi-host-*.pkg' ||
+            matrix.platform == 'win' && 'apps/desktop/dist/host/yugo-pi-host-*.exe' ||
+            'apps/desktop/dist/host/yugo-pi-host-*.deb' }}

@@ -95,6 +95,12 @@ jobs:
           merge-multiple: true
       - name: Drop updater metadata
         run: rm -f artifacts/*.blockmap artifacts/latest*.yml
+      - name: Verify host installers are ready to publish
+        run: |
+          prefix="artifacts/yugo-pi-host-${GITHUB_REF_NAME#yugo-v}"
+          for suffix in macos-arm64.pkg macos-x64.pkg linux-amd64.deb linux-arm64.deb windows-x64-setup.exe windows-arm64-setup.exe; do
+            test -s "${prefix}-${suffix}" || { echo "::error::Missing host installer ${prefix}-${suffix}"; exit 1; }
+          done
       - uses: actions/checkout@v6
         with:
           path: source
