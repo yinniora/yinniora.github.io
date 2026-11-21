@@ -1,6 +1,10 @@
 <script>
   import { t } from '../../shared/i18n.js';
-  import { boolFor } from '../../settings/settings-support.js';
+  import { boolFor, valueFor } from '../../settings/settings-support.js';
+  import {
+    CHAT_RUNNING_SEND_MODE_KEY,
+    normalizeChatRunningSendMode,
+  } from '../../shared/settings-store.js';
   import { TOGGLE_DEFAULT_SETTING_KEYS } from '../../session/ui/toggle-state.js';
 
   let { settings = {}, onSave = () => {} } = $props();
@@ -12,11 +16,37 @@
   let thinkingExpanded = $derived(boolFor(settings, thinkingKey, true));
   let toolsVisible = $derived(boolFor(settings, toolsKey, true));
   let toolOutputsExpanded = $derived(boolFor(settings, toolOutputsKey, false));
+  const runningSendMode = $derived(
+    normalizeChatRunningSendMode(valueFor(settings, CHAT_RUNNING_SEND_MODE_KEY)),
+  );
 
   function save(settingKey, checked) {
     onSave(settingKey, checked ? 'true' : 'false');
   }
 </script>
+
+<section class="settings-section">
+  <div class="settings-row">
+    <div class="settings-row-label">
+      <label for="settings-running-send-mode" class="name">{t('settings.runningSendMode')}</label>
+      <span id="settings-running-send-mode-hint" class="hint"
+        >{t('settings.runningSendModeHint')}</span
+      >
+    </div>
+    <div class="settings-control">
+      <select
+        id="settings-running-send-mode"
+        data-setting={CHAT_RUNNING_SEND_MODE_KEY}
+        aria-describedby="settings-running-send-mode-hint"
+        value={runningSendMode}
+        onchange={(e) => onSave(CHAT_RUNNING_SEND_MODE_KEY, e.currentTarget.value)}
+      >
+        <option value="steer">{t('composer.steer')}</option>
+        <option value="queue">{t('composer.queue')}</option>
+      </select>
+    </div>
+  </div>
+</section>
 
 <section class="settings-section">
   <div class="settings-section-title">{t('settings.sessionDisplay')}</div>

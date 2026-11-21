@@ -45,6 +45,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	if sessID == globalSessID {
 		s.writeStatusSnapshot(w)
+		// A device may have been offline when the send preference changed.
+		settings := map[string]string{settingChatRunningSendMode: s.getSetting(settingChatRunningSendMode, "steer")}
+		if msg, err := formatSSEJSONEvent("settings", map[string]any{"settings": settings}); err == nil {
+			fmt.Fprint(w, msg+"\n\n")
+		}
 		flusher.Flush()
 	} else if source, ok := s.chatSender.(interface {
 		ChatPreview(string) (workers.LivePreview, bool)

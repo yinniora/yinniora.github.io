@@ -1,13 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import SettingsPage from './SettingsPage.svelte';
+import { t } from '../shared/i18n.js';
+import { CHAT_RUNNING_SEND_MODE_KEY, resetSettingsSyncForTests } from '../shared/settings-store.js';
 
 beforeEach(() => {
   localStorage.clear();
   window.history.replaceState({}, '', '/settings');
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  resetSettingsSyncForTests();
+});
 
 function activeNav() {
   return document.querySelector('.settings-sidebar-item.active')?.getAttribute('data-settings-nav');
@@ -58,4 +64,26 @@ describe('SettingsPage tab persistence', () => {
     expect(window.history.length).toBe(lengthBefore);
     expect(window.location.search).toBe('?section=about');
   });
+});
+
+it('saves the default send behavior from the conversation settings', async () => {
+  const fetchImpl = vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ settings: {} }),
+  }));
+  vi.stubGlobal('fetch', fetchImpl);
+  window.history.replaceState({}, '', '/settings?section=sessionDisplay');
+  const { findByRole } = render(SettingsPage);
+  const select = await findByRole('combobox', { name: t('settings.runningSendMode') });
+  expect(select.value).toBe('steer');
+  await fireEvent.change(select, { target: { value: 'queue' } });
+
+  expect(localStorage.getItem(CHAT_RUNNING_SEND_MODE_KEY)).toBe('queue');
+  expect(fetchImpl).toHaveBeenCalledWith(
+    '/api/settings',
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ settings: { [CHAT_RUNNING_SEND_MODE_KEY]: 'queue' } }),
+    }),
+  );
 });

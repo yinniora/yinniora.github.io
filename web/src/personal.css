@@ -2490,7 +2490,7 @@ body .pi-btw-input {
   background: var(--text);
   color: var(--body-bg);
 }
-#spa-root .actions.running:has(.pi-chat-send:disabled) :is(.pi-chat-send, .pi-chat-queue) {
+#spa-root .actions.running .pi-chat-send:disabled {
   display: none !important;
 }
 
@@ -2709,8 +2709,7 @@ body .pi-btw-input {
 }
 #spa-root .pi-chat-toolbar-left,
 #spa-root .composer-model-controls,
-#spa-root .pi-chat-toolbar .actions,
-#spa-root .pi-chat-send-group {
+#spa-root .pi-chat-toolbar .actions {
   display: flex;
   align-items: center;
   flex: none;
@@ -2735,7 +2734,6 @@ body .pi-btw-input {
     .pi-chat-expand-button,
     .pi-chat-model-label,
     .pi-chat-cancel,
-    .pi-chat-queue,
     .pi-chat-send,
     .pi-queue-toggle,
     .pi-queue-item-action
@@ -2766,7 +2764,6 @@ body .pi-btw-input {
     .pi-chat-expand-button,
     .pi-chat-model-label,
     .pi-chat-cancel,
-    .pi-chat-queue,
     .pi-queue-toggle,
     .pi-queue-item-action
   ):is(:hover, :focus-visible, :active):not(:disabled),
@@ -2824,14 +2821,6 @@ body .pi-btw-input {
   color: var(--text-soft);
   opacity: 1;
 }
-#spa-root #pi-chat-queue > span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-
 #spa-root .pi-queue-panel {
   gap: 4px;
   margin-bottom: 8px;

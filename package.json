@@ -1,7 +1,7 @@
 {
   "name": "@yinniora/yugo-pi",
   "description": "YuGo Pi — an independently maintained pi-web variant for Mac and mobile",
-  "version": "0.1.0-yugo.58",
+  "version": "0.1.0-yugo.59",
   "keywords": [
     "pi-package"
   ],

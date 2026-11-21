@@ -30,7 +30,7 @@ export function startSessionPageRuntime({
   // yet), so they'd otherwise be stuck on toggleStateDefaults; once hydration
   // lands we call toggleController.reload() to pick up the user's configured
   // defaults and re-apply them to the already-rendered DOM.
-  const hydrated = hydrateSettings({ storage: windowImpl.localStorage });
+  const hydrated = hydrateSettings({ storage: windowImpl.localStorage, windowImpl });
   windowImpl.marked = windowImpl.marked || marked;
 
   const contentWiring = wireSessionContentRuntime({

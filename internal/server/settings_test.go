@@ -89,6 +89,37 @@ func TestHandleSaveSettingsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestChatRunningSendModeSettingsRoundTrip(t *testing.T) {
+	s := &Server{db: newSettingsTestDB(t)}
+
+	if got := s.getSettings()[settingChatRunningSendMode]; got != "steer" {
+		t.Fatalf("expected default running send mode 'steer', got %q", got)
+	}
+
+	for _, value := range []string{"queue", "unknown-mode"} {
+		body, err := json.Marshal(map[string]any{
+			"settings": map[string]string{settingChatRunningSendMode: value},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		s.handleSaveSettings(w, httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(body)))
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 when saving %q, got %d: %s", value, w.Code, w.Body.String())
+		}
+		if got := decodeSettings(t, w.Body.Bytes())[settingChatRunningSendMode]; got != "queue" {
+			t.Errorf("expected 'queue' after saving %q, got %q", value, got)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	s.handleGetSettings(w, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+	if got := decodeSettings(t, w.Body.Bytes())[settingChatRunningSendMode]; got != "queue" {
+		t.Errorf("expected GET to return persisted mode 'queue', got %q", got)
+	}
+}
+
 func TestAutoTitleSettingsDefaultsAndRoundTrip(t *testing.T) {
 	s := &Server{db: newSettingsTestDB(t)}
 

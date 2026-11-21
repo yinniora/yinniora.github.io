@@ -161,4 +161,71 @@ test.describe("chat (stubbed pi)", () => {
       timeout: 20000,
     });
   });
+
+  test("a fresh browser follows the saved running-send mode on its only send button", async ({
+    page,
+    browser,
+    baseURL,
+    sessionsDir,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "Desktop Chrome", "Shared server settings; run once");
+    const key = "pi-web:v1:chat-running-send-mode";
+    const settings = await (await page.request.get("/api/settings")).json();
+    const previous = settings.settings[key] === "queue" ? "queue" : "steer";
+    const setMode = (mode: string) => page.request.post("/api/settings", {
+      data: { settings: { [key]: mode } },
+    });
+    const waitForSave = (mode: string) => page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/settings" &&
+      response.request().method() === "POST" &&
+      response.request().postDataJSON().settings?.[key] === mode,
+    );
+
+    try {
+      expect((await setMode("steer")).ok()).toBeTruthy();
+      await page.goto("/settings");
+      await page.locator('[data-settings-nav="sessionDisplay"]').click();
+      const mode = page.locator(`[data-setting="${key}"]`);
+      await expect(mode).toHaveValue("steer");
+      const save = waitForSave("queue");
+      await mode.selectOption("queue");
+      expect((await save).ok()).toBeTruthy();
+
+      const { entries } = buildSession({ cwd: realWorkingDir() });
+      const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "running-send-mode"), entries);
+      const otherBrowser = await browser.newContext({ baseURL });
+      try {
+        const otherPage = await otherBrowser.newPage();
+        await collapseScratchpad(otherPage);
+        await otherPage.goto(`/session?id=${encodeURIComponent(id)}`);
+        const composer = otherPage.locator("#pi-chat-composer");
+        const send = composer.locator('button[type="submit"]');
+        const input = composer.locator("#pi-chat-message");
+        await input.fill("Start the work [[slow:30000]]");
+        await expect(send).toHaveAccessibleName("Send");
+        await send.click();
+
+        await expect(composer.locator("#pi-chat-cancel")).toBeVisible();
+        const followUp = `queue after this task ${testInfo.workerIndex}`;
+        await input.fill(followUp);
+        await expect(send).toHaveAccessibleName("Queue");
+        await expect(composer.locator("#pi-chat-queue")).toHaveCount(0);
+        await send.click();
+        await expect(composer.locator(".pi-queue-item-text")).toHaveText([followUp]);
+        await expect(otherPage.locator("#messages .user-message").filter({ hasText: followUp })).toHaveCount(0);
+
+        const change = waitForSave("steer");
+        await mode.selectOption("steer");
+        expect((await change).ok()).toBeTruthy();
+        await input.fill("A new direction");
+        await expect(send).toHaveAccessibleName("Steer");
+        await send.click();
+        await expect(composer.locator(".pi-queue-item--steer .pi-queue-item-text")).toHaveText("A new direction");
+      } finally {
+        await otherBrowser.close();
+      }
+    } finally {
+      expect((await setMode(previous)).ok()).toBeTruthy();
+    }
+  });
 });

@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { test, expect, collapseScratchpad } from "../lib/test";
 import {
   buildSession,
@@ -19,13 +20,27 @@ import {
 // and keep a single retry for genuine flakes.
 test.describe.configure({ mode: "serial", retries: 1 });
 
+async function seedRunningSendMode(page: Page, mode: "steer" | "queue") {
+  // Pin this preference in the page while other tests change the server setting.
+  // Both settings hydration and live settings updates write through localStorage.
+  await page.addInitScript((sendMode) => {
+    const key = "pi-web:v1:chat-running-send-mode";
+    const storage = window.localStorage;
+    const setItem = Storage.prototype.setItem;
+    storage.setItem(key, sendMode);
+    Storage.prototype.setItem = function (itemKey, value) {
+      setItem.call(this, itemKey, this === storage && itemKey === key ? sendMode : value);
+    };
+  }, mode);
+}
+
 test.describe("steer / queue (stubbed pi)", () => {
   async function openRunningSession(
     page,
     sessionsDir,
     testInfo,
     prefix,
-    { slowMs = 5000 } = {},
+    { slowMs = 5000, sendMode = "steer" }: { slowMs?: number; sendMode?: "steer" | "queue" } = {},
   ) {
     const cwd = realWorkingDir();
     const { entries } = buildSession({ cwd });
@@ -33,6 +48,7 @@ test.describe("steer / queue (stubbed pi)", () => {
     const id = writeSession(sessionsDir, name, entries);
 
     await collapseScratchpad(page);
+    await seedRunningSendMode(page, sendMode);
     await page.goto(`/session?id=${encodeURIComponent(id)}`);
 
     const composer = page.locator("#pi-chat-composer");
@@ -45,16 +61,18 @@ test.describe("steer / queue (stubbed pi)", () => {
     await textarea.fill(`task A [[slow:${slowMs}]]`);
     await page.locator("#pi-chat-send").click();
 
-    // While running with an empty draft only Stop shows; typing brings back
-    // Steer (send) and Queue.
+    // The shared send button takes the configured running action.
     await expect(page.locator("#pi-chat-cancel")).toHaveText("Stop");
-    await expect(page.locator("#pi-chat-queue")).toBeHidden();
-    await expect(page.locator("#pi-chat-send")).toHaveText("Steer");
+    await expect(page.locator("#pi-chat-queue")).toHaveCount(0);
+    await expect(page.locator("#pi-chat-send")).toHaveAttribute(
+      "aria-label",
+      sendMode === "queue" ? "Queue" : "Steer",
+    );
     return { textarea };
   }
 
 
-  test("steering shows a panel row and delivers the message", async ({
+  test("steering hides the panel row when Send now starts delivery", async ({
     page,
     sessionsDir,
   }, testInfo) => {
@@ -77,33 +95,36 @@ test.describe("steer / queue (stubbed pi)", () => {
     await textarea.fill(steerMsg);
     await page.locator("#pi-chat-send").click();
 
-    // A steer row appears in the queue panel until the run picks it up.
+    // Sending closes the card even while the request is held before reaching Pi.
     const steerRow = page.locator(".pi-queue-item.pi-queue-item--steer");
+    const echoed = page.locator("#messages .user-message").filter({ hasText: steerMsg });
     try {
       await expect(steerRow).toContainText(steerMsg);
-      await steerRow.getByRole("button", { name: "Send now", exact: true }).click();
-      await expect(steerRow).toContainText("Waiting for Pi");
-      await expect(steerRow.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
+      await Promise.all([
+        page.waitForRequest((request) =>
+          new URL(request.url()).pathname === "/api/chat" && !!request.postData()?.includes(steerMsg),
+        ),
+        steerRow.getByRole("button", { name: "Send now", exact: true }).click(),
+      ]);
+      await expect(steerRow).toHaveCount(0);
+      await expect(page.locator(".pi-queue-panel")).toHaveCount(0);
+      await expect(echoed).toHaveCount(0);
     } finally {
       release();
     }
 
-    // The steered message is delivered and answered.
+    await expect(echoed).toHaveCount(1);
     await expect(page.locator("#messages")).toContainText(`Stub reply: ${steerMsg}`, {
       timeout: 20000,
     });
-
-    // Once the run completes (and the user message lands), the steer row clears.
-    await expect(steerRow).toHaveCount(0, { timeout: 20000 });
+    await expect(steerRow).toHaveCount(0);
   });
 
-  test("guidance with an uploaded file clears when the user message appears", async ({
+  test("guidance with an uploaded file sends automatically and appears once in the transcript", async ({
     page,
     sessionsDir,
   }, testInfo) => {
-    // 30s slow-hold so the original run is still in flight when the steer
-    // lands. The chip must clear well before agent_end fires (we'd be done
-    // long before this test's 30s timeout if we waited for the run instead).
+    // The original run stays in flight so the guidance joins it when sent.
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "steer-fast", {
       slowMs: 30000,
     });
@@ -120,13 +141,9 @@ test.describe("steer / queue (stubbed pi)", () => {
     const steerRow = page.locator(".pi-queue-item.pi-queue-item--steer");
     await expect(steerRow).toContainText(steerMsg);
 
-    // The stub pi writes the steer's user turn to the JSONL immediately
-    // (e2e/lib/stub-pi/pi#handlePrompt, the `activeSlowRun` branch); the file
-    // watcher → SSE 'reload' → /api/session refetch → reconcile pipeline puts
-    // the entry into the model. The steer chip must disappear within a few
-    // seconds of that — well before the 30s slow run ends.
     const echoed = page.locator("#messages .user-message").filter({ hasText: steerMsg });
     await expect(echoed).toContainText("guide-notes.txt", { timeout: 15000 });
+    await expect(echoed).toHaveCount(1);
     await expect(steerRow).toHaveCount(0, { timeout: 5000 });
     await expect(page.locator("#pi-chat-cancel")).toBeVisible();
   });
@@ -219,15 +236,17 @@ test.describe("steer / queue (stubbed pi)", () => {
     page,
     sessionsDir,
   }, testInfo) => {
-    const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "queue");
+    const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "queue", {
+      sendMode: "queue",
+    });
 
     const keep = `keep-${testInfo.workerIndex}-${Date.now()}`;
     const drop = `drop-${testInfo.workerIndex}-${Date.now()}`;
 
     await textarea.fill(keep);
-    await page.locator("#pi-chat-queue").click();
+    await page.locator("#pi-chat-send").click();
     await textarea.fill(drop);
-    await page.locator("#pi-chat-queue").click();
+    await page.locator("#pi-chat-send").click();
 
     // Queue rows are the non-steer rows in the panel.
     const queuedRows = page.locator(".pi-queue-item:not(.pi-queue-item--steer)");
@@ -267,7 +286,7 @@ test.describe("steer / queue (stubbed pi)", () => {
     // POST round-trip can take longer than the default 5s expect window.
     for (let i = 0; i < items.length; i++) {
       await textarea.fill(items[i]);
-      await page.locator("#pi-chat-queue").click();
+      await page.locator("#pi-chat-send").click();
       await expect(page.locator(".pi-queue-item")).toHaveCount(i + 1, { timeout: 15000 });
     }
     // Textarea is cleared by each Queue press; the panel auto-focuses the first
@@ -284,6 +303,7 @@ test.describe("steer / queue (stubbed pi)", () => {
     // mid-test (which would yank rows out from under the keyboard cursor).
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "kb-nav", {
       slowMs: 30000,
+      sendMode: "queue",
     });
     const items = await queueThree(page, textarea, testInfo, "nav");
 
@@ -316,6 +336,7 @@ test.describe("steer / queue (stubbed pi)", () => {
   }, testInfo) => {
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "kb-del", {
       slowMs: 30000,
+      sendMode: "queue",
     });
     const items = await queueThree(page, textarea, testInfo, "del");
 
@@ -336,6 +357,7 @@ test.describe("steer / queue (stubbed pi)", () => {
   }, testInfo) => {
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "kb-enter", {
       slowMs: 30000,
+      sendMode: "queue",
     });
     const items = await queueThree(page, textarea, testInfo, "enter");
 
@@ -364,6 +386,7 @@ test.describe("steer / queue (stubbed pi)", () => {
   }, testInfo) => {
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "kb-edit", {
       slowMs: 30000,
+      sendMode: "queue",
     });
     const items = await queueThree(page, textarea, testInfo, "edit");
 
@@ -382,6 +405,7 @@ test.describe("steer / queue (stubbed pi)", () => {
     test.skip(!testInfo.project.use.hasTouch, "touch-only controls");
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "touch", {
       slowMs: 30000,
+      sendMode: "queue",
     });
     const items = await queueThree(page, textarea, testInfo, "touch");
     await expect(page.locator(".pi-queue-shortcuts")).toBeHidden();
@@ -401,6 +425,7 @@ test.describe("steer / queue (stubbed pi)", () => {
   }, testInfo) => {
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "kb-esc", {
       slowMs: 30000,
+      sendMode: "queue",
     });
     await queueThree(page, textarea, testInfo, "esc");
 
@@ -416,6 +441,7 @@ test.describe("steer / queue (stubbed pi)", () => {
   }, testInfo) => {
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "kb-suppress", {
       slowMs: 30000,
+      sendMode: "queue",
     });
     await queueThree(page, textarea, testInfo, "sup");
 
@@ -445,9 +471,10 @@ test.describe("steer / queue (stubbed pi)", () => {
   }, testInfo) => {
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "above-shell", {
       slowMs: 30000,
+      sendMode: "queue",
     });
     await textarea.fill("anywhere");
-    await page.locator("#pi-chat-queue").click();
+    await page.locator("#pi-chat-send").click();
 
     // The panel must render as a sibling outside .pi-chat-shell so it floats
     // above the composer card instead of being nested inside it.
@@ -477,11 +504,12 @@ test.describe("steer / queue (stubbed pi)", () => {
     // the queued item before we manage to pause the panel.
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "persist", {
       slowMs: 30000,
+      sendMode: "queue",
     });
 
     const keep = `persist-${testInfo.workerIndex}-${Date.now()}`;
     await textarea.fill(keep);
-    await page.locator("#pi-chat-queue").click();
+    await page.locator("#pi-chat-send").click();
     // Wait for the POST round-trip to land the item before reaching for the
     // Pause button (which lives inside the now-visible panel header).
     await expect(page.locator(".pi-queue-item")).toHaveCount(1, { timeout: 15000 });
@@ -505,6 +533,7 @@ test.describe("steer / queue (stubbed pi)", () => {
     const context1 = await browser.newContext();
     const page1 = await context1.newPage();
     await collapseScratchpad(page1);
+    await seedRunningSendMode(page1, "queue");
 
     const cwd = realWorkingDir();
     const { entries } = buildSession({ cwd });
@@ -518,14 +547,14 @@ test.describe("steer / queue (stubbed pi)", () => {
     // before we get a chance to see it from the second context.
     const msg = `close-${testInfo.workerIndex}-${Date.now()}`;
     await page1.locator("#pi-chat-message").fill(msg);
-    // Need a running state for the Queue button to appear — but we want the
-    // queue to outlive a full browser close, so pause as soon as it's there.
+    // Start a run to switch the send button to Queue. Pause the queue so the
+    // message still exists when the fresh browser context opens.
     await page1.locator("#pi-chat-message").fill("task A [[slow:30000]]");
     await page1.locator("#pi-chat-send").click();
     await expect(page1.locator("#pi-chat-cancel")).toBeVisible();
     await page1.locator("#pi-chat-message").fill(msg);
-    await expect(page1.locator("#pi-chat-queue")).toBeVisible();
-    await page1.locator("#pi-chat-queue").click();
+    await expect(page1.locator("#pi-chat-send")).toHaveAccessibleName("Queue");
+    await page1.locator("#pi-chat-send").click();
     await expect(page1.locator(".pi-queue-item")).toContainText(msg);
     await page1.getByRole("button", { name: /^Pause$/ }).click();
     await expect(page1.locator(".pi-queue-panel--paused")).toBeVisible();
@@ -549,9 +578,10 @@ test.describe("steer / queue (stubbed pi)", () => {
   }, testInfo) => {
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "saved-hint", {
       slowMs: 30000,
+      sendMode: "queue",
     });
     await textarea.fill("hello");
-    await page.locator("#pi-chat-queue").click();
+    await page.locator("#pi-chat-send").click();
     const hint = page.locator(".pi-queue-status-saved");
     await expect(hint).toBeVisible();
   });
@@ -560,11 +590,13 @@ test.describe("steer / queue (stubbed pi)", () => {
     page,
     sessionsDir,
   }, testInfo) => {
-    const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "queue-pause");
+    const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "queue-pause", {
+      sendMode: "queue",
+    });
 
     const msg = `paused-${testInfo.workerIndex}-${Date.now()}`;
     await textarea.fill(msg);
-    await page.locator("#pi-chat-queue").click();
+    await page.locator("#pi-chat-send").click();
 
     // Pause from the panel header.
     await page.getByRole("button", { name: /^Pause$/ }).click();

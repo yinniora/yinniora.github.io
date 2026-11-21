@@ -5,7 +5,7 @@ import { appendChatFiles } from './queue-api.js';
 // request in flight and retry over this window before reporting anything.
 const DEFAULT_SEND_RETRY_DEADLINE_MS = 30_000;
 const SEND_RETRY_DELAYS_MS = [800, 1600, 3200, 5000, 8000];
-const STEER_EDIT_WINDOW_MS = 7000;
+const STEER_EDIT_WINDOW_MS = 5000;
 
 // A missing response can happen before or after acceptance. Every retry uses
 // the same request ID so pi-web can acknowledge a delivery it already made.
@@ -32,6 +32,8 @@ export function setupChatSubmission({
   chatApi,
   sessionId = '',
   isSteering = () => false,
+  shouldQueue = () => false,
+  enqueueFromComposer = () => {},
   setStatus = () => {},
   autoResizeTextarea = () => {},
   updateSendEnabled = () => {},
@@ -171,6 +173,10 @@ export function setupChatSubmission({
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (delivery) return;
+    if (shouldQueue()) {
+      await enqueueFromComposer();
+      return;
+    }
     const typed = textarea.value.trim();
     const filesToSend = attachments.files().slice();
     const textAttachmentsToSend = attachments.textAttachments().slice();

@@ -12,6 +12,9 @@
  * stays in localStorage only and is never synced.
  */
 
+export const CHAT_RUNNING_SEND_MODE_KEY = 'pi-web:v1:chat-running-send-mode';
+export const CHAT_RUNNING_SEND_MODE_EVENT = 'pi:chat-running-send-mode';
+
 // The localStorage keys that are server-backed. Mirrors settingDefaults in
 // internal/server/settings.go.
 export const SERVER_SETTING_KEYS = [
@@ -40,6 +43,7 @@ export const SERVER_SETTING_KEYS = [
   'pi-web:v1:toggle:thinking',
   'pi-web:v1:toggle:tools',
   'pi-web:v1:toggle:tool-outputs',
+  CHAT_RUNNING_SEND_MODE_KEY,
 ];
 
 // Network sync is disabled until a page entrypoint configures it. This keeps
@@ -66,6 +70,18 @@ function defaultStorage() {
     return globalThis.localStorage;
   } catch {
     return null;
+  }
+}
+
+export function normalizeChatRunningSendMode(value) {
+  return value === 'queue' ? 'queue' : 'steer';
+}
+
+export function readChatRunningSendMode(storage = defaultStorage()) {
+  try {
+    return normalizeChatRunningSendMode(storage?.getItem(CHAT_RUNNING_SEND_MODE_KEY));
+  } catch {
+    return 'steer';
   }
 }
 
@@ -116,8 +132,9 @@ export function writeSettings(values, { storage = defaultStorage() } = {}) {
   if (Object.keys(toSync).length > 0) postSettings(toSync);
 }
 
-export function applySettingsFromServer(settings, { storage = defaultStorage() } = {}) {
+export function applySettingsFromServer(settings, { storage = defaultStorage(), windowImpl } = {}) {
   if (!settings || typeof settings !== 'object') return null;
+  const previousSendMode = readChatRunningSendMode(storage);
   for (const key of SERVER_SETTING_KEYS) {
     if (key in settings && settings[key] != null) {
       try {
@@ -126,6 +143,9 @@ export function applySettingsFromServer(settings, { storage = defaultStorage() }
         // ignore
       }
     }
+  }
+  if (windowImpl?.Event && readChatRunningSendMode(storage) !== previousSendMode) {
+    windowImpl.dispatchEvent?.(new windowImpl.Event(CHAT_RUNNING_SEND_MODE_EVENT));
   }
   return settings;
 }
@@ -139,12 +159,13 @@ export function applySettingsFromServer(settings, { storage = defaultStorage() }
 export async function hydrateSettings({
   fetchImpl = syncFetch,
   storage = defaultStorage(),
+  windowImpl,
   reuseStartup = true,
 } = {}) {
   if (reuseStartup && startupSettings) {
     const settings = startupSettings;
     startupSettings = null;
-    return applySettingsFromServer(settings, { storage });
+    return applySettingsFromServer(settings, { storage, windowImpl });
   }
   if (!fetchImpl) return null;
   try {
@@ -153,7 +174,7 @@ export async function hydrateSettings({
     const data = await resp.json();
     const settings = data && data.settings ? data.settings : null;
     if (!settings) return null;
-    return applySettingsFromServer(settings, { storage });
+    return applySettingsFromServer(settings, { storage, windowImpl });
   } catch {
     return null;
   }

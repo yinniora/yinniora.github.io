@@ -2,7 +2,7 @@
 // drives <QueuePanel>. Pure JS so it can be unit-tested without Svelte.
 //
 //   - Steer: after the edit window, the worker folds the message into the active
-//     turn. The browser-local row disappears when Pi records the delivery.
+//     turn. The card closes at dispatch and the local row tracks delivery.
 //   - Queue: enqueueing goes through POST /api/chat/queue; the autonomous
 //     server-side drainer dispatches items to the worker when it becomes idle
 //     (or via a kick from the queue API). The browser is just a viewer onto
@@ -77,7 +77,6 @@ export function setupSteerQueue({
   windowImpl = window,
   sessionId = '',
   store,
-  queueButton,
   textarea,
   attachments = { files: () => [], composeMessage: (typed) => typed, clear: () => {} },
   notify = () => {},
@@ -99,15 +98,6 @@ export function setupSteerQueue({
     notify(message);
   }
 
-  function hasContent() {
-    const typed = textarea ? textarea.value.trim() : '';
-    return typed.length > 0 || !!attachments.files?.().length;
-  }
-
-  function updateQueueEnabled() {
-    if (queueButton) queueButton.disabled = !hasContent();
-  }
-
   async function enqueueFromComposer() {
     const text = textarea?.value || '';
     const displayText = text.trim();
@@ -118,14 +108,13 @@ export function setupSteerQueue({
       draft: { text, textAttachments: attachments.textAttachments?.() || [] },
     };
     if (!message && files.length === 0) return false;
-    // Clear the composer synchronously so a rapid second queue click can read
+    // Clear the composer synchronously so a rapid second submission can read
     // fresh content from the textarea before our POST round-trips. The store
     // mutation lands later when api.add resolves.
     if (textarea) textarea.value = '';
     attachments.clear?.();
     autoResizeTextarea();
     updateSendEnabled();
-    updateQueueEnabled();
     if (textarea && typeof textarea.focus === 'function') textarea.focus();
     if (await store.enqueueQueued({ message, displayText, files })) return true;
     restoreDraft({ detail });
@@ -203,7 +192,6 @@ export function setupSteerQueue({
     }
     autoResizeTextarea();
     updateSendEnabled();
-    updateQueueEnabled();
     if (typeof textarea.focus === 'function') textarea.focus({ preventScroll: true });
   }
 
@@ -323,16 +311,12 @@ export function setupSteerQueue({
   store.actions.withdrawSteer = withdrawSteer;
   store.actions.queueSteer = queueSteer;
 
-  queueButton?.addEventListener('click', enqueueFromComposer);
-  textarea?.addEventListener('input', updateQueueEnabled);
   windowImpl.addEventListener('pi-chat-message-sent', onMessageSent);
   windowImpl.addEventListener('pi-chat-message-failed', onMessageFailed);
   windowImpl.addEventListener('pi-chat-message-delivering', onMessageDelivering);
   windowImpl.addEventListener('pi-worker-done', onWorkerDone);
   windowImpl.addEventListener('pi-chat-prompt-handled', onPromptHandled);
   windowImpl.addEventListener('pi-session-entries-reconciled', reconcileSteersAgainstEntries);
-
-  updateQueueEnabled();
 
   return {
     enqueueFromComposer,
@@ -345,8 +329,6 @@ export function setupSteerQueue({
     queuedCount: () => store.queuedCount,
     steerCount: () => store.steerCount,
     dispose: () => {
-      queueButton?.removeEventListener('click', enqueueFromComposer);
-      textarea?.removeEventListener('input', updateQueueEnabled);
       windowImpl.removeEventListener('pi-chat-message-sent', onMessageSent);
       windowImpl.removeEventListener('pi-chat-message-failed', onMessageFailed);
       windowImpl.removeEventListener('pi-chat-message-delivering', onMessageDelivering);

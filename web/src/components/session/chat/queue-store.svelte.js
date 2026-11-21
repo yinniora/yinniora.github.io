@@ -14,6 +14,10 @@
 // runtime glue (steer-queue.js) wraps these for the user-facing actions
 // (enqueue, sendNow, edit, resume, remove).
 
+function isVisible(item) {
+  return item && (item.kind === 'queued' || item.editable);
+}
+
 export class QueueStore {
   items = $state([]);
   paused = $state(false);
@@ -45,6 +49,10 @@ export class QueueStore {
 
   get count() {
     return this.items.length;
+  }
+
+  get visibleItems() {
+    return this.items.filter(isVisible);
   }
 
   get queuedCount() {
@@ -218,22 +226,23 @@ export class QueueStore {
     this.focusIndex = Math.min(this.items.length - 1, index);
   };
 
-  focusUp = () => {
-    if (this.items.length === 0) return;
-    if (this.focusIndex <= 0) this.focusIndex = this.items.length - 1;
-    else this.focusIndex -= 1;
-  };
+  focusUp = () => this.#moveFocus(-1);
 
-  focusDown = () => {
-    if (this.items.length === 0) return;
-    if (this.focusIndex < 0 || this.focusIndex >= this.items.length - 1) this.focusIndex = 0;
-    else this.focusIndex += 1;
-  };
+  focusDown = () => this.#moveFocus(1);
 
   focusedItem = () => {
-    if (this.focusIndex < 0 || this.focusIndex >= this.items.length) return null;
-    return this.items[this.focusIndex];
+    const item = this.items[this.focusIndex];
+    return isVisible(item) ? item : null;
   };
+
+  #moveFocus(direction) {
+    const visible = this.visibleItems;
+    if (!visible.length) return;
+    const position = visible.indexOf(this.focusedItem());
+    const current = position < 0 && direction < 0 ? 0 : position;
+    const next = (current + direction + visible.length) % visible.length;
+    this.focusIndex = this.items.indexOf(visible[next]);
+  }
 
   #clampFocus() {
     if (this.items.length === 0) {

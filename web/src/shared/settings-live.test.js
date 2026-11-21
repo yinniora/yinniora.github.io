@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { applyRemoteSettings } from './settings-live.js';
+import { CHAT_RUNNING_SEND_MODE_EVENT, CHAT_RUNNING_SEND_MODE_KEY } from './settings-store.js';
 
 function fakeStorage(seed = {}) {
   const map = new Map(Object.entries(seed));
@@ -58,6 +59,20 @@ describe('applyRemoteSettings', () => {
       { settings: { 'pi-web:v1:locale': 'ja', 'pi-web-theme': 'dark' } },
       { storage, documentImpl: fakeDocument(), windowImpl: {}, reload },
     );
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('notifies the composer of a remote running-mode change without a reload', () => {
+    const storage = fakeStorage();
+    const reload = vi.fn();
+    const windowImpl = { Event, dispatchEvent: vi.fn() };
+    applyRemoteSettings(
+      { settings: { [CHAT_RUNNING_SEND_MODE_KEY]: 'queue' } },
+      { storage, windowImpl, reload },
+    );
+
+    expect(storage.getItem(CHAT_RUNNING_SEND_MODE_KEY)).toBe('queue');
+    expect(windowImpl.dispatchEvent.mock.calls[0][0].type).toBe(CHAT_RUNNING_SEND_MODE_EVENT);
     expect(reload).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect, collapseScratchpad } from "../lib/test";
-import { suspendSteerChipCleanup } from "../lib/chat";
 import {
   buildSession,
   realWorkingDir,
@@ -26,40 +25,45 @@ test.describe("@screenshots queue + steer panel @screenshots", () => {
     const id = writeSession(sessionsDir, name, entries);
 
     await collapseScratchpad(page);
+    const sendModeKey = "pi-web:v1:chat-running-send-mode";
+    // Keep the test's preference local even when the server sends its settings snapshot.
+    await page.addInitScript((key) => {
+      const mode = sessionStorage.getItem(key) ?? "steer";
+      const storage = window.localStorage;
+      const setItem = Storage.prototype.setItem;
+      storage.setItem(key, mode);
+      Storage.prototype.setItem = function (itemKey, value) {
+        setItem.call(this, itemKey, this === storage && itemKey === key ? mode : value);
+      };
+    }, sendModeKey);
     await page.goto(`/session?id=${encodeURIComponent(id)}`);
     await expect(page.locator("#pi-chat-composer")).toHaveAttribute("data-chat-available", "true");
 
     const textarea = page.locator("#pi-chat-message");
     const composer = page.locator("#pi-chat-composer");
+    const send = page.locator("#pi-chat-send");
 
     // Hold the run open for a long time so the autonomous drainer can't pull
     // items out from under the screenshots.
     await textarea.fill("audit the cwd's tests and report findings [[slow:60000]]");
-    await page.locator("#pi-chat-send").click();
-    await expect(page.locator("#pi-chat-queue")).toBeVisible();
-    await expect(page.locator("#pi-chat-send")).toHaveText("Steer");
+    await send.click();
 
-    // ── 1. Steer chip mid-flight ─────────────────────────────────────────────
-    // The stub echoes the steer immediately. Suspend the browser-local cleanup
-    // event instead of stalling the refetch: the reload event is dispatched
-    // after the refetch resolves, so route interception cannot prevent the
-    // chip from being removed before the assertion observes it.
-    const releaseSteerCleanup = await suspendSteerChipCleanup(page);
+    // ── 1. Steering actions before delivery ──────────────────────────────────
     await textarea.fill("focus on the integration tests first");
-    await page.locator("#pi-chat-send").click();
+    await expect(send).toHaveAccessibleName("Steer");
+    await send.click();
     await expect(page.locator(".pi-queue-item.pi-queue-item--steer")).toBeVisible();
     await composer.screenshot({
       path: path.join(SHOT_DIR, "01-steer-in-flight.png"),
       animations: "disabled",
     });
-    await releaseSteerCleanup();
-    // Let the deferred reload finish before moving on so subsequent shots see
-    // a clean steer-cleared state.
-    await expect(page.locator(".pi-queue-item.pi-queue-item--steer")).toHaveCount(0, {
-      timeout: 10000,
-    });
+    await expect(page.locator("#messages .user-message").filter({
+      hasText: "focus on the integration tests first",
+    })).toBeVisible({ timeout: 10000 });
 
     // ── 2. Queue stacked with multiple items ─────────────────────────────────
+    await page.evaluate((key) => sessionStorage.setItem(key, "queue"), sendModeKey);
+    await page.reload();
     const queued = [
       "and don't forget the auth tests",
       "summarize at the end",
@@ -67,7 +71,8 @@ test.describe("@screenshots queue + steer panel @screenshots", () => {
     ];
     for (let i = 0; i < queued.length; i++) {
       await textarea.fill(queued[i]);
-      await page.locator("#pi-chat-queue").click();
+      await expect(send).toHaveAccessibleName("Queue");
+      await send.click();
       await expect(page.locator(".pi-queue-item:not(.pi-queue-item--steer)")).toHaveCount(i + 1);
     }
     await composer.screenshot({

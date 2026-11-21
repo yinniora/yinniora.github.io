@@ -34,6 +34,8 @@ func (s *Server) handleAppShell(w http.ResponseWriter, r *http.Request, bootstra
 	}
 }
 
+const settingChatRunningSendMode = "pi-web:v1:chat-running-send-mode"
+
 // settingDefaults defines the server-backed user settings and their default
 // values. The keys mirror the localStorage keys the frontend already uses so
 // the write-through cache maps 1:1. Only keys listed here are accepted by
@@ -69,6 +71,7 @@ var settingDefaults = map[string]string{
 	"pi-web:v1:toggle:thinking":            "true",
 	"pi-web:v1:toggle:tools":               "true",
 	"pi-web:v1:toggle:tool-outputs":        "false",
+	settingChatRunningSendMode:             "steer",
 }
 
 // getSettings returns every server-backed setting: defaults overlaid with any
@@ -228,6 +231,9 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, ok := settingDefaults[key]; !ok {
 			continue // ignore unknown keys
+		}
+		if key == settingChatRunningSendMode && value != "steer" && value != "queue" {
+			continue
 		}
 		_, err := s.db.Exec(`INSERT INTO settings (key, value, updated_at)
 			VALUES (?, ?, ?)

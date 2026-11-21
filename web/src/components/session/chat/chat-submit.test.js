@@ -99,7 +99,7 @@ describe('chat submit', () => {
     });
 
     const pending = submission.sendChatMessage('guide');
-    expect(wait).toHaveBeenCalledWith(7000);
+    expect(wait).toHaveBeenCalledWith(5000);
     expect(sendChat).not.toHaveBeenCalled();
     textarea.value = 'newer draft';
     form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));

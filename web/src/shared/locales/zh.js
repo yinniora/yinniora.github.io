@@ -307,6 +307,9 @@ export default {
   'settings.titleModelHint':
     '内置是免费、即时的词语启发式（无 AI）。选择一个模型以获得更智能的标题——小而快的模型最为理想。',
   'settings.titleBuiltin': '内置启发式（无 AI）',
+  'settings.conversation': '会话',
+  'settings.runningSendMode': '运行中发送',
+  'settings.runningSendModeHint': '引导会把消息加入当前轮。排队会在当前轮结束后发送。',
   'settings.sessionDisplay': '会话显示',
   'settings.thinkingExpanded': '默认展示思考',
   'settings.thinkingExpandedHint':
@@ -976,7 +979,6 @@ export default {
   'folders.invalidName': '请输入单个文件夹名称，不能包含斜杠或以点开头。',
   'folders.createFailed': '无法在此处创建文件夹。请选择 Mac 上可写入的文件夹。',
   'composer.steerDraftStatus': '即将发送引导',
-  'composer.steerAwaitingPickup': '等待 Pi 接收',
   'composer.steerEditAction': '编辑',
   'composer.steerQueueAction': '转为排队',
   'composer.steerWithdrawAction': '撤回',

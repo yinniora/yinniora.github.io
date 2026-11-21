@@ -618,7 +618,6 @@ export default {
   'composer.steerWithdraw': 'Withdraw pending guidance',
   'composer.steerToQueue': 'Send it after the current turn instead',
   'composer.steerDraftStatus': 'Scheduled to send shortly',
-  'composer.steerAwaitingPickup': 'Waiting for Pi to pick up',
   'composer.steerEditAction': 'Edit',
   'composer.steerQueueAction': 'Move to queue',
   'composer.steerWithdrawAction': 'Withdraw',
@@ -763,6 +762,10 @@ export default {
     'Built-in is a free, instant word heuristic (no AI). Pick a model for smarter titles — a small, fast one is ideal.',
   'settings.titleBuiltin': 'Built-in heuristic (no AI)',
 
+  'settings.conversation': 'Conversation',
+  'settings.runningSendMode': 'Send while running',
+  'settings.runningSendModeHint':
+    'Steer adds the message to the current turn. Queue sends it after the turn finishes.',
   'settings.sessionDisplay': 'Session Display',
   'settings.thinkingExpanded': 'Show thinking by default',
   'settings.thinkingExpandedHint':

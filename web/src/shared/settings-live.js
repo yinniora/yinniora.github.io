@@ -25,7 +25,7 @@ export function applyRemoteSettings(
   const settings = payload?.settings;
   const prevLocale = readStored(storage, LOCALE_KEY);
   const prevCustom = readStored(storage, CUSTOM_LANGUAGES_KEY);
-  const applied = applySettingsFromServer(settings, { storage });
+  const applied = applySettingsFromServer(settings, { storage, windowImpl });
   if (!applied) return null;
 
   const theme = applied['pi-web-theme'];

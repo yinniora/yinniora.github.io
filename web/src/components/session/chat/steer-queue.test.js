@@ -2,15 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setupSteerQueue } from './steer-queue.js';
 import { QueueStore } from './queue-store.svelte.js';
 
-function makeDom() {
-  document.body.innerHTML = `
-    <button id="queue" type="button" disabled></button>
-    <textarea id="textarea"></textarea>
-  `;
-  return {
-    queueButton: document.getElementById('queue'),
-    textarea: document.getElementById('textarea'),
-  };
+function makeTextarea() {
+  document.body.innerHTML = '<textarea id="textarea"></textarea>';
+  return document.getElementById('textarea');
 }
 
 function makeApi(initial = { items: [], paused: false }) {
@@ -38,11 +32,6 @@ function makeApi(initial = { items: [], paused: false }) {
   };
 }
 
-function type(textarea, value) {
-  textarea.value = value;
-  textarea.dispatchEvent(new Event('input'));
-}
-
 function reconcile(sessionId) {
   window.dispatchEvent(new CustomEvent('pi-session-entries-reconciled', { detail: { sessionId } }));
 }
@@ -56,26 +45,14 @@ afterEach(() => {
 });
 
 describe('setupSteerQueue (server-backed)', () => {
-  it('queue button is disabled until the textarea has content', () => {
-    const { queueButton, textarea } = makeDom();
-    const store = new QueueStore();
-    setupSteerQueue({ store, queueButton, textarea });
-
-    expect(queueButton.disabled).toBe(true);
-    type(textarea, 'hello');
-    expect(queueButton.disabled).toBe(false);
-  });
-
-  it('clicking queue POSTs to the api and adds the new row to the store', async () => {
-    const { queueButton, textarea } = makeDom();
+  it('enqueuing the composer POSTs to the api and adds the new row to the store', async () => {
+    const textarea = makeTextarea();
     const api = makeApi();
     const store = new QueueStore({ api });
-    setupSteerQueue({ store, queueButton, textarea, queueApi: api });
+    const handle = setupSteerQueue({ store, textarea, queueApi: api });
 
-    type(textarea, 'hello');
-    queueButton.click();
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
+    textarea.value = 'hello';
+    expect(await handle.enqueueFromComposer()).toBe(true);
 
     expect(api.add).toHaveBeenCalledWith('hello', 'hello');
     expect(store.items).toHaveLength(1);
@@ -84,33 +61,37 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('restores the failed queue draft and attachments without overwriting newer text', async () => {
-    const { queueButton, textarea } = makeDom();
+    const textarea = makeTextarea();
     const api = makeApi();
     let rejectAdd;
     api.add.mockImplementationOnce(() => new Promise((_, reject) => (rejectAdd = reject)));
     const store = new QueueStore({ api });
     const file = new File(['data'], 'notes.txt');
+    const newerFile = new File(['data'], 'new-notes.txt');
     const attachments = {
-      files: vi.fn().mockReturnValueOnce([file]).mockReturnValueOnce([file]).mockReturnValue([]),
+      files: vi.fn().mockReturnValue([file]),
       composeMessage: (text) => text,
       clear: vi.fn(),
       restore: vi.fn(),
     };
-    const handle = setupSteerQueue({ store, queueButton, textarea, queueApi: api, attachments });
+    const handle = setupSteerQueue({ store, textarea, queueApi: api, attachments });
     textarea.value = 'original';
     const pending = handle.enqueueFromComposer();
     textarea.value = 'newer';
+    attachments.files.mockReturnValue([newerFile]);
     rejectAdd(new Error('rejected'));
     expect(await pending).toBe(false);
     expect(textarea.value).toBe('original\n\nnewer');
-    expect(attachments.restore).toHaveBeenCalledWith({ files: [file], textAttachments: [] });
+    expect(attachments.restore).toHaveBeenCalledWith({
+      files: [file, newerFile],
+      textAttachments: [],
+    });
     handle.dispose();
   });
 
   it('subsequent sends during an active run produce steer rows in the store', () => {
-    const { queueButton, textarea } = makeDom();
     const store = new QueueStore();
-    setupSteerQueue({ store, queueButton, textarea });
+    setupSteerQueue({ store });
 
     // First send: run starts. No steer.
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
@@ -129,11 +110,10 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('worker-done clears steer rows but does not auto-dispatch (server drainer handles that)', () => {
-    const { queueButton, textarea } = makeDom();
     const api = makeApi();
+    api.sendNow = vi.fn();
     const store = new QueueStore({ api });
-    const sendChatMessage = vi.fn(async () => true);
-    setupSteerQueue({ store, queueButton, textarea, sendChatMessage, queueApi: api });
+    setupSteerQueue({ store, queueApi: api });
 
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'steer' } }));
@@ -142,7 +122,7 @@ describe('setupSteerQueue (server-backed)', () => {
     window.dispatchEvent(new Event('pi-worker-done'));
     expect(store.steerCount).toBe(0);
     // Frontend does NOT dispatch on its own — the server drainer is responsible.
-    expect(sendChatMessage).not.toHaveBeenCalled();
+    expect(api.sendNow).not.toHaveBeenCalled();
   });
 
   it('preserves a staged and in-flight guide when the previous worker run finishes', () => {
@@ -203,7 +183,7 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('sendNow waits for acknowledgement from the queue endpoint before removing the item', async () => {
-    const { queueButton, textarea } = makeDom();
+    const textarea = makeTextarea();
     const api = makeApi();
     const store = new QueueStore({ api });
     api.sendNow = vi
@@ -212,16 +192,12 @@ describe('setupSteerQueue (server-backed)', () => {
       .mockResolvedValueOnce({ ok: true });
     const handle = setupSteerQueue({
       store,
-      queueButton,
       textarea,
       queueApi: api,
     });
 
-    type(textarea, 'queue-me');
-    queueButton.click();
-    // Wait for enqueue Promise + store update.
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
+    textarea.value = 'queue-me';
+    await handle.enqueueFromComposer();
     expect(store.queuedCount).toBe(1);
 
     const id = store.items[0].id;
@@ -234,15 +210,13 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('edit DELETEs the row server-side and pops the text back into the textarea', async () => {
-    const { queueButton, textarea } = makeDom();
+    const textarea = makeTextarea();
     const api = makeApi();
     const store = new QueueStore({ api });
-    const handle = setupSteerQueue({ store, queueButton, textarea, queueApi: api });
+    const handle = setupSteerQueue({ store, textarea, queueApi: api });
 
-    type(textarea, 'draft');
-    queueButton.click();
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
+    textarea.value = 'draft';
+    await handle.enqueueFromComposer();
     expect(store.queuedCount).toBe(1);
 
     await handle.edit(store.items[0].id);
@@ -252,13 +226,10 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('clears a steer chip when a matching user entry appears on session reload', () => {
-    const { queueButton, textarea } = makeDom();
     const store = new QueueStore();
     const entries = [];
     setupSteerQueue({
       store,
-      queueButton,
-      textarea,
       getLiveEntries: () => entries,
     });
 
@@ -281,13 +252,10 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('clears an exactly matching steer when a known legacy prefix and suffix decorate it', () => {
-    const { queueButton, textarea } = makeDom();
     const store = new QueueStore();
     const entries = [];
     setupSteerQueue({
       store,
-      queueButton,
-      textarea,
       getLiveEntries: () => entries,
     });
 
@@ -306,11 +274,10 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('clears a steer chip that lands right after a compaction shrank the projection', () => {
-    const { queueButton, textarea } = makeDom();
     const store = new QueueStore();
     const user = (id, content) => ({ id, type: 'message', message: { role: 'user', content } });
     let entries = [user('old1', 'a'), user('old2', 'b'), user('old3', 'c')];
-    setupSteerQueue({ store, queueButton, textarea, getLiveEntries: () => entries });
+    setupSteerQueue({ store, getLiveEntries: () => entries });
 
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
     window.dispatchEvent(
@@ -328,13 +295,10 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('leaves the steer chip alone while no matching user entry has landed', () => {
-    const { queueButton, textarea } = makeDom();
     const store = new QueueStore();
     const entries = [];
     setupSteerQueue({
       store,
-      queueButton,
-      textarea,
       getLiveEntries: () => entries,
     });
 
@@ -348,10 +312,9 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('does not clear a steer when an unrelated user message is recorded', () => {
-    const { queueButton, textarea } = makeDom();
     const store = new QueueStore();
     const entries = [];
-    setupSteerQueue({ store, queueButton, textarea, getLiveEntries: () => entries });
+    setupSteerQueue({ store, getLiveEntries: () => entries });
     reconcile();
 
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
@@ -371,10 +334,9 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('clears one steer chip per landed user entry, oldest first', () => {
-    const { queueButton, textarea } = makeDom();
     const store = new QueueStore();
     const entries = [];
-    setupSteerQueue({ store, queueButton, textarea, getLiveEntries: () => entries });
+    setupSteerQueue({ store, getLiveEntries: () => entries });
     reconcile();
 
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
@@ -485,11 +447,10 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('editSteer pulls the text back into the composer and drops the chip', () => {
-    const { queueButton, textarea } = makeDom();
+    const textarea = makeTextarea();
     const store = new QueueStore();
     setupSteerQueue({
       store,
-      queueButton,
       textarea,
     });
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
@@ -503,14 +464,12 @@ describe('setupSteerQueue (server-backed)', () => {
     expect(store.actions.editSteer(id)).toBe(true);
     expect(store.steerCount).toBe(0);
     expect(textarea.value).toBe('rename the route');
-    expect(queueButton.disabled).toBe(false);
   });
 
   it('withdrawSteer drops the chip without touching the api', async () => {
-    const { queueButton, textarea } = makeDom();
     const api = makeApi();
     const store = new QueueStore({ api });
-    setupSteerQueue({ store, queueButton, textarea, queueApi: api });
+    setupSteerQueue({ store, queueApi: api });
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
     window.dispatchEvent(
       new CustomEvent('pi-chat-message-sent', {
@@ -525,10 +484,9 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('queueSteer re-files the steer as a server-side queued message', async () => {
-    const { queueButton, textarea } = makeDom();
     const api = makeApi();
     const store = new QueueStore({ api });
-    setupSteerQueue({ store, queueButton, textarea, queueApi: api });
+    setupSteerQueue({ store, queueApi: api });
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
     window.dispatchEvent(
       new CustomEvent('pi-chat-message-sent', {
@@ -546,10 +504,9 @@ describe('setupSteerQueue (server-backed)', () => {
   });
 
   it('resume PATCHes paused=false through the api', async () => {
-    const { queueButton, textarea } = makeDom();
     const api = makeApi();
     const store = new QueueStore({ api });
-    const handle = setupSteerQueue({ store, queueButton, textarea, queueApi: api });
+    const handle = setupSteerQueue({ store, queueApi: api });
     await store.setPaused(true);
     api.setPaused.mockClear();
     await handle.resume();

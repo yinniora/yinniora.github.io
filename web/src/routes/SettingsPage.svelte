@@ -33,7 +33,7 @@
     { id: 'plugins', labelKey: 'plugins.title' },
     { id: 'sessionsList', labelKey: 'settings.sessionsList' },
     { id: 'sessionTitles', labelKey: 'settings.sessionTitles' },
-    { id: 'sessionDisplay', labelKey: 'settings.sessionDisplay' },
+    { id: 'sessionDisplay', labelKey: 'settings.conversation' },
     { id: 'artifacts', labelKey: 'settings.artifacts' },
     { id: 'notifications', labelKey: 'settings.notifications' },
     { id: 'catGatekeeper', labelKey: 'settings.catGatekeeper' },

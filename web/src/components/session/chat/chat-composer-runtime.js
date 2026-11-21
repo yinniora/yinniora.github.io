@@ -25,6 +25,11 @@ import { setupChatSubmission } from './chat-submit.js';
 import { setupSteerQueue } from './steer-queue.js';
 import { QueueStore } from './queue-store.svelte.js';
 import { createChatSelectorLoaders } from './selector-loaders.js';
+import {
+  CHAT_RUNNING_SEND_MODE_EVENT,
+  CHAT_RUNNING_SEND_MODE_KEY,
+  readChatRunningSendMode,
+} from '../../../shared/settings-store.js';
 import { t } from '../../../shared/i18n.js';
 import { showToast } from '../../../shared/toast.js';
 
@@ -140,7 +145,6 @@ export function runChatComposer({
       attachmentList,
       sendButton,
       cancelButton,
-      queueButton,
       shell,
       expandButton,
     } = getComposerElements({ documentImpl: document, form });
@@ -193,12 +197,13 @@ export function runChatComposer({
     const autoResizeTextarea = textareaControls.autoResize;
     cleanups.push(textareaControls.dispose);
 
+    const storage = getComposerStorage({ windowImpl: window });
     const expansion = setupComposerExpansion({
       sessionId,
       shell,
       expandButton,
       textarea,
-      storage: getComposerStorage({ windowImpl: window }),
+      storage,
       onHeightChange: () => {
         if (shell?.classList.contains('expanded')) updateComposerHeightVar();
         else autoResizeTextarea();
@@ -210,11 +215,34 @@ export function runChatComposer({
       setChatStatus(text, cls);
     }
 
-    let workerRunning = false;
-    // A recent transcript write can briefly show status "running" without
-    // an active RPC worker. A first prompt in that state is still a new turn.
-    const isSteering = () =>
-      workerRunning || ['sending', 'queued', 'accepted'].includes(toolbar.statusText);
+    function updateRunningSendMode() {
+      toolbar.runningSendMode = readChatRunningSendMode(storage);
+    }
+    function onStorage({ key }) {
+      if (key === CHAT_RUNNING_SEND_MODE_KEY || key === null) updateRunningSendMode();
+    }
+    updateRunningSendMode();
+    window.addEventListener(CHAT_RUNNING_SEND_MODE_EVENT, updateRunningSendMode);
+    window.addEventListener('storage', onStorage);
+    cleanups.push(() => {
+      window.removeEventListener(CHAT_RUNNING_SEND_MODE_EVENT, updateRunningSendMode);
+      window.removeEventListener('storage', onStorage);
+    });
+
+    const steerQueue = setupSteerQueue({
+      windowImpl: window,
+      sessionId,
+      isRunning: () => toolbar.hasActiveRun,
+      store: queueStore,
+      textarea,
+      attachments,
+      notify: showToast,
+      autoResizeTextarea,
+      updateSendEnabled,
+      queueApi,
+      getLiveEntries,
+    });
+    cleanups.push(steerQueue.dispose, attachments.dispose);
 
     const submission = setupChatSubmission({
       windowImpl: window,
@@ -225,7 +253,9 @@ export function runChatComposer({
       attachments,
       chatApi: __piChatApi,
       sessionId,
-      isSteering,
+      isSteering: () => toolbar.hasActiveRun,
+      shouldQueue: () => toolbar.sendAction === 'queue',
+      enqueueFromComposer: steerQueue.enqueueFromComposer,
       setStatus,
       autoResizeTextarea,
       updateSendEnabled,
@@ -271,21 +301,7 @@ export function runChatComposer({
       sendChatMessage: submission.sendChatMessage,
     });
 
-    const steerQueue = setupSteerQueue({
-      windowImpl: window,
-      sessionId,
-      isRunning: isSteering,
-      store: queueStore,
-      queueButton,
-      textarea,
-      attachments,
-      notify: showToast,
-      autoResizeTextarea,
-      updateSendEnabled,
-      queueApi,
-      getLiveEntries,
-    });
-    cleanups.push(askQuestion.dispose, steerQueue.dispose, attachments.dispose);
+    cleanups.push(askQuestion.dispose);
 
     const workerStatus = setupWorkerStatusPolling({
       windowImpl: window,
@@ -308,7 +324,7 @@ export function runChatComposer({
         toolbar.compacting = value;
         updateSendEnabled();
       },
-      setWorkerRunning: (running) => (workerRunning = running),
+      setWorkerRunning: (running) => (toolbar.workerRunning = running),
       deliveryPending: () => sendButton.dataset.sending === '1',
       setExtensionUI: (ui) =>
         window.dispatchEvent(new CustomEvent('pi:extension-ui', { detail: { sessionId, ui } })),

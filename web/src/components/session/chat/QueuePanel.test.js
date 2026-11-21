@@ -50,15 +50,16 @@ describe('QueuePanel', () => {
 
     store.items[0].editable = false;
     await tick();
-    expect(card.queryAllByRole('button')).toHaveLength(0);
-    expect(card.getByText('Waiting for Pi to pick up')).toBeTruthy();
+    expect(document.querySelector('.pi-queue-panel')).toBeNull();
+    expect(store.items[0].id).toBe(id);
   });
 
   it('labels the two groups only when both are present', () => {
     const store = new QueueStore();
     store.items = [
       { id: 'q-1', kind: 'queued', position: 1, text: 'later', displayText: 'later' },
-      { id: 's-1', kind: 'steer', text: 'now', displayText: 'now' },
+      { id: 's-1', kind: 'steer', text: 'now', displayText: 'now', editable: true },
+      { id: 's-2', kind: 'steer', text: 'sent', displayText: 'sent', editable: false },
     ];
     render(QueuePanel, { props: { store } });
 

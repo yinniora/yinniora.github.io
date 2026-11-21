@@ -48,6 +48,14 @@
   const modelControlLabel = $derived(
     toolbar.canAdjustThinking && effortLabel ? `${modelTitle} · ${effortLabel}` : modelTitle,
   );
+  const sendLabel = $derived(t('composer.' + toolbar.sendAction));
+  const sendIcon = $derived(
+    toolbar.sendAction === 'queue'
+      ? ListPlus
+      : toolbar.sendAction === 'steer'
+        ? CornerDownRight
+        : ArrowUp,
+  );
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
@@ -113,23 +121,16 @@
           >{t('composer.stop')}</span
         ></button
       >
-      <div class="pi-chat-send-group" class:running={toolbar.isRunning}>
-        <button
-          type="button"
-          id="pi-chat-queue"
-          class="pi-chat-queue"
-          style:display={toolbar.isRunning ? '' : 'none'}
-          title={t('composer.queueHint')}
-          aria-label={t('composer.queue')}
-          disabled>{@html icon(ListPlus, { size: 18 })}<span>{t('composer.queue')}</span></button
-        >
-        <button type="submit" id="pi-chat-send" class="pi-chat-send" disabled>
-          {@html icon(toolbar.isRunning ? CornerDownRight : ArrowUp, {
-            size: 18,
-          })}
-          <span>{toolbar.isRunning ? t('composer.steer') : t('composer.send')}</span>
-        </button>
-      </div>
+      <button
+        type="submit"
+        id="pi-chat-send"
+        class="pi-chat-send"
+        title={toolbar.sendAction === 'queue' ? t('composer.queueHint') : sendLabel}
+        aria-label={sendLabel}
+        disabled
+      >
+        {@html icon(sendIcon, { size: 18 })}<span>{sendLabel}</span>
+      </button>
     </div>
   </div>
 {/snippet}

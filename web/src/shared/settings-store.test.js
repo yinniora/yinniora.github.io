@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  CHAT_RUNNING_SEND_MODE_EVENT,
+  CHAT_RUNNING_SEND_MODE_KEY,
   SERVER_SETTING_KEYS,
   configureSettingsSync,
   resetSettingsSyncForTests,
   writeSetting,
   writeSettings,
   hydrateSettings,
+  readChatRunningSendMode,
   applySettingsFromServer,
 } from './settings-store.js';
 
@@ -98,6 +101,25 @@ describe('hydrateSettings', () => {
     const result = await hydrateSettings({ fetchImpl, storage });
     expect(result).toBeNull();
     expect(storage._map.size).toBe(0);
+  });
+
+  it('notifies an already mounted composer once the saved running mode is cached', async () => {
+    const storage = fakeStorage();
+    const fetchImpl = async () => ({
+      ok: true,
+      json: async () => ({ settings: { [CHAT_RUNNING_SEND_MODE_KEY]: 'queue' } }),
+    });
+    const windowImpl = {
+      Event,
+      dispatchEvent: vi.fn(() => expect(readChatRunningSendMode(storage)).toBe('queue')),
+    };
+    const hydration = hydrateSettings({ fetchImpl, storage, windowImpl });
+    expect(readChatRunningSendMode(storage)).toBe('steer');
+    await hydration;
+    await hydrateSettings({ fetchImpl, storage, windowImpl });
+
+    expect(windowImpl.dispatchEvent).toHaveBeenCalledTimes(1);
+    expect(windowImpl.dispatchEvent.mock.calls[0][0].type).toBe(CHAT_RUNNING_SEND_MODE_EVENT);
   });
 
   it('no-ops without a fetch impl', async () => {

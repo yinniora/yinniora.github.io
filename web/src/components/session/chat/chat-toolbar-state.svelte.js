@@ -23,11 +23,18 @@ export class ChatToolbarState {
   selectedModel = $state(null);
   knownModelLabel = $state('');
   knownThinkingLevel = $state('');
+  workerRunning = $state(false);
+  runningSendMode = $state('steer');
 
   // Injected by the runtime once the context-usage controller exists.
   updateContextUsage = () => {};
 
   isRunning = $derived(isRunningStatus(this.statusText, this.statusClass));
+  // A recent transcript write can report running before there is an active RPC worker.
+  hasActiveRun = $derived(
+    this.workerRunning || ['sending', 'queued', 'accepted'].includes(this.statusText),
+  );
+  sendAction = $derived(this.hasActiveRun ? this.runningSendMode : 'send');
 
   setStatus = (text, cls = '') => {
     this.statusText = text;

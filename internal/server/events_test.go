@@ -83,6 +83,37 @@ func TestHandleEventsSendsStatusSnapshotForAllSubscribers(t *testing.T) {
 	}
 }
 
+func TestHandleEventsSendsCurrentRunningSendModeOnReconnect(t *testing.T) {
+	s := &Server{db: newSettingsTestDB(t)}
+	checkMode := func(mode string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/events?id=__all__", nil)
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		w := newSyncRecorder()
+		done := make(chan struct{})
+		go func() {
+			s.handleEvents(w, req.WithContext(ctx))
+			close(done)
+		}()
+
+		waitFor(t, w, "event: settings\ndata: {\"settings\":{\""+settingChatRunningSendMode+"\":\""+mode+"\"}}\n\n")
+		cancel()
+		<-done
+	}
+	checkMode("steer")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(
+		`{"settings":{"`+settingChatRunningSendMode+`":"queue"}}`,
+	))
+	w := httptest.NewRecorder()
+	s.handleSaveSettings(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("save running send mode: status %d, body %s", w.Code, w.Body.String())
+	}
+	checkMode("queue")
+}
+
 func TestHandleEventsForwardsNamedDeltaEvents(t *testing.T) {
 	s := &Server{
 		sessionsDir: t.TempDir(),

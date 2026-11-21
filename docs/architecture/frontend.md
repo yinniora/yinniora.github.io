@@ -100,10 +100,12 @@ every open group also has a collapse control at its end for long runs.
 
 Keyboard hints are hidden on touch screens (`hover: none` or `pointer: coarse`).
 Queued rows have visible Edit, Send now and Remove controls. Pending guidance
-shows Edit, Move to queue and Withdraw during its short send window. Send now
-dispatches the same draft immediately. A dispatched card waits for the matching
-saved user message or native handling acknowledgement. Canonical reloads also
-reconcile the card after reconnecting or returning to the page. Errors show a
+shows Edit, Move to queue and Withdraw during its five-second send window. Send
+now dispatches the same draft immediately. The card closes at dispatch. The
+client tracks delivery through the saved user message or native handling
+acknowledgement, including after reconnecting or returning to the page. Under
+Settings → Conversation, the running-send preference controls whether the
+composer's single send button steers or queues while Pi is running. Errors show a
 collapsed detail card. Consecutive rejections for the same model in a turn
 share one visible card. Pi web workers cancel automatic retry backoff for
 provider rejections, but let Pi retry transport drops such as a reset TLS
