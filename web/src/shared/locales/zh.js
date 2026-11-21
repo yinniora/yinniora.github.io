@@ -975,4 +975,13 @@ export default {
   'folders.exists': '已存在同名文件或文件夹。',
   'folders.invalidName': '请输入单个文件夹名称，不能包含斜杠或以点开头。',
   'folders.createFailed': '无法在此处创建文件夹。请选择 Mac 上可写入的文件夹。',
+  'composer.steerDraftStatus': '即将发送引导',
+  'composer.steerAwaitingPickup': '等待 Pi 接收',
+  'composer.steerEditAction': '编辑',
+  'composer.steerQueueAction': '转为排队',
+  'composer.steerWithdrawAction': '撤回',
+  'composer.steerSendAction': '立即发送',
+  'composer.steerEdit': '编辑引导并放回输入框',
+  'composer.steerToQueue': '转为排队，在当前轮结束后发送',
+  'composer.steerWithdraw': '撤回待发送的引导',
 };

@@ -111,6 +111,43 @@ func TestPromptCompactionUsesNativeContextThenArchiveFallback(t *testing.T) {
 	}
 }
 
+func TestHandledPromptReportsClientRequestWithoutSendingItToPi(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	w := &piRPCWorker{stdin: writer, pending: make(map[string]chan response)}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	const requestID = "fixture-request-123"
+	go func() {
+		result <- w.Prompt(ctx, chat.Request{Message: "/fixture", RequestID: requestID})
+	}()
+	scan := bufio.NewScanner(reader)
+	for _, command := range []struct{ name, data string }{
+		{"prompt", `{"disposition":"handled"}`},
+		{"get_state", `{}`},
+	} {
+		if !scan.Scan() {
+			t.Fatalf("expected %s: %v", command.name, scan.Err())
+		}
+		if strings.Contains(scan.Text(), requestID) {
+			t.Fatal("HTTP request ID was sent to Pi")
+		}
+		var sent struct{ ID, Type string }
+		if err := json.Unmarshal(scan.Bytes(), &sent); err != nil || sent.Type != command.name {
+			t.Fatalf("expected %s, got %s", command.name, scan.Text())
+		}
+		w.handleRPCLine(`{"type":"response","id":` + strconv.Quote(sent.ID) + `,"success":true,"data":` + command.data + `}`)
+	}
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	if got := w.Status().HandledPrompt; got != requestID {
+		t.Fatalf("handled prompt = %q, want %q", got, requestID)
+	}
+}
+
 func TestWorkerDirUsesSessionCWD(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/sess.jsonl"

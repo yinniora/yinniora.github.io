@@ -63,6 +63,15 @@ export function setupWorkerStatusPolling({
       setCompacting(Boolean(data.compacting));
       setWorkerRunning(data.state === 'running' && Boolean(data.model));
       const deliver = deliveryPending();
+      const handledPrompt = data.handledPrompt || '';
+      const promptWasHandled = !deliver && handledPrompt && handledPrompt !== lastHandledPrompt;
+      if (promptWasHandled) {
+        windowImpl.dispatchEvent(
+          new CustomEventImpl('pi-chat-prompt-handled', {
+            detail: { sessionId, requestId: handledPrompt },
+          }),
+        );
+      }
       if (!deliver && data.state === 'running') setStatus('running', 'running');
       if (!deliver && data.state === 'idle') {
         if (data.compactionFailed) setStatus(t('piSession.compactFailed'), 'error');
@@ -78,8 +87,7 @@ export function setupWorkerStatusPolling({
       if (
         !deliver &&
         (data.state === 'idle' || data.state === 'error') &&
-        (lastWorkerState === 'running' ||
-          (data.handledPrompt && lastHandledPrompt !== data.handledPrompt))
+        (lastWorkerState === 'running' || promptWasHandled)
       ) {
         try {
           windowImpl.dispatchEvent(new CustomEventImpl('pi-worker-done'));
@@ -87,8 +95,10 @@ export function setupWorkerStatusPolling({
           // Some tests/environments may not support constructing events.
         }
       }
-      lastHandledPrompt = data.handledPrompt || '';
-      if (data.state && !deliver) lastWorkerState = data.state;
+      if (!deliver) {
+        lastHandledPrompt = handledPrompt;
+        if (data.state) lastWorkerState = data.state;
+      }
       updateContextUsage();
     } catch {
       // A failed poll does not change the last known Pi run state.

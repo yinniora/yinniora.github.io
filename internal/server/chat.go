@@ -68,6 +68,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeChatRequestError(w, err)
 		return
 	}
+	chatReq.RequestID = requestID
 	if s.chatSender == nil {
 		writeJSONError(w, http.StatusServiceUnavailable, "chat unavailable")
 		return

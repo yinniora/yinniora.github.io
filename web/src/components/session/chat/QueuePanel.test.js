@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, render, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import QueuePanel from './QueuePanel.svelte';
 import { QueueStore } from './queue-store.svelte.js';
 
@@ -19,11 +20,13 @@ describe('QueuePanel', () => {
     expect(document.querySelector('.pi-queue-panel')).toBeNull();
   });
 
-  it('gives every steer row edit, move-to-queue and withdraw actions', async () => {
+  it('labels the edit, queue, withdraw and immediate send actions until dispatch', async () => {
     const store = steerStore();
     const queueSteer = vi.fn();
     const editSteer = vi.fn();
     const withdrawSteer = vi.fn();
+    const sendNow = vi.fn();
+    store.items[0].detail.sendNow = sendNow;
     store.actions.queueSteer = queueSteer;
     store.actions.editSteer = editSteer;
     store.actions.withdrawSteer = withdrawSteer;
@@ -33,15 +36,22 @@ describe('QueuePanel', () => {
     expect(row.querySelector('.pi-queue-item-text').textContent).toBe('polish the header');
     expect(row.querySelector('.pi-queue-item-icon svg')).not.toBeNull();
 
-    const [edit, toQueue, withdraw] = row.querySelectorAll('.pi-queue-item-action');
-    await edit.click();
-    await toQueue.click();
-    await withdraw.click();
+    const card = within(row);
+    card.getByRole('button', { name: 'Edit', exact: true }).click();
+    card.getByRole('button', { name: 'Move to queue', exact: true }).click();
+    card.getByRole('button', { name: 'Withdraw', exact: true }).click();
+    card.getByRole('button', { name: 'Send now', exact: true }).click();
 
     const id = store.items[0].id;
     expect(editSteer).toHaveBeenCalledWith(id);
     expect(queueSteer).toHaveBeenCalledWith(id);
     expect(withdrawSteer).toHaveBeenCalledWith(id);
+    expect(sendNow).toHaveBeenCalledTimes(1);
+
+    store.items[0].editable = false;
+    await tick();
+    expect(card.queryAllByRole('button')).toHaveLength(0);
+    expect(card.getByText('Waiting for Pi to pick up')).toBeTruthy();
   });
 
   it('labels the two groups only when both are present', () => {

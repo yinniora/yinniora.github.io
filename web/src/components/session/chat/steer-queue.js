@@ -1,11 +1,8 @@
 // Runtime glue between the chat-composer DOM and the reactive QueueStore that
 // drives <QueuePanel>. Pure JS so it can be unit-tested without Svelte.
 //
-//   - Steer: the message is sent immediately to /api/chat. Because the worker
-//     is already running, the server tags the prompt streamingBehavior:"steer"
-//     so pi folds it into the active turn. The steer row in the panel is
-//     browser-local and disappears either when the user dismisses it or when
-//     the run completes.
+//   - Steer: after the edit window, the worker folds the message into the active
+//     turn. The browser-local row disappears when Pi records the delivery.
 //   - Queue: enqueueing goes through POST /api/chat/queue; the autonomous
 //     server-side drainer dispatches items to the worker when it becomes idle
 //     (or via a kick from the queue API). The browser is just a viewer onto
@@ -15,8 +12,70 @@
 //
 import { t } from '../../../shared/i18n.js';
 
+const storedFileList =
+  /(?:^|\r?\n\r?\n)Files attached by the user \(stored on the computer\):(?:\r?\n- "(?:[^"\\\r\n]|\\.)*")+$/;
+const storedImageHints = /(?:\s*\[Image:[^\]\r\n]*\])+\s*$/;
+const leadingImageHints = /^(?:\[Image:[^\]\r\n]*\]\r?\n)+/;
+const expandedSkill =
+  /^<skill name="([^"]+)" location="[^"\r\n]+">\r?\n[\s\S]*\r?\n<\/skill>(?:\r?\n\r?\n|$)/;
+
+function isUserEntry(entry) {
+  return entry?.type === 'message' && entry.message?.role === 'user' && entry.id;
+}
+
+function userEntryIds(entries) {
+  return new Set(entries.filter(isUserEntry).map(({ id }) => id));
+}
+
+function userEntryTime(entry) {
+  const time = Date.parse(entry.timestamp);
+  if (Number.isFinite(time)) return time;
+  return Number.isFinite(entry.message.timestamp) ? entry.message.timestamp : 0;
+}
+
+function normalizeSteerText(text) {
+  return String(text ?? '')
+    .replace(/^\[steer\]\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function steeredUserMessage(content) {
+  const blocks = Array.isArray(content) ? content : [];
+  const raw =
+    typeof content === 'string'
+      ? content
+      : blocks.map((part) => (typeof part === 'string' ? part : part?.text || '')).join('');
+  const hasImageBlock = blocks.some((part) => part?.type === 'image');
+  const bare = raw
+    .replace(storedImageHints, '')
+    .replace(storedFileList, '')
+    .replace(leadingImageHints, '');
+  const skill = bare.match(expandedSkill);
+  return {
+    raw: normalizeSteerText(raw),
+    bare: normalizeSteerText(bare),
+    skillInput: skill && normalizeSteerText(`/skill:${skill[1]} ${bare.slice(skill[0].length)}`),
+    hasAttachments: raw !== bare || hasImageBlock,
+    hasImageBlock,
+  };
+}
+
+function matchesSteer(stored, item) {
+  const own = normalizeSteerText(item.text);
+  const hasAttachments = Boolean(item.hasAttachments || item.detail?.files?.length);
+  if (own && stored.raw === own && !hasAttachments && !stored.hasImageBlock) return true;
+  if (hasAttachments !== stored.hasAttachments) return false;
+  if (!own) return stored.bare === '' && hasAttachments;
+  const withLegacyCwdNote = own + ' (with cwd context)';
+  return [stored.raw, stored.bare, stored.skillInput].some(
+    (text) => text === own || text === withLegacyCwdNote,
+  );
+}
+
 export function setupSteerQueue({
   windowImpl = window,
+  sessionId = '',
   store,
   queueButton,
   textarea,
@@ -79,19 +138,20 @@ export function setupSteerQueue({
     if (!focused || focused.kind !== 'queued' || !queueApi || sending.has(id)) return;
     const steering = isRunning?.() ?? activeRun;
     const before = userEntryIds(getLiveEntries?.() || []);
+    const previousTime = latestUserEntryTime;
     sending.add(id);
     try {
       await queueApi.sendNow(focused.position);
       store.takeLocalById(id);
       if (steering && (isRunning?.() ?? activeRun)) {
         const consumed = (getLiveEntries?.() || []).some(
-          ({ id, message }) =>
-            id &&
-            !before.has(id) &&
-            message?.role === 'user' &&
-            matchesSteer(extractUserText(message.content).trim(), focused.text),
+          (entry) =>
+            isUserEntry(entry) &&
+            !before.has(entry.id) &&
+            (!userEntryTime(entry) || userEntryTime(entry) >= previousTime) &&
+            matchesSteer(steeredUserMessage(entry.message.content), focused),
         );
-        if (!consumed) store.pushSteer({ text: focused.text });
+        if (!consumed) store.pushSteer(focused);
       }
     } catch (error) {
       reportFailure(error);
@@ -212,68 +272,45 @@ export function setupSteerQueue({
 
   const onWorkerDone = () => {
     activeRun = false;
+    // A delayed completion can belong to the run that was active when a new
+    // guide was staged. Its card keeps waiting for its own delivery.
     store.clearSteers();
     // Server drainer dispatches the next queued message; SSE 'queue' event
     // will refresh the panel so the head item disappears from the list.
   };
 
-  // When pi folds a steer into the active turn it appends a user entry to the
-  // session JSONL. The live reload fires `pi-session-reload`; we then drop the
-  // matching steer chip so it disappears as soon as the steer is observably
-  // picked up, instead of waiting until the whole run completes.
-  function extractUserText(content) {
-    if (typeof content === 'string') return content;
-    if (Array.isArray(content)) {
-      return content.map((part) => (typeof part === 'string' ? part : part?.text || '')).join('');
-    }
-    return '';
+  function onPromptHandled({ detail }) {
+    if (!detail?.requestId || detail.sessionId !== sessionId) return;
+    const row = store.items.find(
+      (item) =>
+        item.kind === 'steer' && !item.editable && item.detail?.requestId === detail.requestId,
+    );
+    if (row) store.takeLocalById(row.id);
   }
 
-  function userEntryIds(entries) {
-    const ids = new Set();
-    for (const entry of entries) {
-      if (entry?.type === 'message' && entry.message?.role === 'user' && entry.id)
-        ids.add(entry.id);
-    }
-    return ids;
-  }
+  // Entry IDs survive compaction. The timestamp boundary prevents an older
+  // page of history from being mistaken for a newly delivered steer.
+  const initialEntries = (getLiveEntries?.() || []).filter(isUserEntry);
+  const seenUserIds = new Set(initialEntries.map(({ id }) => id));
+  let latestUserEntryTime = initialEntries.reduce(
+    (latest, entry) => Math.max(latest, userEntryTime(entry)),
+    0,
+  );
 
-  // Pi decorates the stored prompt in ways we do not control (a `[steer] `
-  // prefix, an appended `(with cwd context)`, an injected image note). Compare
-  // on normalised text so a decorated entry still clears its chip.
-  function normalizeSteerText(text) {
-    return String(text ?? '')
-      .replace(/^\[steer\]\s*/i, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  function matchesSteer(text, draft) {
-    const own = normalizeSteerText(draft);
-    if (!own) return false;
-    const stored = normalizeSteerText(text);
-    return stored === own || stored.startsWith(own + ' (') || stored.startsWith(own + ' [Image');
-  }
-
-  // Track user entries by id, not by count: a compaction can shrink the live
-  // projection, and a count delta then never sees the steer land.
-  let seenUserIds = getLiveEntries ? userEntryIds(getLiveEntries() || []) : new Set();
-
-  function reconcileSteersAgainstEntries() {
+  function reconcileSteersAgainstEntries(event) {
+    if (event.detail?.sessionId && event.detail.sessionId !== sessionId) return;
     if (!getLiveEntries) return;
-    const entries = getLiveEntries() || [];
-    const fresh = [];
-    for (const entry of entries) {
-      if (entry?.type !== 'message' || entry.message?.role !== 'user' || !entry.id) continue;
+    const previousTime = latestUserEntryTime;
+    for (const entry of getLiveEntries() || []) {
+      if (!isUserEntry(entry)) continue;
       if (seenUserIds.has(entry.id)) continue;
       seenUserIds.add(entry.id);
-      fresh.push(extractUserText(entry.message.content).trim());
-    }
-    if (store.steerCount === 0 || fresh.length === 0) return;
-
-    for (const text of fresh) {
+      const time = userEntryTime(entry);
+      latestUserEntryTime = Math.max(latestUserEntryTime, time);
+      if ((time && time < previousTime) || store.steerCount === 0) continue;
+      const stored = steeredUserMessage(entry.message.content);
       const chip = store.items.find(
-        (item) => item.kind === 'steer' && !item.editable && matchesSteer(text, item.text),
+        (item) => item.kind === 'steer' && !item.editable && matchesSteer(stored, item),
       );
       if (chip) store.takeLocalById(chip.id);
     }
@@ -292,7 +329,8 @@ export function setupSteerQueue({
   windowImpl.addEventListener('pi-chat-message-failed', onMessageFailed);
   windowImpl.addEventListener('pi-chat-message-delivering', onMessageDelivering);
   windowImpl.addEventListener('pi-worker-done', onWorkerDone);
-  windowImpl.addEventListener('pi-session-reload', reconcileSteersAgainstEntries);
+  windowImpl.addEventListener('pi-chat-prompt-handled', onPromptHandled);
+  windowImpl.addEventListener('pi-session-entries-reconciled', reconcileSteersAgainstEntries);
 
   updateQueueEnabled();
 
@@ -313,7 +351,11 @@ export function setupSteerQueue({
       windowImpl.removeEventListener('pi-chat-message-failed', onMessageFailed);
       windowImpl.removeEventListener('pi-chat-message-delivering', onMessageDelivering);
       windowImpl.removeEventListener('pi-worker-done', onWorkerDone);
-      windowImpl.removeEventListener('pi-session-reload', reconcileSteersAgainstEntries);
+      windowImpl.removeEventListener('pi-chat-prompt-handled', onPromptHandled);
+      windowImpl.removeEventListener(
+        'pi-session-entries-reconciled',
+        reconcileSteersAgainstEntries,
+      );
     },
   };
 }

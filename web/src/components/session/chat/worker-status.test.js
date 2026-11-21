@@ -79,6 +79,38 @@ describe('setupWorkerStatusPolling', () => {
     expect(events).toEqual(['pi-worker-done']);
   });
 
+  it('reports a handled request once when delivery finishes without ending the active run', async () => {
+    const windowImpl = new EventTarget();
+    const completed = vi.fn();
+    const handled = vi.fn();
+    windowImpl.addEventListener('pi-worker-done', completed);
+    windowImpl.addEventListener('pi-chat-prompt-handled', handled);
+    let delivering = true;
+    const controller = setupWorkerStatusPolling({
+      windowImpl,
+      sessionId: 'session',
+      chatApi: {
+        getWorkerStatus: async () => response({ state: 'running', handledPrompt: 'request-id' }),
+      },
+      deliveryPending: () => delivering,
+      setIntervalImpl: () => {},
+      CustomEventImpl: CustomEvent,
+    });
+    await tick();
+    expect(handled).not.toHaveBeenCalled();
+
+    delivering = false;
+    await controller.refresh();
+    await controller.refresh();
+    expect(handled).toHaveBeenCalledTimes(1);
+    expect(handled.mock.calls[0][0].detail).toEqual({
+      sessionId: 'session',
+      requestId: 'request-id',
+    });
+    expect(completed).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
   it('stops polling and ignores a late completion after leaving the session', async () => {
     const windowImpl = new EventTarget();
     const done = vi.fn();

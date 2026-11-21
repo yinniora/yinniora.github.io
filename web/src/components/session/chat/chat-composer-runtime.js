@@ -273,6 +273,7 @@ export function runChatComposer({
 
     const steerQueue = setupSteerQueue({
       windowImpl: window,
+      sessionId,
       isRunning: isSteering,
       store: queueStore,
       queueButton,

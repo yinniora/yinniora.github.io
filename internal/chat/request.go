@@ -28,6 +28,7 @@ type Request struct {
 	Images       []Image
 	Files        []File
 	OnlyWhenIdle bool
+	RequestID    string `json:"-"`
 }
 
 type File struct {

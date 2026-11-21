@@ -230,6 +230,9 @@ func TestChatResendWithLostAcknowledgementIsDeliveredOnce(t *testing.T) {
 	if got := len(fake.sendCh); got != 1 {
 		t.Fatalf("same request was delivered %d times", got)
 	}
+	if _, _, accepted := fake.sentInfo(); accepted.RequestID != "fixture-request-123" {
+		t.Fatalf("request ID was not passed to the worker: %q", accepted.RequestID)
+	}
 }
 
 func TestHandleChatRejectsBrokenSession(t *testing.T) {

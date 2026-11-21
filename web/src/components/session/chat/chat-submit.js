@@ -5,7 +5,7 @@ import { appendChatFiles } from './queue-api.js';
 // request in flight and retry over this window before reporting anything.
 const DEFAULT_SEND_RETRY_DEADLINE_MS = 30_000;
 const SEND_RETRY_DELAYS_MS = [800, 1600, 3200, 5000, 8000];
-const STEER_EDIT_WINDOW_MS = 2400;
+const STEER_EDIT_WINDOW_MS = 7000;
 
 // A missing response can happen before or after acceptance. Every retry uses
 // the same request ID so pi-web can acknowledge a delivery it already made.
@@ -73,6 +73,7 @@ export function setupChatSubmission({
   }
 
   async function sendChatMessage(message, files = attachments.files(), draft = null) {
+    if (delivery) return false;
     if (!message && files.length === 0) {
       setStatus('message or image required', 'error');
       return false;
@@ -82,30 +83,41 @@ export function setupChatSubmission({
     appendChatFiles(body, files);
     sendButton.dataset.sending = '1';
     sendButton.disabled = true;
-    const detail = { message, files, draft, steering: isSteering() };
     const requestId =
       windowImpl.crypto?.randomUUID?.() ||
       `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    const detail = { message, files, draft, requestId, steering: isSteering() };
     const scope = new AbortController();
     delivery = scope;
-    let cancelStage;
+    let resolveStage;
     const staged = new Promise((resolve) => {
-      cancelStage = resolve;
+      resolveStage = resolve;
     });
     let editable = detail.steering;
-    detail.cancelBeforeSend = () => {
+    function finishStage(send) {
       if (!editable || scope.signal.aborted) return false;
       editable = false;
-      cancelStage();
+      resolveStage(send);
       return true;
-    };
+    }
+    detail.cancelBeforeSend = () => finishStage(false);
+    detail.sendNow = () => finishStage(true);
     setStatus('sending', 'running');
     windowImpl.dispatchEvent(new CustomEventImpl('pi-chat-message-sent', { detail }));
     try {
       if (detail.steering) {
-        await Promise.race([sleepImpl(STEER_EDIT_WINDOW_MS), staged]);
-        if (!editable) return true;
+        const abortStage = () => resolveStage(false);
+        scope.signal.addEventListener('abort', abortStage, { once: true });
+        const send =
+          !scope.signal.aborted &&
+          (await Promise.race([sleepImpl(STEER_EDIT_WINDOW_MS).then(() => true), staged]));
+        scope.signal.removeEventListener('abort', abortStage);
         editable = false;
+        if (scope.signal.aborted) {
+          windowImpl.dispatchEvent(new CustomEventImpl('pi-chat-message-failed', { detail }));
+          return false;
+        }
+        if (!send) return true;
         windowImpl.dispatchEvent(new CustomEventImpl('pi-chat-message-delivering', { detail }));
       }
       const startedAt = Date.now();
@@ -158,6 +170,7 @@ export function setupChatSubmission({
 
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (delivery) return;
     const typed = textarea.value.trim();
     const filesToSend = attachments.files().slice();
     const textAttachmentsToSend = attachments.textAttachments().slice();

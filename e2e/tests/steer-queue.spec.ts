@@ -1,5 +1,4 @@
 import { test, expect, collapseScratchpad } from "../lib/test";
-import { suspendSteerChipCleanup } from "../lib/chat";
 import {
   buildSession,
   realWorkingDir,
@@ -69,16 +68,25 @@ test.describe("steer / queue (stubbed pi)", () => {
     });
 
     const steerMsg = `steer-${testInfo.workerIndex}-${Date.now()}`;
-    const release = await suspendSteerChipCleanup(page);
+    let release = () => {};
+    const holdDelivery = new Promise<void>((resolve) => { release = resolve; });
+    await page.route((url) => url.pathname === "/api/chat", async (route) => {
+      if (route.request().postData()?.includes(steerMsg)) await holdDelivery;
+      await route.continue();
+    });
     await textarea.fill(steerMsg);
     await page.locator("#pi-chat-send").click();
 
     // A steer row appears in the queue panel until the run picks it up.
     const steerRow = page.locator(".pi-queue-item.pi-queue-item--steer");
-    await expect(steerRow).toContainText(steerMsg);
-
-    // Release the refetch stall so the auto-clear can fire on the next event.
-    await release();
+    try {
+      await expect(steerRow).toContainText(steerMsg);
+      await steerRow.getByRole("button", { name: "Send now", exact: true }).click();
+      await expect(steerRow).toContainText("Waiting for Pi");
+      await expect(steerRow.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
+    } finally {
+      release();
+    }
 
     // The steered message is delivered and answered.
     await expect(page.locator("#messages")).toContainText(`Stub reply: ${steerMsg}`, {
@@ -89,7 +97,7 @@ test.describe("steer / queue (stubbed pi)", () => {
     await expect(steerRow).toHaveCount(0, { timeout: 20000 });
   });
 
-  test("steer chip clears as soon as pi echoes the user message (not waiting for run-end)", async ({
+  test("guidance with an uploaded file clears when the user message appears", async ({
     page,
     sessionsDir,
   }, testInfo) => {
@@ -100,39 +108,71 @@ test.describe("steer / queue (stubbed pi)", () => {
       slowMs: 30000,
     });
 
+    await page.locator("#pi-chat-files").setInputFiles({
+      name: "guide-notes.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Notes to include with the guidance."),
+    });
     const steerMsg = `fast-steer-${testInfo.workerIndex}-${Date.now()}`;
-    const release = await suspendSteerChipCleanup(page);
     await textarea.fill(steerMsg);
     await page.locator("#pi-chat-send").click();
 
     const steerRow = page.locator(".pi-queue-item.pi-queue-item--steer");
     await expect(steerRow).toContainText(steerMsg);
 
-    // Release the refetch stall — that's the event the cleanup hangs on.
-    await release();
-
     // The stub pi writes the steer's user turn to the JSONL immediately
     // (e2e/lib/stub-pi/pi#handlePrompt, the `activeSlowRun` branch); the file
     // watcher → SSE 'reload' → /api/session refetch → reconcile pipeline puts
     // the entry into the model. The steer chip must disappear within a few
     // seconds of that — well before the 30s slow run ends.
-    await expect(page.locator("#messages")).toContainText(steerMsg, { timeout: 10000 });
+    const echoed = page.locator("#messages .user-message").filter({ hasText: steerMsg });
+    await expect(echoed).toContainText("guide-notes.txt", { timeout: 15000 });
     await expect(steerRow).toHaveCount(0, { timeout: 5000 });
+    await expect(page.locator("#pi-chat-cancel")).toBeVisible();
+  });
+
+  test("pending guidance shows labelled actions and Edit restores the draft and attachment", async ({
+    page,
+    sessionsDir,
+  }, testInfo) => {
+    const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "steer-edit", {
+      slowMs: 30000,
+    });
+    await page.locator("#pi-chat-files").setInputFiles({
+      name: "edit-notes.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Notes to restore when editing the guidance."),
+    });
+    await textarea.fill("Revise the plan");
+    await page.locator("#pi-chat-send").click();
+
+    const steerRow = page.locator(".pi-queue-item--steer");
+    const edit = steerRow.getByRole("button", { name: "Edit", exact: true });
+    for (const label of ["Edit", "Move to queue", "Withdraw", "Send now"]) {
+      const action = steerRow.getByRole("button", { name: label, exact: true });
+      await expect(action).toHaveText(label);
+      await expect(action).toBeInViewport();
+    }
+
+    await textarea.fill("Keep this new draft");
+    if (testInfo.project.use.hasTouch) await edit.tap();
+    else await edit.click();
+    await expect(steerRow).toHaveCount(0);
+    await expect(textarea).toHaveValue("Revise the plan\n\nKeep this new draft");
+    await expect(page.locator("#pi-chat-attachments")).toContainText("edit-notes.txt");
+    await expect(page.locator("#messages .user-message").filter({ hasText: "Revise the plan" })).toHaveCount(0);
   });
 
   test("user can dismiss a pending steer row before pickup", async ({
     page,
     sessionsDir,
   }, testInfo) => {
-    // Long slow-hold so activeRun stays true through the click — see the
-    // matching note on "steering shows a panel row". Plus a refetch stall so
-    // the auto-clear doesn't beat us to the X button.
+    // Keep the worker running while the guidance is still editable.
     const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "steer-cancel", {
       slowMs: 30000,
     });
 
     const steerMsg = `dismiss-${testInfo.workerIndex}-${Date.now()}`;
-    const release = await suspendSteerChipCleanup(page);
     await textarea.fill(steerMsg);
     await page.locator("#pi-chat-send").click();
 
@@ -140,11 +180,10 @@ test.describe("steer / queue (stubbed pi)", () => {
     await expect(steerRow).toContainText(steerMsg);
 
     const delivery = page
-      .waitForRequest((request) => request.url().includes("/api/chat?") && !!request.postData()?.includes(steerMsg), { timeout: 2800 })
+      .waitForRequest((request) => request.url().includes("/api/chat?") && !!request.postData()?.includes(steerMsg), { timeout: 8000 })
       .then(() => true, () => false);
-    await steerRow.getByRole("button", { name: "Withdraw pending guidance" }).click();
+    await steerRow.getByRole("button", { name: "Withdraw", exact: true }).click();
     await expect(steerRow).toHaveCount(0);
-    await release();
     expect(await delivery).toBe(false);
     await expect(page.locator("#messages")).not.toContainText(steerMsg);
   });
@@ -164,7 +203,7 @@ test.describe("steer / queue (stubbed pi)", () => {
     await textarea.fill("Keep this file");
     await page.locator("#pi-chat-send").click();
     const steer = page.locator(".pi-queue-item--steer");
-    await steer.getByRole("button", { name: "Send it after the current turn instead" }).click();
+    await steer.getByRole("button", { name: "Move to queue", exact: true }).click();
     await expect(steer).toHaveCount(0);
     const queued = page.locator(".pi-queue-item").filter({ hasText: "Keep this file" });
     await expect(queued).toBeVisible();
@@ -300,26 +339,18 @@ test.describe("steer / queue (stubbed pi)", () => {
     });
     const items = await queueThree(page, textarea, testInfo, "enter");
 
-    // The stub echoes the steered message into the JSONL immediately, and the
-    // chip auto-clears on the resulting reload (reconcileSteersAgainstEntries)
-    // — often faster than the assertions below can run. Stall the cleanup so
-    // the steer row is reliably observable, like the other steer-row tests.
-    const release = await suspendSteerChipCleanup(page);
-
     // Skip ahead to the third item.
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
 
-    // items[2] becomes an in-flight steer (we're still mid-run), so it leaves
-    // the queued list and shows up as a steer row instead.
+    // The selected item joins the active turn as a user message.
+    await expect(page.locator("#messages .user-message").filter({ hasText: items[2] })).toHaveCount(1);
     await expect(page.locator(".pi-queue-item:not(.pi-queue-item--steer)")).toHaveCount(2);
-    await expect(page.locator(".pi-queue-item-text", { hasText: items[2] })).toHaveCount(1);
+    await expect(page.locator(".pi-queue-item-text", { hasText: items[2] })).toHaveCount(0);
     // The first two are still queued (in order).
     const queuedTexts = await page.locator(".pi-queue-item:not(.pi-queue-item--steer) .pi-queue-item-text").allTextContents();
     expect(queuedTexts).toEqual([items[0], items[1]]);
-
-    await release();
 
     // The sent message also reaches the conversation as a "Stub reply".
     await expect(page.locator("#messages")).toContainText(`Stub reply: ${items[2]}`, {

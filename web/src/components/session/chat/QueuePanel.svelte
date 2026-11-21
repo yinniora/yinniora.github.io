@@ -42,7 +42,7 @@
   );
   const countLabel = $derived(formatCount(queuedCount, steerCount));
   const activeDescendantId = $derived(
-    store.focusIndex >= 0 && store.focusIndex < store.items.length
+    store.items[store.focusIndex]?.kind === 'queued'
       ? `pi-queue-item-${store.items[store.focusIndex].id}`
       : '',
   );
@@ -72,9 +72,8 @@
   }
 
   function onDelete(item) {
-    if (item.kind === 'steer' && item.editable) store.actions.withdrawSteer?.(item.id);
-    else if (item.kind === 'steer') store.takeLocalById(item.id);
-    else store.removeById(item.id);
+    if (item.kind === 'queued') store.removeById(item.id);
+    else if (item.editable) store.actions.withdrawSteer?.(item.id);
   }
 
   function onEdit(item) {
@@ -155,7 +154,7 @@
       return;
     }
     const focused = store.focusedItem();
-    if (!focused) return;
+    if (!focused || (focused.kind === 'steer' && !focused.editable)) return;
     if (key === 'Backspace' || key === 'Delete') {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -166,6 +165,7 @@
       event.preventDefault();
       event.stopImmediatePropagation();
       if (focused.kind === 'queued') store.actions.sendNow?.(focused.id);
+      else focused.detail?.sendNow?.();
       return;
     }
     if (key === 'e' || key === 'E') {
@@ -180,12 +180,21 @@
   // focus (sets focusIndex to -1) we don't snap back to 0 — the user
   // explicitly left the panel.
   let lastItemCount = 0;
+  let steerList = $state(null);
+  let lastEditableSteer;
   $effect(() => {
     const count = store.items.length;
     if (count > 0 && lastItemCount === 0 && store.focusIndex < 0) {
       store.setFocusIndex(0);
     }
     lastItemCount = count;
+  });
+  $effect(() => {
+    const latest = steers.findLast((item) => item.editable)?.id;
+    if (latest && latest !== lastEditableSteer && steerList) {
+      steerList.scrollTop = steerList.scrollHeight;
+    }
+    lastEditableSteer = latest;
   });
 
   onMount(() => {
@@ -319,71 +328,63 @@
         {/if}
         <ul
           class="pi-queue-list pi-queue-steer-list"
-          role="listbox"
-          tabindex="-1"
           aria-label={t('composer.queueSteeringCount')}
-          aria-activedescendant={activeDescendantId || undefined}
+          bind:this={steerList}
         >
           {#each steers as item (item.id)}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
             <li
               id={`pi-queue-item-${item.id}`}
               class="pi-queue-item pi-queue-item--steer"
               class:pi-queue-item--focused={store.focusIndex === indexById.get(item.id)}
-              role="option"
-              aria-selected={store.focusIndex === indexById.get(item.id)}
-              onclick={() => onItemClick(item)}
-              onmousedown={(event) => event.preventDefault()}
             >
               <span class="pi-queue-item-icon" aria-hidden="true">
-                {@html icon(item.detail?.files?.length ? Paperclip : CornerDownRight, { size: 16 })}
+                {@html icon(
+                  item.hasAttachments || item.detail?.files?.length ? Paperclip : CornerDownRight,
+                  { size: 16 },
+                )}
               </span>
-              <span class="pi-queue-item-text">{chipText(item)}</span>
-              <span class="pi-queue-item-actions">
-                {#if item.editable}
+              <div class="pi-steer-copy">
+                <span class="pi-queue-item-text">{chipText(item)}</span>
+                <span class="pi-steer-status">
+                  {t(item.editable ? 'composer.steerDraftStatus' : 'composer.steerAwaitingPickup')}
+                </span>
+              </div>
+              {#if item.editable}
+                <button
+                  type="button"
+                  class="pi-queue-item-action pi-steer-send"
+                  onclick={() => item.detail?.sendNow?.()}
+                >
+                  {@html icon(Send, { size: 15 })}<span>{t('composer.steerSendAction')}</span>
+                </button>
+                <div class="pi-queue-item-actions pi-steer-actions">
                   <button
                     type="button"
                     class="pi-queue-item-action"
-                    aria-label={t('composer.steerEdit')}
                     title={t('composer.steerEdit')}
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      onEdit(item);
-                    }}>{@html icon(Pencil, { size: 16 })}</button
+                    onclick={() => onEdit(item)}
                   >
+                    {@html icon(Pencil, { size: 15 })}<span>{t('composer.steerEditAction')}</span>
+                  </button>
                   <button
                     type="button"
                     class="pi-queue-item-action"
-                    aria-label={t('composer.steerToQueue')}
                     title={t('composer.steerToQueue')}
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      store.actions.queueSteer?.(item.id);
-                    }}>{@html icon(ListPlus, { size: 16 })}</button
+                    onclick={() => store.actions.queueSteer?.(item.id)}
                   >
+                    {@html icon(ListPlus, { size: 15 })}<span>{t('composer.steerQueueAction')}</span
+                    >
+                  </button>
                   <button
                     type="button"
                     class="pi-queue-item-action pi-queue-item-action--withdraw"
-                    aria-label={t('composer.steerWithdraw')}
                     title={t('composer.steerWithdraw')}
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      onDelete(item);
-                    }}>{@html icon(X, { size: 16 })}</button
+                    onclick={() => onDelete(item)}
                   >
-                {:else}
-                  <button
-                    type="button"
-                    class="pi-queue-item-action"
-                    aria-label={t('common.close')}
-                    title={t('common.close')}
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      onDelete(item);
-                    }}>{@html icon(X, { size: 16 })}</button
-                  >
-                {/if}
-              </span>
+                    {@html icon(X, { size: 15 })}<span>{t('composer.steerWithdrawAction')}</span>
+                  </button>
+                </div>
+              {/if}
             </li>
           {/each}
         </ul>

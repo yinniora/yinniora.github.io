@@ -146,6 +146,7 @@ export class QueueStore {
       displayText: String(item.displayText ?? item.text ?? ''),
       editable: !!item.detail?.cancelBeforeSend,
       detail: item.detail,
+      hasAttachments: !!(item.hasAttachments || item.detail?.files?.length),
     });
     this.#clampFocus();
     return id;
@@ -153,7 +154,9 @@ export class QueueStore {
 
   clearSteers = () => {
     if (this.steerCount === 0) return;
-    this.items = this.items.filter((item) => item.kind !== 'steer' || item.editable);
+    this.items = this.items.filter(
+      (item) => item.kind !== 'steer' || item.detail?.cancelBeforeSend,
+    );
     this.#clampFocus();
   };
 

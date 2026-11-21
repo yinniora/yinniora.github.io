@@ -76,6 +76,69 @@ describe('chat submit', () => {
     expect(updateSendEnabled).toHaveBeenCalled();
   });
 
+  it('can send staged guidance immediately without clearing a newer draft or sending twice', async () => {
+    const { dom, form, textarea, sendButton, cancelButton } = setupDom();
+    const sendChat = vi.fn(async () => new Response('{"status":"queued"}', { status: 202 }));
+    const attachments = createAttachments({ message: 'newer draft' });
+    const wait = vi.fn(() => new Promise(() => {}));
+    let guide;
+    dom.window.addEventListener('pi-chat-message-sent', (event) => (guide = event.detail));
+    const submission = setupChatSubmission({
+      windowImpl: dom.window,
+      form,
+      textarea,
+      sendButton,
+      cancelButton,
+      attachments,
+      chatApi: { sendChat },
+      sessionId: 's1',
+      isSteering: () => true,
+      FormDataImpl: dom.window.FormData,
+      CustomEventImpl: dom.window.CustomEvent,
+      sleepImpl: wait,
+    });
+
+    const pending = submission.sendChatMessage('guide');
+    expect(wait).toHaveBeenCalledWith(7000);
+    expect(sendChat).not.toHaveBeenCalled();
+    textarea.value = 'newer draft';
+    form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    expect(textarea.value).toBe('newer draft');
+    expect(guide.sendNow()).toBe(true);
+    expect(guide.cancelBeforeSend()).toBe(false);
+    expect(guide.sendNow()).toBe(false);
+    expect(await pending).toBe(true);
+    expect(sendChat).toHaveBeenCalledTimes(1);
+    expect(sendChat.mock.calls[0][2].requestId).toBe(guide.requestId);
+    expect(sendChat.mock.calls[0][1].get('message')).toBe('guide');
+  });
+
+  it('withdraws staged guidance without sending a request', async () => {
+    const { dom, form, textarea, sendButton, cancelButton } = setupDom();
+    const sendChat = vi.fn();
+    let guide;
+    dom.window.addEventListener('pi-chat-message-sent', (event) => (guide = event.detail));
+    const submission = setupChatSubmission({
+      windowImpl: dom.window,
+      form,
+      textarea,
+      sendButton,
+      cancelButton,
+      attachments: createAttachments(),
+      chatApi: { sendChat },
+      isSteering: () => true,
+      FormDataImpl: dom.window.FormData,
+      CustomEventImpl: dom.window.CustomEvent,
+      sleepImpl: () => new Promise(() => {}),
+    });
+
+    const pending = submission.sendChatMessage('guide');
+    expect(guide.cancelBeforeSend()).toBe(true);
+    expect(await pending).toBe(true);
+    expect(sendChat).not.toHaveBeenCalled();
+    expect(sendButton.disabled).toBe(false);
+  });
+
   it('restores the draft and attachments when send fails', async () => {
     const { dom, form, textarea, sendButton, cancelButton } = setupDom();
     textarea.value = ' retry ';

@@ -272,7 +272,10 @@ func (w *piRPCWorker) Prompt(ctx context.Context, chat chat.Request) error {
 		if !streaming && w.agentRevision == revision {
 			w.status.State = workers.WorkerStateIdle
 		}
-		w.handledPrompt = strconv.FormatInt(w.startedAt.UnixNano(), 10) + "-" + id
+		w.handledPrompt = chat.RequestID
+		if w.handledPrompt == "" {
+			w.handledPrompt = strconv.FormatInt(w.startedAt.UnixNano(), 10) + "-" + id
+		}
 		w.mu.Unlock()
 	}
 	return nil

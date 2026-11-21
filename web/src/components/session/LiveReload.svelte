@@ -301,6 +301,9 @@
         onReloaded: (data) => {
           persistedAssistantTimestamps = assistantTimestamps(data.entries);
           reconcileEntries(data.entries);
+          windowImpl.dispatchEvent(
+            new CustomEvent('pi-session-entries-reconciled', { detail: { sessionId } }),
+          );
           if (thinkingPreviews.length) {
             const uncommitted = thinkingPreviews.filter(
               (item) => !persistedAssistantTimestamps.has(item.messageTimestamp),

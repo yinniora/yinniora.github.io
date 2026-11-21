@@ -43,6 +43,10 @@ function type(textarea, value) {
   textarea.dispatchEvent(new Event('input'));
 }
 
+function reconcile(sessionId) {
+  window.dispatchEvent(new CustomEvent('pi-session-entries-reconciled', { detail: { sessionId } }));
+}
+
 beforeEach(() => {
   document.body.innerHTML = '';
 });
@@ -141,6 +145,63 @@ describe('setupSteerQueue (server-backed)', () => {
     expect(sendChatMessage).not.toHaveBeenCalled();
   });
 
+  it('preserves a staged and in-flight guide when the previous worker run finishes', () => {
+    const store = new QueueStore();
+    const entries = [];
+    const handle = setupSteerQueue({ store, getLiveEntries: () => entries });
+    const detail = {
+      message: '上一轮结束后仍应发出',
+      steering: true,
+      cancelBeforeSend: () => true,
+    };
+    window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail }));
+    window.dispatchEvent(new Event('pi-worker-done'));
+    expect(store.items[0].editable).toBe(true);
+
+    window.dispatchEvent(new CustomEvent('pi-chat-message-delivering', { detail }));
+    window.dispatchEvent(new Event('pi-worker-done'));
+    window.dispatchEvent(new CustomEvent('pi-chat-message-accepted', { detail }));
+    window.dispatchEvent(new Event('pi-worker-done'));
+    expect(store.steerCount).toBe(1);
+    expect(store.items[0].editable).toBe(false);
+
+    entries.push({
+      id: 'echo',
+      type: 'message',
+      message: { role: 'user', content: detail.message },
+    });
+    reconcile();
+    expect(store.steerCount).toBe(0);
+    handle.dispose();
+  });
+
+  it('clears only the delivered guide whose request Pi handled without recording a message', () => {
+    const store = new QueueStore();
+    const handle = setupSteerQueue({ sessionId: 'current', store });
+    const first = {
+      requestId: 'first-id',
+      message: '/command',
+      steering: true,
+      cancelBeforeSend: () => true,
+    };
+    const second = { ...first, requestId: 'second-id' };
+    for (const detail of [first, second]) {
+      window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail }));
+    }
+    window.dispatchEvent(new CustomEvent('pi-chat-message-delivering', { detail: first }));
+    const handled = (sessionId, requestId) =>
+      window.dispatchEvent(
+        new CustomEvent('pi-chat-prompt-handled', { detail: { sessionId, requestId } }),
+      );
+    handled('other', first.requestId);
+    handled('current', second.requestId);
+    expect(store.steerCount).toBe(2);
+
+    handled('current', first.requestId);
+    expect(store.items.map((item) => item.detail?.requestId)).toEqual(['second-id']);
+    handle.dispose();
+  });
+
   it('sendNow waits for acknowledgement from the queue endpoint before removing the item', async () => {
     const { queueButton, textarea } = makeDom();
     const api = makeApi();
@@ -214,12 +275,12 @@ describe('setupSteerQueue (server-backed)', () => {
       type: 'message',
       message: { role: 'user', content: 'sorry, continue' },
     });
-    window.dispatchEvent(new Event('pi-session-reload'));
+    reconcile();
 
     expect(store.steerCount).toBe(0);
   });
 
-  it('FIFO-clears a steer chip when a new user entry lands but its text does not match', () => {
+  it('clears an exactly matching steer when a known legacy prefix and suffix decorate it', () => {
     const { queueButton, textarea } = makeDom();
     const store = new QueueStore();
     const entries = [];
@@ -230,22 +291,16 @@ describe('setupSteerQueue (server-backed)', () => {
       getLiveEntries: () => entries,
     });
 
-    // Seed initial user-count baseline (so the listener doesn't fire on the
-    // first reload thinking historical messages are fresh).
-    window.dispatchEvent(new Event('pi-session-reload'));
-
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'steer' } }));
     expect(store.steerCount).toBe(1);
 
-    // pi has folded the steer in but its stored content is decorated, so the
-    // exact-text matcher misses. The FIFO fallback still pops the head steer.
     entries.push({
       id: 'u1',
       type: 'message',
       message: { role: 'user', content: '[steer] steer (with cwd context)' },
     });
-    window.dispatchEvent(new Event('pi-session-reload'));
+    reconcile();
 
     expect(store.steerCount).toBe(0);
   });
@@ -259,14 +314,16 @@ describe('setupSteerQueue (server-backed)', () => {
 
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
     window.dispatchEvent(
-      new CustomEvent('pi-chat-message-sent', { detail: { message: 'polish' } }),
+      new CustomEvent('pi-chat-message-sent', {
+        detail: { message: 'polish', files: [new File(['fixture'], 'photo.png')] },
+      }),
     );
     expect(store.steerCount).toBe(1);
 
     // Compaction leaves fewer user entries than before, plus the steer with
     // an image note appended.
     entries = [user('new', 'polish\n\n[Image: 1206x2622]')];
-    window.dispatchEvent(new Event('pi-session-reload'));
+    reconcile();
     expect(store.steerCount).toBe(0);
   });
 
@@ -286,7 +343,7 @@ describe('setupSteerQueue (server-backed)', () => {
     expect(store.steerCount).toBe(1);
 
     // Reload fires but the steer hasn't been picked up yet (no matching user entry).
-    window.dispatchEvent(new Event('pi-session-reload'));
+    reconcile();
     expect(store.steerCount).toBe(1);
   });
 
@@ -295,7 +352,7 @@ describe('setupSteerQueue (server-backed)', () => {
     const store = new QueueStore();
     const entries = [];
     setupSteerQueue({ store, queueButton, textarea, getLiveEntries: () => entries });
-    window.dispatchEvent(new Event('pi-session-reload'));
+    reconcile();
 
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
     window.dispatchEvent(
@@ -308,7 +365,7 @@ describe('setupSteerQueue (server-backed)', () => {
       type: 'message',
       message: { role: 'user', content: 'Go ahead with the second option instead.' },
     });
-    window.dispatchEvent(new Event('pi-session-reload'));
+    reconcile();
 
     expect(store.steerCount).toBe(1);
   });
@@ -318,7 +375,7 @@ describe('setupSteerQueue (server-backed)', () => {
     const store = new QueueStore();
     const entries = [];
     setupSteerQueue({ store, queueButton, textarea, getLiveEntries: () => entries });
-    window.dispatchEvent(new Event('pi-session-reload'));
+    reconcile();
 
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
     for (const message of ['one', 'two', 'three']) {
@@ -327,9 +384,104 @@ describe('setupSteerQueue (server-backed)', () => {
     expect(store.steerCount).toBe(3);
 
     entries.push({ id: 'u1', type: 'message', message: { role: 'user', content: 'one' } });
-    window.dispatchEvent(new Event('pi-session-reload'));
+    reconcile();
     expect(store.steerCount).toBe(2);
     expect(store.items.filter((item) => item.kind === 'steer')[0].text).toBe('two');
+  });
+
+  it('clears only the scheduled copy of identical steers and ignores reloaded history', () => {
+    const store = new QueueStore();
+    const user = (id, timestamp) => ({
+      id,
+      type: 'message',
+      message: { role: 'user', content: '同一条引导', timestamp },
+    });
+    const entries = [user('initial', 4_000)];
+    const handle = setupSteerQueue({
+      store,
+      sessionId: 'this-session',
+      getLiveEntries: () => entries,
+    });
+    const first = { message: '同一条引导', steering: true };
+    const second = { ...first };
+    for (const detail of [first, second]) {
+      window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail }));
+    }
+    const [firstID, secondID] = store.items.map(({ id }) => id);
+    entries.unshift(user('older-page', 2_000));
+    reconcile('this-session');
+    expect(store.items.map(({ id }) => id)).toEqual([firstID, secondID]);
+
+    entries.push(user('new-first', 5_000));
+    reconcile('unrelated-session');
+    expect(store.items.map(({ id }) => id)).toEqual([firstID, secondID]);
+    reconcile('this-session');
+    reconcile('this-session');
+    expect(store.items.map(({ id }) => id)).toEqual([secondID]);
+
+    entries.push(user('new-second', 5_000));
+    reconcile('this-session');
+    expect(store.steerCount).toBe(0);
+    handle.dispose();
+  });
+
+  it.each([
+    {
+      name: 'a file-only steer',
+      draft: '',
+      files: [new File(['fixture'], 'report.txt')],
+      stored:
+        'Files attached by the user (stored on the computer):\n- "/tmp/attachment-1/1-report.txt"',
+    },
+    {
+      name: 'a file with text',
+      draft: '看看这个文件',
+      files: [new File(['fixture'], 'report.txt')],
+      stored:
+        '看看这个文件\n\nFiles attached by the user (stored on the computer):\n- "/tmp/attachment-1/1-report.txt"',
+    },
+    {
+      name: 'an attached image and its leading note',
+      draft: '看看这张图',
+      files: [new File(['fixture'], 'photo.png', { type: 'image/png' })],
+      stored: [
+        { type: 'text', text: '[Image: original 1800x2000, displayed at 880x968.]\n\n看看这张图' },
+        { type: 'image', mimeType: 'image/png' },
+      ],
+    },
+    {
+      name: 'an image-only steer',
+      draft: '',
+      files: [new File(['fixture'], 'photo.png', { type: 'image/png' })],
+      stored: [
+        { type: 'text', text: '' },
+        { type: 'image', mimeType: 'image/png' },
+      ],
+    },
+    {
+      name: 'Pi’s expanded skill input',
+      draft: '/skill:read-file details',
+      files: [],
+      stored:
+        '<skill name="read-file" location="/tmp/SKILL.md">\nReferences are relative to /tmp.\n\nRead a file.\n</skill>\n\ndetails',
+    },
+  ])('clears $name only after its matching user entry is recorded', ({ draft, files, stored }) => {
+    const store = new QueueStore();
+    const entries = [];
+    const handle = setupSteerQueue({ store, getLiveEntries: () => entries });
+    const detail = { message: draft, files, steering: true, cancelBeforeSend: () => true };
+    window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail }));
+    entries.push({ id: 'old', type: 'message', message: { role: 'user', content: stored } });
+    reconcile();
+    expect(store.steerCount).toBe(1);
+
+    window.dispatchEvent(new CustomEvent('pi-chat-message-delivering', { detail }));
+    reconcile();
+    expect(store.steerCount).toBe(1);
+    entries.push({ id: 'echo', type: 'message', message: { role: 'user', content: stored } });
+    reconcile();
+    expect(store.steerCount).toBe(0);
+    handle.dispose();
   });
 
   it('editSteer pulls the text back into the composer and drops the chip', () => {
