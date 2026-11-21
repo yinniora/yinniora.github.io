@@ -31,6 +31,7 @@
     live = false,
     chatAvailable = false,
     retryContent = null,
+    canResumeNetworkFailure = false,
     emptyReply = false,
     latestTurn = false,
     skipActivity = false,
@@ -78,14 +79,13 @@
   }
   // Resume a stopped task where it left off, with whichever model and effort
   // are selected now.
-  const continueTask = () =>
+  const submitFollowUp = (detail) =>
     document
       .getElementById('pi-chat-composer')
-      ?.dispatchEvent(new CustomEvent('pi:retry-prompt', { detail: t('activity.continuePrompt') }));
-  const retry = () =>
-    document
-      .getElementById('pi-chat-composer')
-      ?.dispatchEvent(new CustomEvent('pi:retry-prompt', { detail: retryContent }));
+      ?.dispatchEvent(new CustomEvent('pi:retry-prompt', { detail }));
+  const continueTask = () => submitFollowUp(t('activity.continuePrompt'));
+  const resumeAfterNetworkFailure = () => submitFollowUp(t('activity.resumeAfterNetworkFailure'));
+  const retry = () => submitFollowUp(retryContent);
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
@@ -201,8 +201,12 @@
         <ReplyError
           error={msg.errorMessage || t('activity.failed')}
           model={msg.model || msg.provider}
+          onContinue={chatAvailable && latestTurn && canResumeNetworkFailure
+            ? resumeAfterNetworkFailure
+            : null}
           onChooseModel={chatAvailable ? chooseModel : null}
           onRetry={chatAvailable && retryContent ? retry : null}
+          retryLabelKey={canResumeNetworkFailure ? 'activity.resendMessage' : 'common.retry'}
         />
       {:else}
         <div class="error-text">Error: {msg.errorMessage || 'Unknown error'}</div>

@@ -9,6 +9,7 @@ import (
 
 	"pi-web/internal/chat"
 	"pi-web/internal/chatqueue"
+	"pi-web/internal/rpc"
 	"pi-web/internal/workers"
 )
 
@@ -100,6 +101,37 @@ func TestDrainerSkipsWhenWorkerBusy(t *testing.T) {
 	snap, _ := s.chatQueue.List(id)
 	if len(snap.Items) != 1 {
 		t.Fatalf("expected item to remain queued, got %#v", snap.Items)
+	}
+}
+
+func TestProviderNetworkFailureHoldsOnlyTheRemainingQueue(t *testing.T) {
+	fake := &fakeSender{sendCh: make(chan struct{}, 1)}
+	s, d, id := newDrainerServer(t, fake)
+	preview := rpc.StreamPreview{Done: true, ProviderNetworkFailure: "timeout"}
+	s.BroadcastChatPreview(id, preview)
+	if paused, err := s.chatQueue.IsPaused(id); err != nil || paused {
+		t.Fatalf("empty queue paused: %v, %v", paused, err)
+	}
+	if _, err := s.chatQueue.Add(id, "what to do after recovery", "queued follow-up"); err != nil {
+		t.Fatal(err)
+	}
+	s.BroadcastChatPreview(id, rpc.StreamPreview{Phase: "retrying", RetryStage: "timeout"})
+	if paused, err := s.chatQueue.IsPaused(id); err != nil || paused {
+		t.Fatalf("active retry paused queue: %v, %v", paused, err)
+	}
+	s.BroadcastChatPreview(id, preview)
+	d.drainSession(id)
+	s.wg.Wait()
+	if got, err := s.chatQueue.List(id); err != nil || !got.Paused || len(got.Items) != 1 {
+		t.Fatalf("failed session should hold its pending prompts: %+v, %v", got, err)
+	}
+	if err := s.chatQueue.SetPaused(id, false); err != nil {
+		t.Fatal(err)
+	}
+	d.drainSession(id)
+	s.wg.Wait()
+	if got, err := s.chatQueue.List(id); err != nil || got.Paused || len(got.Items) != 0 {
+		t.Fatalf("explicit resume should dispatch the existing item: %+v, %v", got, err)
 	}
 }
 

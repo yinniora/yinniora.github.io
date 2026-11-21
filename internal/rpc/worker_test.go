@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"slices"
@@ -199,6 +200,10 @@ func TestWorkerKeepsRetryingTransientNetworkErrors(t *testing.T) {
 	if sent.Len() != 0 {
 		t.Fatalf("transient network error retry was cancelled: %q", sent.String())
 	}
+	w.handleRPCLine(`{"type":"auto_retry_start","attempt":3,"maxAttempts":3,"errorMessage":"Connection error: getaddrinfo EAI_AGAIN"}`)
+	if sent.Len() != 0 {
+		t.Fatalf("a pre-connect transient failure must keep Pi's native retry budget: %q", sent.String())
+	}
 	w.handleRPCLine(`{"type":"auto_retry_start","attempt":1,"maxAttempts":1,"errorMessage":"Anthropic stream ended before message_stop"}`)
 	if sent.Len() != 0 {
 		t.Fatalf("prematurely closed provider stream retry was cancelled: %q", sent.String())
@@ -244,6 +249,8 @@ func TestWorkerRetriesTimeoutsAndOverloadButNotBillingOrUserAbort(t *testing.T) 
 		"Request aborted by user",
 		"Request aborted by user: stream disconnected before completion",
 		"Insufficient credit: upstream_stream_read_error",
+		"Connection error: hostname lookup failed (ENOTFOUND)",
+		"Connection error: certificate has expired (CERT_HAS_EXPIRED)",
 		"",
 	} {
 		if isAutoRetryAllowed(message) {
@@ -258,12 +265,12 @@ func TestWorkerRetriesTimeoutsAndOverloadButNotBillingOrUserAbort(t *testing.T) 
 		streamPreview: &streamPreviewAccumulator{},
 		streamSink:    func(StreamPreview) {},
 	}
-	w.handleRPCLine(`{"type":"auto_retry_start","attempt":2,"maxAttempts":5,"errorMessage":"Request timed out."}`)
+	w.handleRPCLine(`{"type":"auto_retry_start","attempt":1,"maxAttempts":5,"errorMessage":"Request timed out."}`)
 	if sent.Len() != 0 {
 		t.Fatalf("a timeout was cancelled instead of retried: %q", sent.String())
 	}
 	preview, ok := w.ChatPreview()
-	if !ok || preview.Phase != "retrying" || preview.RetryAttempt != 2 || preview.RetryLimit != 5 {
+	if !ok || preview.Phase != "retrying" || preview.RetryStage != "timeout" || preview.RetryAttempt != 1 || preview.RetryLimit != 1 {
 		t.Fatalf("retry was not recorded in progress: %+v", preview)
 	}
 	if w.Status().Error != "" {
@@ -273,11 +280,78 @@ func TestWorkerRetriesTimeoutsAndOverloadButNotBillingOrUserAbort(t *testing.T) 
 	if preview, _ := w.ChatPreview(); preview.Phase == "retrying" {
 		t.Fatalf("retry notice outlived the successful attempt: %+v", preview)
 	}
+	w.handleRPCLine(`{"type":"auto_retry_start","attempt":2,"maxAttempts":5,"errorMessage":"Request timed out."}`)
+	if sent.String() != "{\"type\":\"abort_retry\"}\n" {
+		t.Fatalf("the second ambiguous timeout retry must be cancelled: %q", sent.String())
+	}
 
 	sent.Reset()
 	w.handleRPCLine(`{"type":"auto_retry_start","attempt":1,"errorMessage":"insufficient balance"}`)
 	if sent.String() != "{\"type\":\"abort_retry\"}\n" {
 		t.Fatalf("a billing failure must not be retried: %q", sent.String())
+	}
+}
+
+func TestWorkerCannotAutomaticallyReplayGeneratedOutput(t *testing.T) {
+	for _, tc := range []struct{ name, delta, content, usage string }{
+		{name: "thinking delta", delta: `{"type":"thinking_delta","delta":"analysis began"}`},
+		{name: "text delta", delta: `{"type":"text_delta","delta":"reply began"}`},
+		{name: "tool arguments delta", delta: `{"type":"toolcall_delta","delta":"{"}`},
+		{name: "persisted tool call", content: `[{"type":"toolCall","name":"bash","arguments":{}}]`},
+		{name: "persisted text", content: `[{"type":"text","text":"reply began"}]`},
+		{name: "provider usage", usage: `{"output":1}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var sent bytes.Buffer
+			w := &piRPCWorker{stdin: nopWriteCloser{w: &sent}}
+			w.handleRPCLine(`{"type":"message_start","message":{"role":"assistant"}}`)
+			if tc.delta != "" {
+				w.handleRPCLine(`{"type":"message_update","assistantMessageEvent":` + tc.delta + `}`)
+			}
+			content, usage := tc.content, tc.usage
+			if content == "" {
+				content = `[]`
+			}
+			if usage == "" {
+				usage = `{}`
+			}
+			w.handleRPCLine(`{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"Request timed out.","content":` + content + `,"usage":` + usage + `}}`)
+			w.handleRPCLine(`{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"errorMessage":"Request timed out."}`)
+			if sent.String() != "{\"type\":\"abort_retry\"}\n" {
+				t.Fatalf("the generated response must not be replayed: %q", sent.String())
+			}
+
+			// Progress belongs to the failed provider step, not previous tool or model steps.
+			sent.Reset()
+			w.handleRPCLine(`{"type":"message_start","message":{"role":"assistant"}}`)
+			w.handleRPCLine(`{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"Request timed out.","usage":{"input":1000,"cacheRead":500}}}`)
+			w.handleRPCLine(`{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"errorMessage":"Request timed out."}`)
+			if sent.Len() != 0 {
+				t.Fatalf("input usage or earlier output cancelled a new step's retry: %q", sent.String())
+			}
+		})
+	}
+}
+
+func TestWorkerReportsFinalNetworkFailureBeforeIdle(t *testing.T) {
+	for _, aborted := range []bool{false, true} {
+		seen := false
+		w := &piRPCWorker{
+			status:        workers.WorkerStatus{State: workers.WorkerStateRunning},
+			streamPreview: &streamPreviewAccumulator{},
+		}
+		w.streamSink = func(preview StreamPreview) {
+			seen = true
+			if aborted || !preview.Done || preview.Revision == 0 || preview.ProviderNetworkFailure != "connect" || w.Status().State != workers.WorkerStateRunning {
+				t.Fatalf("network failure must be delivered once before idle: aborted=%t preview=%+v", aborted, preview)
+			}
+		}
+		w.handleRPCLine(`{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"Connection error: before secure TLS connection was established (ECONNRESET)"}}`)
+		w.handleRPCLine(`{"type":"agent_end","willRetry":false}`)
+		w.handleRPCLine(fmt.Sprintf(`{"type":"agent_settled","aborted":%t}`, aborted))
+		if seen == aborted || w.Status().State != workers.WorkerStateIdle {
+			t.Fatalf("unexpected settlement: aborted=%t reported=%t status=%+v", aborted, seen, w.Status())
+		}
 	}
 }
 

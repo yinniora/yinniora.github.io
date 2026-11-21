@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/svelte';
+import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import SessionEntry from './SessionEntry.svelte';
 
 afterEach(cleanup);
@@ -28,6 +28,46 @@ describe('SessionEntry', () => {
     const node = container.querySelector('#entry-a');
     expect(node).toHaveClass('assistant-message');
     expect(node.textContent).toContain('hi');
+  });
+
+  it('offers explicit continuation of a network failure and preserves the raw error', async () => {
+    const error = 'Anthropic stream ended before message_stop';
+    const entry = {
+      id: 'a',
+      type: 'message',
+      message: { role: 'assistant', stopReason: 'error', errorMessage: error, content: [] },
+    };
+    const composer = document.createElement('form');
+    composer.id = 'pi-chat-composer';
+    document.body.appendChild(composer);
+    const followUps = [];
+    composer.addEventListener('pi:retry-prompt', ({ detail }) => followUps.push(detail));
+    try {
+      const { getByRole, container } = render(SessionEntry, {
+        props: {
+          entry,
+          model: model([entry]),
+          live: true,
+          chatAvailable: true,
+          latestTurn: true,
+          retryContent: 'original user request',
+          canResumeNetworkFailure: true,
+        },
+      });
+      expect(container.querySelector('summary').textContent).toContain(
+        'Model response interrupted',
+      );
+      expect(container.querySelector('.reply-error-detail').textContent).toBe(error);
+      expect(followUps).toEqual([]);
+      await fireEvent.click(getByRole('button', { name: 'Continue' }));
+      await fireEvent.click(getByRole('button', { name: 'Resend last message' }));
+      expect(followUps).toEqual([
+        'Continue from saved progress. Verify completed actions before repeating anything.',
+        'original user request',
+      ]);
+    } finally {
+      composer.remove();
+    }
   });
 
   it('renders nothing for tool-result entries', () => {

@@ -292,6 +292,19 @@ func (s *Store) SetPaused(sessionID string, paused bool) error {
 	return nil
 }
 
+// PauseIfPending holds the remaining queue without pausing future work on an empty queue.
+func (s *Store) PauseIfPending(sessionID string) (bool, error) {
+	result, err := s.db.Exec(`UPDATE chat_queue_state SET paused = 1, updated_at = ?
+		WHERE session_id = ? AND paused = 0
+		AND EXISTS (SELECT 1 FROM chat_queue_items WHERE session_id = ?)`,
+		s.now().UTC(), sessionID, sessionID)
+	if err != nil {
+		return false, fmt.Errorf("pause remaining items: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	return changed > 0, err
+}
+
 // SessionsWithItems lists session ids that have at least one queued item AND
 // are not paused — the set the autonomous drainer needs to wake up.
 func (s *Store) SessionsWithItems() ([]string, error) {

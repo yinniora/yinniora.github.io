@@ -288,4 +288,44 @@ describe('YuGo task checkpoint', () => {
     await checkpoint.run({ tasks: [{ id: 'ship', text: 'Verify the build without publishing' }] });
     expect(checkpoint.boundary()).toMatchObject({ continue: true });
   });
+
+  it('restores the acceptance check and closed states with older evidence available on demand', async () => {
+    const branch: Entry[] = [{ id: 'u', type: 'message', message: { role: 'user' } }];
+    const checkpoint = install(branch);
+    checkpoint.begin();
+    await checkpoint.run({
+      goal: 'Restore streaming',
+      verification: 'Reconnect and receive the model reply without losing partial output',
+      tasks: [
+        {
+          id: 'path',
+          text: 'Check network path',
+          state: 'done',
+          note: 'Probed server on localhost',
+        },
+        { id: 'fix', text: 'Implement reconnect', state: 'done', note: 'Committed abc123' },
+        { id: 'test', text: 'Verify full response' },
+      ],
+    });
+    const timestamp = '2026-11-21T00:04:00.000Z';
+    branch.push(
+      { id: 'kept', type: 'message' },
+      { id: 'compact', type: 'compaction', firstKeptEntryId: 'kept', timestamp },
+    );
+    const saved = [
+      { role: 'compactionSummary', timestamp: Date.parse(timestamp), summary: 'Summary' },
+    ];
+    const projected = checkpoint.project(saved) as { messages: typeof saved };
+    expect(projected.messages[0].summary).toContain('Verify: Reconnect and receive');
+    expect(projected.messages[0].summary).toContain('test [todo] Verify full response');
+    expect(projected.messages[0].summary).toContain('Committed abc123');
+    expect(projected.messages[0].summary).toContain('Closed: path [done]');
+    expect(projected.messages[0].summary).not.toContain('Probed server on localhost');
+    expect(await checkpoint.run()).toContain('Probed server on localhost');
+    expect(checkpoint.boundary()).toMatchObject({
+      entries: [{ content: expect.stringContaining('Verify: Reconnect and receive') }],
+    });
+    await checkpoint.run({ goal: 'An unrelated goal' });
+    expect(await checkpoint.run()).not.toContain('Verify:');
+  });
 });

@@ -82,4 +82,52 @@ describe('SessionContent', () => {
     expect(afterRender).toHaveBeenCalled();
     expect(afterRender.mock.calls[0][0].id).toBe('messages-list');
   });
+
+  it('offers one continuation for a terminal timeout after saved tool activity', () => {
+    const path = [
+      entries[0],
+      {
+        id: 'tool',
+        parentId: 'root',
+        type: 'message',
+        message: {
+          role: 'assistant',
+          stopReason: 'toolUse',
+          content: [{ type: 'toolCall', id: 'call', name: 'read', arguments: { path: 'status' } }],
+        },
+      },
+      {
+        id: 'result',
+        parentId: 'tool',
+        type: 'message',
+        message: {
+          role: 'toolResult',
+          toolCallId: 'call',
+          content: [{ type: 'text', text: 'ok' }],
+        },
+      },
+      {
+        id: 'last-error',
+        parentId: 'result',
+        type: 'message',
+        message: { role: 'assistant', stopReason: 'error', errorMessage: 'Request timed out.' },
+      },
+      {
+        id: 'omit',
+        parentId: 'last-error',
+        type: 'context_edit',
+        targetId: 'last-error',
+        replacement: null,
+      },
+    ];
+    const model = new SessionDataModel({ entries: path, header: {}, leafId: 'omit' });
+    const { container, getAllByRole } = render(SessionContent, {
+      props: { model, live: true, chatAvailable: true },
+    });
+    expect(container.querySelector('.activity-group')).not.toBeNull();
+    expect(container.querySelector('#entry-last-error .reply-error-detail').textContent).toBe(
+      'Request timed out.',
+    );
+    expect(getAllByRole('button', { name: 'Continue' })).toHaveLength(1);
+  });
 });

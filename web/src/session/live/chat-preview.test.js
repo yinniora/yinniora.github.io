@@ -10,6 +10,23 @@ import {
 } from './chat-preview.js';
 
 describe('chat preview', () => {
+  it('shows which model request is being retried without implying the phone disconnected', () => {
+    const dom = new JSDOM('<body><div id="messages"></div></body>');
+    const state = { chatPreviewEl: null, pendingUserEl: null };
+    renderChatPreview(
+      { content: '', phase: 'retrying', retryStage: 'connect', retryAttempt: 2, retryLimit: 3 },
+      state,
+      {
+        documentImpl: dom.window.document,
+        renderMarkdown: (text) => text,
+        setIntervalImpl: () => 1,
+      },
+    );
+    expect(state.chatPreviewEl.querySelector('.preview-progress .preview-text').textContent).toBe(
+      'Retrying model request · Could not connect to model · 2/3',
+    );
+  });
+
   it('shows the running tool and its elapsed time on the progress line', () => {
     const dom = new JSDOM('<body><div id="messages"></div></body>');
     let now = 1000;

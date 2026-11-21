@@ -110,7 +110,17 @@
 </script>
 
 {#snippet renderEntry(
-  { entry, reply, repeatedError, retried, autoContinued, retryContent, skipActivity, emptyReply },
+  {
+    entry,
+    reply,
+    repeatedError,
+    retried,
+    autoContinued,
+    retryContent,
+    canResumeNetworkFailure,
+    skipActivity,
+    emptyReply,
+  },
   inActivity = false,
   latestTurn = false,
 )}
@@ -124,6 +134,7 @@
       {live}
       {chatAvailable}
       {retryContent}
+      {canResumeNetworkFailure}
       {emptyReply}
       {latestTurn}
       {skipActivity}

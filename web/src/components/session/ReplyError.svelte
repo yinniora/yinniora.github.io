@@ -9,6 +9,10 @@
     Square,
   } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
+  import {
+    providerFailureLabelKey,
+    providerNetworkFailure,
+  } from '../../session/render/reply-details.js';
 
   let {
     error = '',
@@ -17,16 +21,23 @@
     labelKey = '',
     onChooseModel = null,
     onRetry = null,
+    retryLabelKey = 'common.retry',
     onCompact = null,
     onContinue = null,
     actionsOnly = false,
   } = $props();
+  const errorLabelKey = $derived(
+    labelKey ||
+      (interrupted
+        ? 'activity.interrupted'
+        : providerFailureLabelKey(providerNetworkFailure(error)) || 'activity.failed'),
+  );
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- Lucide icons -->
 {#snippet label()}
   {@html icon(interrupted ? Square : CircleAlert, { size: 14 })}
-  <span>{t(labelKey || (interrupted ? 'activity.interrupted' : 'activity.failed'))}</span>
+  <span>{t(errorLabelKey)}</span>
   {#if model}<small>{model}</small>{/if}
 {/snippet}
 
@@ -67,8 +78,8 @@
       </button>{/if}
     {#if onRetry}<button
         type="button"
-        aria-label={t('common.retry')}
-        title={t('common.retry')}
+        aria-label={t(retryLabelKey)}
+        title={t(retryLabelKey)}
         onclick={onRetry}
       >
         {@html icon(RotateCcw, { size: 15 })}

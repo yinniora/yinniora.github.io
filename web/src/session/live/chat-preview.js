@@ -1,11 +1,16 @@
 import { t } from '../../shared/i18n.js';
 import { icon, ChevronRight } from '../../shared/icons.js';
+import { providerFailureLabelKey } from '../render/reply-details.js';
 
-export function progressLabel(phase) {
+export function progressLabel(phase, retryStage) {
   if (phase === 'thinking') return t('activity.thinking');
   if (phase === 'tool') return t('activity.tools');
   if (phase === 'compacting') return t('piSession.compacting');
-  if (phase === 'retrying') return t('connection.reconnecting');
+  if (phase === 'retrying') {
+    const reason = providerFailureLabelKey(retryStage);
+    const retrying = t('activity.retryingModel');
+    return reason ? `${retrying} · ${t(reason)}` : retrying;
+  }
   return t('btw.working');
 }
 
@@ -295,7 +300,8 @@ export function renderChatPreviewState(
       phase === 'retrying' && payload.retryAttempt && payload.retryLimit
         ? ` · ${payload.retryAttempt}/${payload.retryLimit}`
         : '';
-    progress.querySelector('.preview-text').textContent = progressLabel(phase) + retryCount;
+    progress.querySelector('.preview-text').textContent =
+      progressLabel(phase, payload.retryStage) + retryCount;
     const toolName =
       phase === 'tool' && typeof payload.toolName === 'string' ? payload.toolName.trim() : '';
     if (toolName) {

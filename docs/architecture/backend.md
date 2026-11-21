@@ -382,6 +382,13 @@ release a command-only run without waiting for a model turn.
 Current Pi workers stay busy from prompt submission through `agent_settled`,
 including native retry and recovery work. Older workers can still finish with
 an `agent_end` event that lacks the `willRetry` field.
+Definite connection setup failures use Pi's configured backoff and attempt
+limit. Ambiguous timeouts, stream breaks and transient provider failures get at
+most one automatic retry per provider step before any generation is observed.
+Generation, permanent TLS errors and account errors stop automatic retry.
+The failed response remains in history. A final model-network failure pauses
+the remaining queue before the worker becomes idle. The session offers to
+continue from saved progress or explicitly resend the original prompt.
 Native compaction events update the live progress preview. The context meter
 waits for a fresh provider measurement after a persisted compaction.
 With auto-compaction enabled, a fresh prompt first asks the existing worker for
@@ -412,20 +419,25 @@ reuse an existing prompt prefix. Pi's native provider caching remains active. Au
 cache-warming requests stop for credentials managed by YuGo because token-based
 pricing estimates cannot account for flat per-request fees.
 
-The worker's task checkpoint tool merges goals, constraints and work items into
-Pi custom entries on the active branch. It requires evidence or a reason when
-closing an item. Compaction carries the latest checkpoint at the time of
-compaction in the outgoing model context. Keeping that snapshot fixed lets later
-task updates append while preserving the cached prefix. Batch checkpoint saves
-with useful tool calls. When a prompted run updates its checkpoint and then
+The worker's task checkpoint tool merges a goal, an acceptance check, constraints
+and work items into Pi custom entries on the active branch. Simple work can
+proceed directly. For uncertain work, use a small check to choose a path before
+broad exploration. Closing an item requires evidence or a reason. Compaction
+carries the acceptance check, open items, and compact closed statuses, with the
+latest closed item's evidence. The checkpoint read still supplies stored older
+evidence. Keeping that snapshot fixed lets later task updates append while
+preserving the cached prefix. Batch checkpoint saves with useful tool calls.
+When a prompted run updates its checkpoint and then
 stops normally with actionable work, Pi's native settlement hook can add one
 short continuation. It uses the checkpoint locally, without an evaluator model
 or a duplicate user turn. Pending messages, blockers, approval and question
 waits, provider errors and cancellations take precedence over this check.
 
-Run `node scripts/measure-harness.mjs` for a repeatable synthetic comparison of
-request sizes with checkpoint overhead and optional Bash output retrieval. Use
-provider usage and billing records to verify token counts and actual charges.
+Run `node scripts/measure-harness.mjs` for a repeatable comparison of request
+sizes, the compacted plan, and optional Bash output retrieval. Compare planning
+strategies on the same verified outcome. Sum ordinary input, cache reads and
+writes, and output across planning, tools, compaction and retries. Record usage
+and billing separately because providers charge different rates for each.
 
 Model settings use Pi's `modelThinkingLevels` for per-model defaults. Known model IDs get
 their official thinking levels from `internal/server/model_efforts.json`

@@ -131,18 +131,17 @@ func (d *queueDrainer) drainSession(sessionID string) {
 			d.server.queueDispatches.Delete(sessionID)
 		}
 	}()
+	// The worker writes a network-failure pause before becoming idle. Check
+	// its state first so the next dispatch observes that persisted pause.
+	if d.server.chatSender.Status(sessionID).State == workers.WorkerStateRunning {
+		return
+	}
 	paused, err := d.server.chatQueue.IsPaused(sessionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "queue drainer: IsPaused %s: %v\n", sessionID, err)
 		return
 	}
 	if paused {
-		return
-	}
-	// If a previous Send for this session is still streaming, skip — we'll
-	// come back on the next idle transition (or tick).
-	status := d.server.chatSender.Status(sessionID)
-	if status.State == workers.WorkerStateRunning {
 		return
 	}
 	// Resolve the on-disk path so chatSender can spawn the worker if needed.

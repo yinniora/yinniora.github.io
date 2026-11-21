@@ -547,6 +547,14 @@ func (s *Server) BroadcastChatPreview(sessionID string, preview rpc.StreamPrevie
 	if sessionID == "" || sessionID == globalSessID {
 		return
 	}
+	if preview.Done && preview.ProviderNetworkFailure != "" && s.chatQueue != nil {
+		paused, err := s.chatQueue.PauseIfPending(sessionID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "queue pause after model request failed: %v\n", err)
+		} else if paused {
+			s.notifyQueueChanged(sessionID)
+		}
+	}
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()
 	for _, client := range s.clients {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { entriesWithReplyDetails } from './reply-details.js';
+import { entriesWithReplyDetails, providerNetworkFailure } from './reply-details.js';
 
 const user = (id, text) => ({
   id,
@@ -18,6 +18,23 @@ const replied = (id, text) => ({
 });
 
 describe('entriesWithReplyDetails', () => {
+  it.each([
+    [
+      'Client network socket disconnected before secure TLS connection was established (ECONNRESET)',
+      'tls',
+    ],
+    ['open ECONNREFUSED', 'connect'],
+    ['Request timed out.', 'timeout'],
+    ['Anthropic stream ended before message_stop', 'stream'],
+    ['read ECONNRESET', 'transport'],
+    ['503 model_not_found', ''],
+    ['Request was cancelled', ''],
+    ['Permission denied: timeout policy', ''],
+    ['400 unsupported_compat_parameter: timeout', ''],
+  ])('classifies %s as %s without inventing a failure phase', (error, stage) => {
+    expect(providerNetworkFailure(error)).toBe(stage);
+  });
+
   it('hides a transport failure that the retry already recovered from', () => {
     const entries = [
       user('u1', 'ship it'),
@@ -37,7 +54,25 @@ describe('entriesWithReplyDetails', () => {
 
     expect(details[1].retried).toBeUndefined();
     expect(details[1].retryContent).toBe('ship it');
+    expect(details[1].canResumeNetworkFailure).toBe(true);
     expect(entriesWithReplyDetails(entries, { running: true })[1].retried).toBe(true);
+  });
+
+  it('keeps a terminal failure after an omitted retry and offers continuation only there', () => {
+    const entries = [
+      user('u1', 'ship it'),
+      failed('a1', 'Request timed out.'),
+      { id: 'omit', type: 'context_edit', targetId: 'a1', replacement: null },
+      failed('a2', 'Model stream disconnected before completion'),
+      { id: 'omit2', type: 'context_edit', targetId: 'a2', replacement: null },
+    ];
+    const details = entriesWithReplyDetails(entries);
+
+    expect(details[1].retried).toBe(true);
+    expect(details[3]).toMatchObject({ canResumeNetworkFailure: true, retryContent: 'ship it' });
+    expect(details[3].retried).toBeUndefined();
+    const newerTurn = [...entries, user('u2', 'new work')];
+    expect(entriesWithReplyDetails(newerTurn)[3].canResumeNetworkFailure).toBe(false);
   });
 
   it('does not reach back across turns, and recovers on tool calls too', () => {

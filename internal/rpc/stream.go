@@ -13,15 +13,17 @@ type StreamPreview = workers.LivePreview
 type StreamEventSink func(StreamPreview)
 
 type assistantMessageEvent struct {
-	Type             string `json:"type"`
-	Delta            string `json:"delta"`
-	Content          string `json:"content"`
-	ContentIndex     int    `json:"contentIndex"`
-	ToolCallID       string `json:"toolCallId"`
-	ToolName         string `json:"toolName"`
-	MessageTimestamp int64
-	RetryAttempt     int
-	RetryLimit       int
+	Type                   string `json:"type"`
+	Delta                  string `json:"delta"`
+	Content                string `json:"content"`
+	ContentIndex           int    `json:"contentIndex"`
+	ToolCallID             string `json:"toolCallId"`
+	ToolName               string `json:"toolName"`
+	MessageTimestamp       int64
+	RetryAttempt           int
+	RetryLimit             int
+	RetryStage             string
+	ProviderNetworkFailure string
 }
 
 var previewRevision atomic.Uint64
@@ -68,6 +70,7 @@ type streamPreviewAccumulator struct {
 	messageTimestamp         int64
 	thinkingIndex            int
 	retryAttempt, retryLimit int
+	retryStage               string
 }
 
 type runningTool struct {
@@ -81,7 +84,7 @@ func (a *streamPreviewAccumulator) snapshot() StreamPreview {
 		Thinking: previewTail(a.thinking.previous + a.thinking.current),
 		Phase:    a.phase, Revision: a.revision,
 		MessageTimestamp: a.messageTimestamp, ThinkingIndex: a.thinkingIndex,
-		RetryAttempt: a.retryAttempt, RetryLimit: a.retryLimit,
+		RetryAttempt: a.retryAttempt, RetryLimit: a.retryLimit, RetryStage: a.retryStage,
 	}
 	if a.phase == "tool" {
 		var oldest runningTool
@@ -114,8 +117,10 @@ func (a *streamPreviewAccumulator) handleAssistantEvent(event assistantMessageEv
 	case "auto_retry_start":
 		a.phase = "retrying"
 		a.retryAttempt, a.retryLimit = event.RetryAttempt, event.RetryLimit
+		a.retryStage = event.RetryStage
 	case "auto_retry_end":
 		a.retryAttempt, a.retryLimit = 0, 0
+		a.retryStage = ""
 		if a.phase == "retrying" {
 			a.phase = "working"
 		}
@@ -157,7 +162,7 @@ func (a *streamPreviewAccumulator) handleAssistantEvent(event assistantMessageEv
 			a.phase = "working"
 		}
 	case "agent_end":
-		return a.complete()
+		return a.complete(event.ProviderNetworkFailure)
 	default:
 		return StreamPreview{}, false
 	}
@@ -170,8 +175,8 @@ func (a *streamPreviewAccumulator) handleAssistantEvent(event assistantMessageEv
 	return preview, true
 }
 
-func (a *streamPreviewAccumulator) complete() (StreamPreview, bool) {
-	if a.phase == "" {
+func (a *streamPreviewAccumulator) complete(providerNetworkFailure string) (StreamPreview, bool) {
+	if a.phase == "" && providerNetworkFailure == "" {
 		return StreamPreview{}, false
 	}
 	preview := a.snapshot()
@@ -180,5 +185,6 @@ func (a *streamPreviewAccumulator) complete() (StreamPreview, bool) {
 	preview.ToolName, preview.ToolElapsedMs = "", 0
 	preview.Revision = previewRevision.Add(1)
 	preview.Done = true
+	preview.ProviderNetworkFailure = providerNetworkFailure
 	return preview, true
 }

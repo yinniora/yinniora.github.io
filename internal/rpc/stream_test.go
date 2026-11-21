@@ -66,14 +66,14 @@ func TestStreamPreviewAccumulatorCompletesExistingPreview(t *testing.T) {
 	acc := &streamPreviewAccumulator{}
 	_, _ = acc.handleAssistantEvent(assistantMessageEvent{Type: "text_delta", Delta: "hello"})
 
-	preview, ok := acc.complete()
+	preview, ok := acc.complete("")
 	if !ok {
 		t.Fatalf("complete did not emit preview")
 	}
 	if preview.Content != "hello" || !preview.Done {
 		t.Fatalf("preview = %+v, want hello done", preview)
 	}
-	if _, ok := acc.complete(); ok {
+	if _, ok := acc.complete(""); ok {
 		t.Fatalf("second complete should not emit after reset")
 	}
 }

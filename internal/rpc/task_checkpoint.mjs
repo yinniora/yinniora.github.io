@@ -12,6 +12,7 @@ const closedStates = ['done', 'dropped'];
 const constraintSchema = Type.String({ maxLength: 120 });
 const parameters = Type.Object({
   goal: Type.Optional(Type.String({ maxLength: 240 })),
+  verification: Type.Optional(Type.String({ maxLength: 140 })),
   addConstraints: Type.Optional(Type.Array(constraintSchema, { maxItems: maxConstraints })),
   removeConstraints: Type.Optional(Type.Array(constraintSchema, { maxItems: maxConstraints })),
   tasks: Type.Optional(
@@ -38,14 +39,20 @@ function oneLine(text) {
   return text?.trim().replace(/\s+/g, ' ') || '';
 }
 
-function formatCheckpoint(state) {
+function formatCheckpoint(state, compact = false) {
   if (!state) return 'No task checkpoint has been saved.';
+  const earlierClosed = compact
+    ? state.tasks.filter((task) => closedStates.includes(task.state)).slice(0, -1)
+    : [];
   return [
     state.goal && `Goal: ${state.goal}`,
+    state.verification && `Verify: ${state.verification}`,
     ...state.constraints.map((constraint) => `Keep: ${constraint}`),
-    ...state.tasks.map(
-      ({ id, text, state, note }) => `${id} [${state}] ${text}${note ? ` (${note})` : ''}`,
-    ),
+    ...state.tasks
+      .filter((task) => !earlierClosed.includes(task))
+      .map(({ id, text, state, note }) => `${id} [${state}] ${text}${note ? ` (${note})` : ''}`),
+    earlierClosed.length > 0 &&
+      `Closed: ${earlierClosed.map(({ id, state }) => `${id} [${state}]`).join(', ')}`,
   ]
     .filter(Boolean)
     .join('\n');
@@ -53,6 +60,10 @@ function formatCheckpoint(state) {
 
 function updateCheckpoint(previous, input) {
   const goal = oneLine(input.goal) || previous?.goal || '';
+  const verification =
+    input.verification === undefined && goal === previous?.goal
+      ? previous.verification
+      : oneLine(input.verification);
   const removed = new Set((input.removeConstraints || []).map(oneLine));
   const constraints = [
     ...new Set([
@@ -90,9 +101,15 @@ function updateCheckpoint(previous, input) {
   for (const task of tasks.values()) (closedStates.includes(task.state) ? closed : open).push(task);
   if (open.length > maxOpen) throw new Error(`Keep up to ${maxOpen} open work items.`);
 
-  const updated = { version: 1, goal, constraints, tasks: [...open, ...closed.slice(-maxClosed)] };
-  if (!goal && !constraints.length && !tasks.size)
-    throw new Error('Add a goal, constraint or task.');
+  const updated = {
+    version: 1,
+    goal,
+    ...(verification && { verification }),
+    constraints,
+    tasks: [...open, ...closed.slice(-maxClosed)],
+  };
+  if (!goal && !verification && !constraints.length && !tasks.size)
+    throw new Error('Add a goal, verification, constraint or task.');
   if (Buffer.byteLength(formatCheckpoint(updated)) > maxBytes) {
     throw new Error(
       'Shorten the checkpoint while keeping the open tasks and essential constraints.',
@@ -114,8 +131,8 @@ function restoreAfterCompaction(messages, sessionManager) {
 
   // Use the last state at compaction, even when a repeated compaction keeps the same boundary.
   // Later updates remain in the transcript and do not rewrite the model's cached prefix.
-  const text = formatCheckpoint(latestCheckpoint(branch.slice(0, compactedAt)));
-  const checkpoint = `Task checkpoint at compaction. It includes all earlier checkpoint updates. Treat retained earlier messages as reference. Apply later changes and user instructions.\n${text}`;
+  const text = formatCheckpoint(latestCheckpoint(branch.slice(0, compactedAt)), true);
+  const checkpoint = `Task checkpoint at compaction. Supersedes earlier plan updates. Apply newer user instructions.\n${text}`;
   if (summary.summary.includes(checkpoint)) return;
 
   const projected = messages.slice();
@@ -149,9 +166,9 @@ export default function setupTaskCheckpoint(pi) {
     name: 'yugo_task_checkpoint',
     label: 'Task checkpoint',
     description:
-      'Read or patch this branch’s checkpoint. Tasks merge by ID. Other work and constraints are retained. Closing a task requires a note.',
+      'Read or patch the branch plan by task ID. Set verification to the final acceptance check.',
     promptGuidelines: [
-      'Batch checkpoint updates with useful tools for multi-step work. Keep the goal and open items under new guidance. Verify before closing. Record blockers. Omit secrets and logs.',
+      'Skip plans for simple work. Resolve key uncertainties with cheap checks before broad work. Batch plan updates and verify outcomes. Keep blockers. Omit secrets and logs.',
     ],
     parameters,
     async execute(_id, input, signal, _onUpdate, ctx) {
@@ -160,6 +177,7 @@ export default function setupTaskCheckpoint(pi) {
       let text;
       if (
         !input.goal &&
+        input.verification === undefined &&
         !input.addConstraints?.length &&
         !input.removeConstraints?.length &&
         !input.tasks?.length
@@ -236,6 +254,7 @@ export default function setupTaskCheckpoint(pi) {
 
     continued = true;
     const tasks = actionable.map(({ id, text }) => `${id}: ${text}`).join('\n');
+    const verification = checkpoint.verification ? `\nVerify: ${checkpoint.verification}` : '';
     return {
       continue: true,
       entries: [
@@ -244,7 +263,7 @@ export default function setupTaskCheckpoint(pi) {
           type: 'custom_message',
           customType: continuationType,
           display: false,
-          content: `Open work:\n${tasks}\nTake the next authorized step, verify before closing, or report the blocker.`,
+          content: `Open work:\n${tasks}${verification}\nTake the next authorized step, verify before closing, or report the blocker.`,
         },
       ],
     };

@@ -269,6 +269,43 @@ for (const [name, options] of [
   }
 }
 console.table(rows);
+
+branch = [];
+const plan = {
+  goal: 'Restore remote chat',
+  verification: 'Reconnect after a network loss and deliver the queued message once',
+  tasks: [
+    ...['routing', 'auth', 'stream', 'client'].map((id) => ({
+      id,
+      text: `Verify the ${id} path against its expected behavior`,
+      state: 'done',
+      note: `The ${id} integration check passed with a local fixture; evidence in ${id}.test.js`,
+    })),
+    { id: 'verify', text: 'Run the end-to-end reconnection check' },
+  ],
+};
+await runFixtureTool('save-plan', 'yugo_task_checkpoint', plan, []);
+const fullPlan = await runFixtureTool('read-plan', 'yugo_task_checkpoint', {}, []);
+const timestamp = new Date(0).toISOString();
+branch.push(
+  { type: 'message', id: 'kept' },
+  { type: 'compaction', firstKeptEntryId: 'kept', timestamp },
+);
+const summary = { role: 'compactionSummary', timestamp: 0, summary: 'Fixture summary' };
+const [projected] = project([summary]);
+const legacyHandoff = [
+  summary.summary,
+  '',
+  'Task checkpoint at compaction. It includes all earlier checkpoint updates. Treat retained earlier messages as reference. Apply later changes and user instructions.',
+  ...fullPlan.result.content[0].text.split('\n').filter((line) => !line.startsWith('Verify: ')),
+].join('\n');
+assert.match(projected.summary, /Verify: Reconnect after a network loss/);
+assert.match(projected.summary, /routing \[done\]/);
+assert.match(fullPlan.result.content[0].text, /routing\.test\.js/);
+assert(Buffer.byteLength(projected.summary) < Buffer.byteLength(legacyHandoff));
+console.log(
+  `Compacted plan fixture with four closed items: ${Buffer.byteLength(legacyHandoff)} → ${Buffer.byteLength(projected.summary)} bytes. Full evidence remains available.`,
+);
 console.log(
   'Local synthetic requests only. Schemas and checkpoint guidance are included. The simulated retrieval adds a model step. Bytes are an input-size proxy. Perfect reuse is a lower bound on new input, and is not a cache prediction. Provider token counts, cache rules and per-request charges determine billing.',
 );
