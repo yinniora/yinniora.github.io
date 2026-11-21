@@ -191,7 +191,7 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer tx.Rollback()
-		for _, table := range []string{"chat_queue_items", "chat_queue_state", "annotations", "review_comments", "session_trash"} {
+		for _, table := range []string{"chat_queue_items", "chat_queue_state", "annotations", "review_comments", "session_trash", "session_computer_mode"} {
 			if _, err = tx.Exec("DELETE FROM "+table+" WHERE session_id = ?", id); err != nil {
 				writeJSONError(w, 500, "cannot prepare metadata cleanup")
 				return

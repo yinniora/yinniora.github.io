@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { icon, ShieldCheck } from '../../../shared/icons.js';
+  import { icon, ShieldCheck, ShieldOff, ShieldQuestionMark } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
 
   let { sessionId, model = null, running = false, children } = $props();
@@ -8,12 +8,20 @@
   let status = $state(null);
   let busy = $state(false);
   let error = $state('');
+  let approvalError = $state('');
   let controller;
   let polling = false;
   let mutation = 0;
   const modes = ['off', 'ask', 'allow'];
   const waiting = $derived(status?.requests?.[0] ?? null);
   const modeLabel = $derived(status?.mode ? t('computer.mode.' + status.mode) : '');
+  const modeIcon = $derived(
+    status?.mode === 'allow'
+      ? ShieldCheck
+      : status?.mode === 'off'
+        ? ShieldOff
+        : ShieldQuestionMark,
+  );
 
   async function load(update) {
     if (!controller || controller.signal.aborted || (update ? busy : polling || busy)) return;
@@ -22,6 +30,7 @@
     if (update) {
       busy = true;
       error = '';
+      approvalError = '';
     } else {
       polling = true;
     }
@@ -34,20 +43,28 @@
           body: JSON.stringify(update),
         }),
       });
-      const result = await response.json();
       if (scope.signal.aborted || version !== mutation) return;
       if (!response.ok) {
-        const message =
-          update?.action === 'answer' && response.status === 409
-            ? 'computer.expired'
-            : 'computer.unavailable';
-        throw new Error(t(message));
+        if (update?.action === 'answer' && response.status === 409) {
+          status = {
+            ...status,
+            requests: (status?.requests ?? []).filter((request) => request.id !== update.requestID),
+          };
+          approvalError = t('computer.expired');
+          return;
+        }
+        throw new Error(t('computer.unavailable'));
       }
+      const result = await response.json();
+      if (scope.signal.aborted || version !== mutation) return;
+      if (result.requests?.[0] && result.requests[0].id !== waiting?.id) approvalError = '';
       status = result;
       error = '';
     } catch (err) {
-      if (!scope.signal.aborted && (update || details?.open)) {
-        error = err instanceof SyntaxError ? t('computer.unavailable') : err.message;
+      if (!scope.signal.aborted && version === mutation) {
+        const message = err instanceof SyntaxError ? t('computer.unavailable') : err.message;
+        if (update?.action === 'answer') approvalError = message;
+        else if (update || details?.open) error = message;
       }
     } finally {
       if (update) busy = false;
@@ -56,6 +73,7 @@
   }
 
   function setMode(mode) {
+    if (mode === status?.mode) return;
     if (mode === 'allow' && !window.confirm(t('computer.confirmAllow'))) return;
     void load({ action: 'mode', mode });
   }
@@ -75,33 +93,36 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icon -->
 {#if waiting}
-  <div class="computer-approval" role="region" aria-label={t('computer.waiting')}>
-    <div class="approval-heading" role="status">
-      {@html icon(ShieldCheck, { size: 17 })}
-      <strong>{t('computer.waiting')}</strong>
+  {#key waiting.id}
+    {@const request = waiting}
+    <div class="computer-approval" role="region" aria-label={t('computer.waiting')}>
+      <div class="approval-heading" role="status">
+        {@html icon(ShieldQuestionMark, { size: 18 })}
+        <strong>{t('computer.waiting')}</strong>
+      </div>
+      <details open>
+        <summary><code>{request.tool}</code></summary>
+        <pre>{request.detail}</pre>
+      </details>
+      <div class="approval-actions">
+        <button
+          type="button"
+          class="approval-allow"
+          disabled={busy}
+          onclick={() => load({ action: 'answer', requestID: request.id, allow: true })}
+          >{t('computer.allowOnce')}</button
+        >
+        <button
+          type="button"
+          disabled={busy}
+          onclick={() => load({ action: 'answer', requestID: request.id, allow: false })}
+          >{t('computer.deny')}</button
+        >
+      </div>
     </div>
-    <details>
-      <summary><code>{waiting.tool}</code></summary>
-      <pre>{waiting.detail}</pre>
-    </details>
-    <div class="approval-actions">
-      <button
-        type="button"
-        class="approval-allow"
-        disabled={busy}
-        onclick={() => load({ action: 'answer', requestID: waiting.id, allow: true })}
-        >{t('computer.allowOnce')}</button
-      >
-      <button
-        type="button"
-        disabled={busy}
-        onclick={() => load({ action: 'answer', requestID: waiting.id, allow: false })}
-        >{t('computer.deny')}</button
-      >
-    </div>
-    {#if error}<p role="alert">{error}</p>{/if}
-  </div>
+  {/key}
 {/if}
+{#if approvalError}<p class="computer-approval-error" role="alert">{approvalError}</p>{/if}
 
 {#snippet permissionControl()}
   <details
@@ -115,7 +136,7 @@
       aria-label={t('computer.title')}
       title={[t('computer.title'), modeLabel].filter(Boolean).join(' · ')}
     >
-      {@html icon(ShieldCheck, { size: 16 })}
+      {@html icon(modeIcon, { size: 18 })}
       {#if waiting}<span class="pending-dot" aria-label={t('computer.waiting')}></span>{/if}
     </summary>
     <div class="computer-panel">
@@ -195,7 +216,7 @@
     background: var(--accent);
   }
   .computer-permission[data-mode='allow'] > summary {
-    color: var(--accent);
+    color: color-mix(in srgb, var(--warning) 72%, var(--text));
   }
   .computer-panel {
     position: absolute;
@@ -221,11 +242,12 @@
   .computer-modes {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
-    margin-bottom: 8px;
+    gap: 6px;
+    margin-bottom: 10px;
   }
   button {
-    padding: 6px 8px;
+    min-height: 44px;
+    padding: 6px 10px;
     border: 1px solid var(--dim);
     border-radius: 7px;
     background: transparent;
@@ -261,9 +283,6 @@
     justify-content: end;
     flex-wrap: wrap;
   }
-  .approval-actions button {
-    min-height: 40px;
-  }
   .approval-allow {
     background: var(--text);
     color: var(--body-bg);
@@ -277,5 +296,9 @@
     overflow: auto;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+  .computer-approval-error {
+    color: var(--error);
+    font-size: 13px;
   }
 </style>

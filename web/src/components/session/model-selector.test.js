@@ -85,37 +85,20 @@ describe('setupModelSelector', () => {
       cleanupDom(el);
     });
 
-    it('re-focuses the chat textarea when close(true) is called', () => {
+    it('restores focus to the control that opened the panel', () => {
       const el = createDom();
+      const control = document.getElementById('pi-chat-model-label');
       const chatApi = {
         listModels: () =>
           Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) }),
       };
       const api = setupModelSelector({ documentImpl: document, sessionId: 's', chatApi });
-      const textarea = document.getElementById('pi-chat-message');
-      textarea.focus = vi.fn();
 
+      control.focus();
       api.open();
-      api.close(true);
-
-      expect(textarea.focus).toHaveBeenCalled();
-      cleanupDom(el);
-    });
-
-    it('does not focus the textarea when close(false) is called', () => {
-      const el = createDom();
-      const chatApi = {
-        listModels: () =>
-          Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) }),
-      };
-      const api = setupModelSelector({ documentImpl: document, sessionId: 's', chatApi });
-      const textarea = document.getElementById('pi-chat-message');
-      textarea.focus = vi.fn();
-
-      api.open();
-      api.close(false);
-
-      expect(textarea.focus).not.toHaveBeenCalled();
+      expect(document.activeElement).not.toBe(control);
+      api.close();
+      expect(document.activeElement).toBe(control);
       cleanupDom(el);
     });
   });

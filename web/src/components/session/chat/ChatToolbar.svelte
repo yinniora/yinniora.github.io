@@ -7,6 +7,7 @@
     CornerDownRight,
     Image,
     Gauge,
+    Layers,
     Paperclip,
     Plus,
     Square,
@@ -44,9 +45,7 @@
       ? t('thinking.' + toolbar.thinkingLevel)
       : '',
   );
-  const effortTitle = $derived(
-    effortLabel ? `${t('composer.switchEffort')} · ${effortLabel}` : t('composer.switchEffort'),
-  );
+  const modelControlLabel = $derived(effortLabel ? `${modelTitle} · ${effortLabel}` : modelTitle);
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
@@ -57,63 +56,53 @@
       {#if chatAvailable}
         <details class="composer-add" bind:this={attachMenu}>
           <summary class="pi-chat-icon-button" aria-label={t('composer.addAttachment')}
-            >{@html icon(Plus, { size: 16 })}</summary
+            >{@html icon(Plus, { size: 18 })}</summary
           >
           <div class="composer-add-menu">
             <button type="button" onclick={() => chooseAttachment('pi-chat-files')}
-              >{@html icon(Paperclip, { size: 16 })}{t('composer.uploadFiles')}</button
+              >{@html icon(Paperclip, { size: 19 })}{t('composer.uploadFiles')}</button
             >
             <button type="button" onclick={() => chooseAttachment('pi-chat-images')}
-              >{@html icon(Image, { size: 16 })}{t('composer.attachPhotos')}</button
+              >{@html icon(Image, { size: 19 })}{t('composer.attachPhotos')}</button
             >
             <button type="button" onclick={() => chooseAttachment('pi-chat-camera')}
-              >{@html icon(Camera, { size: 16 })}{t('composer.takePhoto')}</button
+              >{@html icon(Camera, { size: 19 })}{t('composer.takePhoto')}</button
             >
             <button
               type="button"
               id="pi-chat-commands-btn"
               aria-controls="pi-chat-slash-popup"
               onclick={() => (attachMenu.open = false)}
-              >{@html icon(Terminal, { size: 16 })}{t('plugins.skills')}</button
+              >{@html icon(Terminal, { size: 19 })}{t('plugins.skills')}</button
             >
           </div>
         </details>
       {/if}
       <span id="pi-chat-status" class="pi-chat-status {toolbar.statusClass}">{statusText}</span>
+      {@render permissionControl?.()}
+    </div>
+    <div class="composer-model-controls">
       <button
         type="button"
         id="pi-chat-model-label"
         class="pi-chat-model-label"
-        title={modelTitle}
+        title={modelControlLabel}
+        aria-label={modelControlLabel}
+        aria-controls="pi-chat-model-popup"
+        aria-expanded="false"
+        aria-haspopup="dialog"
         style:display={chatAvailable ? '' : 'none'}
-        disabled={!chatAvailable}><span>{modelTitle}</span></button
+        disabled={!chatAvailable}
       >
+        {@html icon(toolbar.canAdjustThinking ? Gauge : Layers, { size: 18 })}
+        <span class="composer-model-name">{modelTitle}</span>
+        {#if toolbar.canAdjustThinking && effortLabel}
+          <span class="composer-effort-label">{effortLabel}</span>
+        {/if}
+      </button>
       <ContextUsage />
     </div>
     <div class="actions" class:running={toolbar.isRunning}>
-      {@render permissionControl?.()}
-      <div class="thinking-control" hidden={!chatAvailable || !toolbar.canAdjustThinking}>
-        <button
-          type="button"
-          id="pi-chat-thinking-label"
-          class="pi-chat-thinking-label"
-          title={effortTitle}
-          aria-label={effortTitle}
-          aria-controls="pi-chat-thinking-popup"
-          aria-expanded="false"
-          disabled={!chatAvailable}
-          >{@html icon(Gauge, { size: 16 })}
-          {#if effortLabel}<span>{effortLabel}</span>{/if}</button
-        >
-        <div id="pi-chat-thinking-popup" class="pi-chat-thinking-popup" style="display: none" inert>
-          <div
-            id="pi-chat-thinking-list"
-            class="pi-chat-thinking-list"
-            role="group"
-            aria-label={t('composer.switchEffort')}
-          ></div>
-        </div>
-      </div>
       <button
         type="button"
         id="pi-chat-cancel"
@@ -122,7 +111,7 @@
         title={t('composer.stopHint')}
         aria-label={t('composer.cancelRunning')}
         disabled={toolbar.statusText === 'cancelling' || toolbar.compacting || !chatAvailable}
-        >{@html icon(Square, { size: 16, class: 'pi-chat-stop-glyph' })}<span
+        >{@html icon(Square, { size: 18, class: 'pi-chat-stop-glyph' })}<span
           >{t('composer.stop')}</span
         ></button
       >
@@ -134,11 +123,11 @@
           style:display={toolbar.isRunning ? '' : 'none'}
           title={t('composer.queueHint')}
           aria-label={t('composer.queue')}
-          disabled>{@html icon(ListPlus, { size: 16 })}<span>{t('composer.queue')}</span></button
+          disabled>{@html icon(ListPlus, { size: 18 })}<span>{t('composer.queue')}</span></button
         >
         <button type="submit" id="pi-chat-send" class="pi-chat-send" disabled>
           {@html icon(toolbar.isRunning ? CornerDownRight : ArrowUp, {
-            size: 16,
+            size: 18,
           })}
           <span>{toolbar.isRunning ? t('composer.steer') : t('composer.send')}</span>
         </button>
@@ -167,25 +156,6 @@
 />
 
 <style>
-  .thinking-control {
-    position: relative;
-  }
-  .thinking-control[hidden] {
-    display: none;
-  }
-  .thinking-control .pi-chat-thinking-popup {
-    position: absolute;
-    right: 0;
-    bottom: calc(100% + 6px);
-    max-height: min(320px, max(84px, calc(var(--pi-visual-height, 100dvh) - 150px)));
-    overscroll-behavior: contain;
-  }
-  .pi-chat-toolbar {
-    overflow: visible;
-  }
-  .pi-chat-toolbar-left:has(.composer-add[open]) {
-    overflow: visible !important;
-  }
   .composer-add {
     position: relative;
     flex: none;
@@ -201,34 +171,40 @@
     z-index: 15;
     left: 0;
     bottom: calc(100% + 8px);
-    width: max(236px, min(300px, calc(100vw - 40px)));
+    display: grid;
+    gap: 4px;
+    width: min(222px, calc(100vw - 42px));
+    max-height: max(100px, calc(var(--pi-visual-height, 100dvh) - 125px));
+    overflow: auto;
+    overscroll-behavior: contain;
     background: var(--surface);
     border: 1px solid var(--dim);
-    padding: 6px;
-    border-radius: 14px;
-    box-shadow: 0 12px 34px #0006;
-    white-space: nowrap;
+    padding: 8px;
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    font-weight: 550;
   }
   .composer-add-menu button {
     display: flex;
     align-items: center;
-    gap: 11px;
-    min-height: 46px;
+    gap: 13px;
+    min-height: 52px;
     width: 100%;
     color: var(--text);
     background: transparent;
     border: 0;
     border-radius: 10px;
-    padding: 8px 12px;
+    padding: 9px 12px;
     text-align: left;
-    font-size: 14px;
     cursor: pointer;
   }
   .composer-add-menu button :global(svg) {
     flex: none;
     opacity: 0.75;
   }
-  .composer-add-menu button:is(:hover, :focus-visible) {
+  .composer-add-menu button:is(:hover, :focus-visible, :active) {
     background: var(--hover);
   }
 </style>

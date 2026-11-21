@@ -81,6 +81,9 @@ func TestPermanentDeletePreservesProjectFiles(t *testing.T) {
 	if _, err := s.chatQueue.Add("purge.jsonl", "private queued text", "private queued text"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.db.Exec(`INSERT INTO session_computer_mode (session_id, mode) VALUES ('purge.jsonl', 'allow')`); err != nil {
+		t.Fatal(err)
+	}
 	if w := call(`{"id":"purge.jsonl","permanent":true}`); w.Code != 200 {
 		t.Fatalf("purge failed %d %s", w.Code, w.Body)
 	}
@@ -93,6 +96,9 @@ func TestPermanentDeletePreservesProjectFiles(t *testing.T) {
 	snapshot, err := s.chatQueue.List("purge.jsonl")
 	if err != nil || len(snapshot.Items) != 0 {
 		t.Fatal("queued content survived purge")
+	}
+	if mode := s.ComputerMode("purge.jsonl"); mode != "ask" {
+		t.Fatalf("deleted session retained permission mode %q", mode)
 	}
 	if w := call(`{"id":"purge.jsonl","restore":true}`); w.Code < 400 {
 		t.Fatal("restored permanently deleted session")
@@ -149,7 +155,7 @@ func TestManagementRoutesRequireAuthentication(t *testing.T) {
 	s.auth = auth.New("test-token")
 	mux := http.NewServeMux()
 	s.Register(mux)
-	for _, path := range []string{"/api/trash", "/api/connections", "/api/connect", "/api/export-markdown", "/api/logout", "/api/session-files"} {
+	for _, path := range []string{"/api/trash", "/api/connections", "/api/connect", "/api/export-markdown", "/api/logout", "/api/session-files", "/api/computer-use"} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest("POST", path, strings.NewReader(`{}`)))
 		if w.Code != 401 {

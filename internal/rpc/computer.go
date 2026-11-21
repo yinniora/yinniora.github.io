@@ -4,8 +4,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"slices"
 	"time"
 
@@ -16,57 +14,63 @@ import (
 var computerGuard []byte
 
 const computerApprovalTitle = "YuGo Pi computer approval"
-const computerPolicyTitle = "YuGo Pi computer policy"
+const computerApprovalTimeout = 2 * time.Minute
+const maxPendingComputerApprovals = 16
+
+type pendingComputerApproval struct {
+	workers.ComputerRequest
+	digest string
+}
 
 func InstallComputerGuard(dir string) (string, error) {
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return "", err
-	}
-	path := filepath.Join(dir, "yugo-computer-guard.mjs")
-	f, err := os.CreateTemp(dir, ".computer-guard-")
-	if err != nil {
-		return "", err
-	}
-	defer os.Remove(f.Name())
-	_, err = f.Write(computerGuard)
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return "", err
-	}
-	return path, os.Rename(f.Name(), path)
+	return installWorkerExtension(dir, "yugo-computer-guard.mjs", computerGuard)
 }
 
 func (w *piRPCWorker) handleComputerApproval(id, payload string, timeoutMs int64) {
 	var message struct {
 		Tool   string `json:"tool"`
 		Detail string `json:"detail"`
+		Digest string `json:"digest"`
 	}
-	if len(payload) > 8192 || json.Unmarshal([]byte(payload), &message) != nil || message.Tool == "" {
+	if len(payload) > 8192 || json.Unmarshal([]byte(payload), &message) != nil || message.Tool == "" || len(message.Digest) != 64 {
+		_ = w.writeComputerDecision(id, "cancelled")
 		return
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.expireComputerRequestsLocked()
+	if _, duplicate := w.computerRequests[id]; duplicate {
+		return
+	}
+	if w.extensionClosed || w.status.State == workers.WorkerStateError || w.computerMode == nil {
+		_ = w.writeComputerDecision(id, "cancelled")
+		return
+	}
 	switch w.computerMode() {
 	case "allow":
-		_ = w.writeComputerResponse(id, true)
-	case "off":
-		_ = w.writeComputerResponse(id, false)
-	default:
-		if w.computerDenied {
-			_ = w.writeComputerResponse(id, false)
+		_ = w.writeComputerDecision(id, "approved")
+	case "ask":
+		if _, repeated := w.computerDenied[message.Digest]; repeated {
+			_ = w.writeComputerDecision(id, "repeated")
 			return
 		}
-		timeout := 2 * time.Minute
+		if len(w.computerRequests) >= maxPendingComputerApprovals {
+			_ = w.writeComputerDecision(id, "cancelled")
+			return
+		}
+		timeout := computerApprovalTimeout
 		if timeoutMs > 0 && timeoutMs < timeout.Milliseconds() {
 			timeout = time.Duration(timeoutMs) * time.Millisecond
 		}
 		if w.computerRequests == nil {
-			w.computerRequests = make(map[string]workers.ComputerRequest)
+			w.computerRequests = make(map[string]pendingComputerApproval)
 		}
-		w.computerRequests[id] = workers.ComputerRequest{ID: id, Tool: message.Tool, Detail: message.Detail, Expires: time.Now().Add(timeout)}
+		w.computerRequests[id] = pendingComputerApproval{
+			ComputerRequest: workers.ComputerRequest{ID: id, Tool: message.Tool, Detail: message.Detail, Expires: time.Now().Add(timeout)},
+			digest:          message.Digest,
+		}
+	default:
+		_ = w.writeComputerDecision(id, "off")
 	}
 }
 
@@ -76,7 +80,7 @@ func (w *piRPCWorker) ComputerRequests() []workers.ComputerRequest {
 	w.expireComputerRequestsLocked()
 	var out []workers.ComputerRequest
 	for _, request := range w.computerRequests {
-		out = append(out, request)
+		out = append(out, request.ComputerRequest)
 	}
 	slices.SortFunc(out, func(a, b workers.ComputerRequest) int { return a.Expires.Compare(b.Expires) })
 	return out
@@ -87,16 +91,26 @@ func (w *piRPCWorker) ReplyComputerRequest(id string, allow bool) error {
 	defer w.mu.Unlock()
 	w.expireComputerRequestsLocked()
 	request, found := w.computerRequests[id]
-	if !found {
+	if !found || w.extensionClosed || w.status.State == workers.WorkerStateError || w.computerMode == nil {
 		return errors.New("approval expired")
 	}
 	mode := w.computerMode()
-	allow = allow && mode != "off"
-	if err := w.writeComputerResponse(request.ID, allow); err != nil {
+	decision := "declined"
+	if mode != "allow" && mode != "ask" {
+		decision = "off"
+	} else if allow {
+		decision = "approved"
+	}
+	if err := w.writeComputerDecision(request.ID, decision); err != nil {
 		return err
 	}
 	delete(w.computerRequests, id)
-	w.computerDenied = w.computerDenied || !allow
+	if decision == "declined" {
+		w.rememberDeclinedComputerActionLocked(request.digest)
+	}
+	if decision == "off" {
+		return errors.New("approval expired")
+	}
 	return nil
 }
 
@@ -104,17 +118,21 @@ func (w *piRPCWorker) ApplyComputerPolicy() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.expireComputerRequestsLocked()
-	mode := w.computerMode()
-	if mode != "allow" && mode != "off" {
+	if w.computerMode == nil || w.extensionClosed {
 		return
 	}
+	mode := w.computerMode()
+	clear(w.computerDenied)
+	if mode == "ask" {
+		return
+	}
+	decision := "off"
 	if mode == "allow" {
-		w.computerDenied = false
+		decision = "approved"
 	}
 	for id := range w.computerRequests {
-		if w.writeComputerResponse(id, mode == "allow") == nil {
-			delete(w.computerRequests, id)
-		}
+		_ = w.writeComputerDecision(id, decision)
+		delete(w.computerRequests, id)
 	}
 }
 
@@ -123,13 +141,21 @@ func (w *piRPCWorker) expireComputerRequestsLocked() {
 	for id, request := range w.computerRequests {
 		if !now.Before(request.Expires) {
 			delete(w.computerRequests, id)
-			w.computerDenied = true
+			w.rememberDeclinedComputerActionLocked(request.digest)
 		}
 	}
 }
 
-func (w *piRPCWorker) writeComputerResponse(id string, allow bool) error {
-	w.writeMu.Lock()
-	defer w.writeMu.Unlock()
-	return WriteCommand(w.stdin, map[string]any{"type": "extension_ui_response", "id": id, "confirmed": allow})
+func (w *piRPCWorker) rememberDeclinedComputerActionLocked(digest string) {
+	if len(w.computerDenied) >= 32 {
+		return
+	}
+	if w.computerDenied == nil {
+		w.computerDenied = make(map[string]struct{})
+	}
+	w.computerDenied[digest] = struct{}{}
+}
+
+func (w *piRPCWorker) writeComputerDecision(id, decision string) error {
+	return w.writeExtensionAnswer(workers.ExtensionAnswer{ID: id, Value: &decision})
 }

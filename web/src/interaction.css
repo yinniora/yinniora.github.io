@@ -113,7 +113,6 @@
       .mobile-command-panel,
       .mobile-command-backdrop,
       .pi-chat-model-popup,
-      .pi-chat-thinking-popup,
       .pi-chat-slash-popup,
       .pi-chat-context-popover,
       .command-palette-overlay,
@@ -175,7 +174,6 @@
       .mobile-command-panel[inert],
       .mobile-command-backdrop[inert],
       .pi-chat-model-popup[style*='display: none'],
-      .pi-chat-thinking-popup[inert],
       .pi-chat-slash-popup[style*='display: none'],
       .pi-chat-context-popover[style*='display: none'],
       .command-palette-overlay:not(.open),
@@ -199,7 +197,6 @@
         .mobile-command-panel.open,
         .mobile-command-backdrop.open,
         .pi-chat-model-popup,
-        .pi-chat-thinking-popup:not([inert]),
         .pi-chat-slash-popup,
         .pi-chat-context-popover,
         .command-palette-overlay.open,
@@ -275,7 +272,7 @@
   }
 }
 
-:root.pi-keyboard-open #spa-root :is(.pi-chat-model-popup, .hub-dialog, .pi-chat-thinking-popup) {
+:root.pi-keyboard-open #spa-root :is(.pi-chat-model-popup, .hub-dialog) {
   --overlay-offset: 0px;
 }
 

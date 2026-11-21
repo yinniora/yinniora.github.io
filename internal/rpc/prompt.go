@@ -32,7 +32,10 @@ type PromptOpts struct {
 //   - --no-session       ephemeral; nothing is persisted to the sessions dir.
 //   - --no-tools         single non-agentic turn (no tool loop).
 //   - --no-extensions    skip extension discovery / UI noise.
+//   - --no-mcp           avoid starting MCP servers for a tool-less prompt.
+//   - --no-skills        omit unrelated skills from the title request.
 //   - --no-context-files don't load AGENTS.md/CLAUDE.md into the prompt.
+//   - --thinking off     avoid reasoning budgets for short administrative calls.
 func OneShotPrompt(ctx context.Context, opts PromptOpts) (string, error) {
 	if strings.TrimSpace(opts.Message) == "" {
 		return "", errors.New("prompt message is empty")
@@ -41,7 +44,7 @@ func OneShotPrompt(ctx context.Context, opts PromptOpts) (string, error) {
 		return "", fmt.Errorf("pi executable not found: %w", err)
 	}
 
-	args := []string{"--mode", "rpc", "--no-session", "--no-tools", "--no-extensions", "--no-context-files"}
+	args := []string{"--mode", "rpc", "--no-session", "--no-tools", "--no-extensions", "--no-mcp", "--no-skills", "--no-context-files", "--thinking", "off"}
 	if strings.TrimSpace(opts.Model) != "" {
 		args = append(args, "--model", opts.Model)
 	}

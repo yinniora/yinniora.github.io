@@ -101,6 +101,7 @@ export default {
   'plugins.error.invalid-endpoint': 'Use an HTTPS address, or HTTP for localhost.',
   'plugins.error.local-only': 'This change must be made on the Mac.',
   'models.noMatches': 'No models match',
+  'models.scoped': 'scoped',
   'models.noneInPicker': 'No models applied. Open Settings → Models to add them.',
   'models.pickerFailed': 'Could not load models. Check Settings → Models.',
   'models.finishReply':

@@ -93,16 +93,11 @@ func (w *piRPCWorker) handleExtensionUI(line string) {
 	if json.Unmarshal([]byte(line), &request) != nil || request.ID == "" || len(request.ID) > 200 {
 		return
 	}
-	if request.Title == computerPolicyTitle {
-		if w.computerMode != nil && request.Method == "select" {
-			mode := w.computerMode()
-			_ = w.writeExtensionAnswer(workers.ExtensionAnswer{ID: request.ID, Value: &mode})
-		}
-		return
-	}
 	if request.Title == computerApprovalTitle {
-		if w.computerMode != nil && request.Method == "confirm" {
-			w.handleComputerApproval(request.ID, request.Message, request.Timeout)
+		if request.Method == "input" {
+			w.handleComputerApproval(request.ID, request.Placeholder, request.Timeout)
+		} else {
+			_ = w.writeExtensionAnswer(workers.ExtensionAnswer{ID: request.ID, Cancelled: true})
 		}
 		return
 	}

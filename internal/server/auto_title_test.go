@@ -240,7 +240,16 @@ func TestMaybeAutoTitleReTitlesOwnAutoTitleAcrossRestart(t *testing.T) {
 	// A fresh server (empty in-memory maps) seeing a session it previously
 	// auto-titled must NOT treat it as user-owned, and should re-title in
 	// each-turn mode when a new message has arrived.
-	s := newAutoTitleServer(t, map[string]string{"pi-web:v1:auto-title:mode": "each-turn"})
+	s := newAutoTitleServer(t, map[string]string{
+		"pi-web:v1:auto-title:mode":  "each-turn",
+		"pi-web:v1:auto-title:model": "anthropic/sonnet",
+	})
+	restore := autoTitleGenerate
+	autoTitleGenerate = func(context.Context, rpc.PromptOpts) (string, error) {
+		t.Fatal("a previously titled session should use the local title heuristic after restart")
+		return "", nil
+	}
+	t.Cleanup(func() { autoTitleGenerate = restore })
 	project := filepath.Join(s.sessionsDir, "proj")
 	if err := os.MkdirAll(project, 0o755); err != nil {
 		t.Fatal(err)

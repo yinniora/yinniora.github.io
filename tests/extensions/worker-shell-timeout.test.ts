@@ -31,21 +31,35 @@ describe('RPC worker computer approval', () => {
         if (name === 'tool_call' || name === 'before_agent_start') handlers[name] = handler;
       },
     });
-    const confirm = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    const select = vi.fn().mockResolvedValue('allow');
-    const ctx = { ui: { confirm, select } };
+    const input = vi.fn().mockResolvedValueOnce('declined').mockResolvedValueOnce('approved');
+    const ctx = { ui: { input } };
     const result = await handlers.before_agent_start({ systemPrompt: 'Original system prompt' }, ctx);
-    expect(result.systemPrompt).toContain('currently permits');
-    expect(result.systemPrompt).toContain('applies only to that attempt');
+    expect(result.systemPrompt).toContain('current session approval policy');
+    expect(input).not.toHaveBeenCalled();
     const blocked = await handlers.tool_call({ toolName: 'find_roots' }, ctx);
     expect(blocked.block).toBe(true);
     expect(blocked.terminate).toBeUndefined();
-    expect(blocked.reason).toContain('Continue any remaining work');
-    expect(confirm.mock.calls[0][2].timeout).toBe(120000);
+    expect(blocked.reason).toContain('Continue unrelated work');
+    expect(input.mock.calls[0][2].timeout).toBe(120000);
     expect(await handlers.tool_call({ toolName: 'read' }, ctx)).toBeUndefined();
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(input).toHaveBeenCalledTimes(1);
     expect(await handlers.tool_call({ toolName: 'observe_ui' }, ctx)).toBeUndefined();
-    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(input).toHaveBeenCalledTimes(2);
+  });
+
+  it('blocks unavailable or cancelled approval and reports when computer control is off', async () => {
+    let handle;
+    registerWorkerExtension({
+      registerCommand: () => {},
+      on: (name, handler) => {
+        if (name === 'tool_call') handle = handler;
+      },
+    });
+    const event = { toolName: 'find_roots', input: {} };
+    const input = vi.fn().mockResolvedValueOnce('off').mockResolvedValueOnce(undefined).mockResolvedValueOnce('approved');
+    expect(await handle(event, { ui: { input } })).toMatchObject({ block: true, reason: expect.stringContaining('off for this conversation') });
+    expect(await handle(event, { ui: { input } })).toMatchObject({ block: true });
+    expect(await handle(event, { ui: { input }, signal: AbortSignal.abort() })).toMatchObject({ block: true });
   });
 });
 

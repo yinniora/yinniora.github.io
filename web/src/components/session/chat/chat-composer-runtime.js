@@ -123,6 +123,9 @@ export function runChatComposer({
     getCurrentModelForThinking: () => currentModelForThinking,
     getKnownThinkingLevel: toolbar.getKnownThinkingLevel,
     setKnownThinkingLevel: toolbar.setKnownThinkingLevel,
+    waitForThinkingChange: () => _thinkingSelectorApi?.whenSettled?.(),
+    isChangingModel: () => _modelSelectorApi?.isChangingModel?.(),
+    showPickerError: (message) => _modelSelectorApi?.showPickerError?.(message),
   });
 
   function setupPiChatComposer() {
@@ -190,14 +193,18 @@ export function runChatComposer({
     const autoResizeTextarea = textareaControls.autoResize;
     cleanups.push(textareaControls.dispose);
 
-    setupComposerExpansion({
+    const expansion = setupComposerExpansion({
       sessionId,
       shell,
       expandButton,
       textarea,
       storage: getComposerStorage({ windowImpl: window }),
-      onHeightChange: updateComposerHeightVar,
+      onHeightChange: () => {
+        if (shell?.classList.contains('expanded')) updateComposerHeightVar();
+        else autoResizeTextarea();
+      },
     });
+    cleanups.push(expansion.dispose);
 
     function setStatus(text, cls) {
       setChatStatus(text, cls);
@@ -283,6 +290,10 @@ export function runChatComposer({
       windowImpl: window,
       chatApi: __piChatApi,
       sessionId,
+      getModelSelectionRevision: () =>
+        _modelSelectorApi?.isChangingModel?.() || _thinkingSelectorApi?.isChangingEffort?.()
+          ? null
+          : `${_modelSelectorApi?.changeGeneration?.() ?? 0}:${_thinkingSelectorApi?.changeGeneration?.() ?? 0}`,
       setStatus,
       setModelLabel,
       setThinkingLabel,

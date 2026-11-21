@@ -76,10 +76,6 @@
     event.stopPropagation();
     document.getElementById('pi-chat-model-label')?.click();
   }
-  function chooseEffort(event) {
-    event.stopPropagation();
-    document.getElementById('pi-chat-thinking-label')?.click();
-  }
   // Resume a stopped task where it left off, with whichever model and effort
   // are selected now.
   const continueTask = () =>
@@ -175,7 +171,6 @@
           interrupted
           onContinue={chatAvailable && latestTurn ? continueTask : null}
           onChooseModel={chatAvailable && latestTurn ? chooseModel : null}
-          onChooseEffort={chatAvailable && latestTurn ? chooseEffort : null}
           onRetry={chatAvailable && retryContent ? retry : null}
         />
       {:else}
@@ -199,7 +194,6 @@
         labelKey="activity.emptyReply"
         onContinue={chatAvailable && latestTurn ? continueTask : null}
         onChooseModel={chatAvailable ? chooseModel : null}
-        onChooseEffort={chatAvailable && latestTurn ? chooseEffort : null}
         onRetry={chatAvailable && retryContent ? retry : null}
       />
     {:else if msg.stopReason === 'error'}

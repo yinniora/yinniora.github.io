@@ -48,8 +48,8 @@ type piRPCWorker struct {
 	streamSink           StreamEventSink
 	streamPreview        *streamPreviewAccumulator
 	computerMode         func() string
-	computerRequests     map[string]workers.ComputerRequest
-	computerDenied       bool
+	computerRequests     map[string]pendingComputerApproval
+	computerDenied       map[string]struct{}
 	compacting           bool
 	compactionFailed     bool
 	agentRevision        uint64
@@ -132,13 +132,18 @@ func sessionHeaderCWD(sessionPath string) string {
 	return strings.TrimSpace(hdr.CWD)
 }
 
-func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink, guardPath string, computerMode func() string) (workers.ChatWorker, error) {
+func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink, guardPath string, computerMode func() string, extensions ...string) (workers.ChatWorker, error) {
 	if _, err := exec.LookPath("pi"); err != nil {
 		return nil, fmt.Errorf("pi executable not found: %w", err)
 	}
 	args := []string{"--mode", "rpc"}
 	if guardPath != "" {
 		args = append(args, "-e", guardPath)
+	}
+	for _, extension := range extensions {
+		if extension != "" {
+			args = append(args, "-e", extension)
+		}
 	}
 	cmd := exec.Command("pi", args...)
 	cmd.Dir = workerDir(sessionPath)
@@ -225,7 +230,7 @@ func (w *piRPCWorker) Prompt(ctx context.Context, chat chat.Request) error {
 	w.mu.Unlock()
 	if checkContext {
 		var compactErr error
-		if needsCompaction(w.sessionPath, limits) {
+		if needsCompaction(w.sessionPath, limits, chat) {
 			compactErr = w.compactContext(ctx)
 		}
 		w.mu.Lock()
@@ -339,6 +344,8 @@ func (w *piRPCWorker) Abort(ctx context.Context) error {
 	w.mu.Lock()
 	w.status.State = workers.WorkerStateIdle
 	w.status.Error = ""
+	clear(w.computerRequests)
+	clear(w.computerDenied)
 	for id, pending := range w.extensionDialogs {
 		if pending.dialog.Method == "question" {
 			pending.timer.Stop()
@@ -476,6 +483,8 @@ func (w *piRPCWorker) Status() workers.WorkerStatus {
 	s.ThinkingLevels = w.thinkingLevels
 	s.HandledPrompt = w.handledPrompt
 	s.CompactionFailed = w.compactionFailed
+	w.expireComputerRequestsLocked()
+	s.WaitingForInput = len(w.computerRequests) > 0
 	for _, pending := range w.extensionDialogs {
 		if pending.dialog.Method == "question" && time.Now().Before(pending.dialog.Expires) {
 			s.WaitingForInput = true
@@ -495,6 +504,8 @@ func (w *piRPCWorker) Status() workers.WorkerStatus {
 func (w *piRPCWorker) Close() error {
 	w.mu.Lock()
 	w.extensionClosed = true
+	clear(w.computerRequests)
+	clear(w.computerDenied)
 	for _, pending := range w.extensionDialogs {
 		pending.timer.Stop()
 	}
@@ -684,6 +695,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		case message.Role == "user":
 			w.mu.Lock()
 			w.questionUnanswered = false
+			clear(w.computerDenied)
 			w.mu.Unlock()
 		case message.Role == "toolResult" && message.ToolName == "pi_web_ask_user_question":
 			var details struct {
@@ -722,7 +734,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 	case "agent_start":
 		w.mu.Lock()
 		w.recovering = false
-		w.computerDenied = false
+		clear(w.computerDenied)
 		w.agentRevision++
 		w.status.State = workers.WorkerStateRunning
 		w.status.Error = ""
@@ -750,6 +762,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		w.agentRevision++
 		w.status = workers.WorkerStatus{State: workers.WorkerStateIdle}
 		clear(w.computerRequests)
+		clear(w.computerDenied)
 		w.mu.Unlock()
 		w.lastStreamActivity.Store(0)
 		w.emitStreamPreview(assistantMessageEvent{Type: "agent_end"})
@@ -889,6 +902,8 @@ func (w *piRPCWorker) setError(err error) {
 	if w.status.State != workers.WorkerStateError {
 		w.status = workers.WorkerStatus{State: workers.WorkerStateError, Error: err.Error()}
 	}
+	clear(w.computerRequests)
+	clear(w.computerDenied)
 	for id, ch := range w.pending {
 		delete(w.pending, id)
 		ch <- response{ID: id, Type: "response", Success: false, Error: err.Error()}

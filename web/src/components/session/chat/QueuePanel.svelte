@@ -127,7 +127,10 @@
       key === 'e' ||
       key === 'E';
     if (!known) return;
-    if (event.target?.closest?.('button, a, summary') || !shouldHandleShortcut(event.target, key))
+    if (
+      event.target?.closest?.('button, a, summary, #pi-chat-model-popup') ||
+      !shouldHandleShortcut(event.target, key)
+    )
       return;
 
     if (key === 'ArrowDown') {

@@ -27,7 +27,7 @@ describe('setupComposerExpansion', () => {
 
     expect(parts.shell.classList.contains('expanded')).toBe(true);
     expect(parts.expandButton.getAttribute('aria-pressed')).toBe('true');
-    expect(parts.expandButton.getAttribute('aria-label')).toBe('Collapse composer');
+    expect(parts.expandButton.getAttribute('aria-label')).toBe('Collapse');
   });
 
   it('toggles and persists state on click', () => {

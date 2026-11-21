@@ -7,22 +7,6 @@ import { t } from '../../../shared/i18n.js';
 import { icon, Check } from '../../../shared/icons.js';
 import { escapeHtml } from '../../../session/render/session-format.js';
 
-export function renderThinkingLevelList({
-  levels = THINKING_LEVELS,
-  selectedLevel = '',
-  currentModel = null,
-} = {}) {
-  const supported = supportedThinkingLevels(currentModel, levels);
-  let html = '';
-  supported.forEach((level) => {
-    const active = level === selectedLevel ? ' selected' : '';
-    const label = escapeHtml(t('thinking.' + level));
-    const mark = active ? icon(Check, { size: 16, strokeWidth: 2.5 }) : '';
-    html += `<button type="button" class="thinking-level-item${active}" data-level="${level}" aria-pressed="${Boolean(active)}"><span>${label}</span>${mark}</button>`;
-  });
-  return html;
-}
-
 export function setupThinkingLevelSelector({
   documentImpl = document,
   scope,
@@ -33,159 +17,118 @@ export function setupThinkingLevelSelector({
   setKnownThinkingLevel = () => {},
   setThinkingLabel = () => {},
   setChatStatus = () => {},
+  isChangingModel = () => false,
+  showPickerError = () => {},
   chatApi,
 } = {}) {
-  const thinkingLabelBtn = documentImpl.getElementById('pi-chat-thinking-label');
-  const thinkingPopup = documentImpl.getElementById('pi-chat-thinking-popup');
+  const thinkingControls = documentImpl.getElementById('pi-chat-effort-controls');
   const thinkingList = documentImpl.getElementById('pi-chat-thinking-list');
-  if (!thinkingLabelBtn || !thinkingPopup || !thinkingList) return false;
+  if (!thinkingControls || !thinkingList) return false;
 
-  let cycleGeneration = 0;
-  let cycleQueue = Promise.resolve();
-  let queuedCycles = 0;
-  let confirmedThinkingLevel = getKnownThinkingLevel() || '';
-  let renderedList;
+  let generation = 0;
+  let pendingChange = Promise.resolve();
+  let queuedChanges = 0;
+  let confirmedLevel = getKnownThinkingLevel();
+  let previousLevels = '';
 
-  function renderThinkingList(selectedLevel) {
-    const list = renderThinkingLevelList({
-      selectedLevel,
-      currentModel: getCurrentModel(),
-    });
-    if (list !== renderedList) {
-      thinkingList.innerHTML = list;
-      renderedList = list;
+  function refresh() {
+    const model = getCurrentModel();
+    const levels = model ? supportedThinkingLevels(model) : [];
+    thinkingControls.hidden = levels.length <= 1;
+    const key = levels.join(',');
+    if (key !== previousLevels) {
+      const mark = icon(Check, { size: 14, class: 'thinking-choice-mark' });
+      thinkingList.innerHTML = levels
+        .map((level) => {
+          const label = escapeHtml(t('thinking.' + level));
+          return (
+            '<button type="button" class="thinking-level-item" data-level="' +
+            level +
+            '">' +
+            mark +
+            '<span>' +
+            label +
+            '</span></button>'
+          );
+        })
+        .join('');
+      previousLevels = key;
+    }
+    const selectedLevel = getKnownThinkingLevel();
+    for (const item of thinkingList.querySelectorAll('.thinking-level-item')) {
+      const active = selectedLevel === item.dataset.level;
+      item.classList.toggle('selected', active);
+      item.setAttribute('aria-pressed', String(active));
     }
   }
 
-  function openThinkingPopup() {
-    thinkingPopup.inert = false;
-    thinkingPopup.style.display = 'flex';
-    thinkingLabelBtn.setAttribute('aria-expanded', 'true');
-    renderThinkingList(getKnownThinkingLevel());
-  }
-
-  function closeThinkingPopup() {
-    if (thinkingPopup.contains(documentImpl.activeElement))
-      thinkingLabelBtn.focus({ preventScroll: true });
-    thinkingPopup.inert = true;
-    thinkingPopup.style.display = 'none';
-    thinkingLabelBtn.setAttribute('aria-expanded', 'false');
-  }
-
-  thinkingLabelBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (thinkingPopup.style.display !== 'none') closeThinkingPopup();
-    else openThinkingPopup();
-  });
-
-  thinkingList.addEventListener('click', async (e) => {
-    const item = e.target.closest('.thinking-level-item');
-    if (!item) return;
-    if (item.disabled) return;
-    const level = item.dataset.level;
-    if (!level) return;
-    closeThinkingPopup();
-    const gen = ++cycleGeneration;
-    const run = async () => {
-      try {
-        const res = await chatApi.setThinkingLevel(sessionId, level);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'set thinking level failed');
-        const effectiveLevel = data.thinkingLevel || level;
-        confirmedThinkingLevel = effectiveLevel;
-        if (gen !== cycleGeneration) return;
-        setKnownThinkingLevel(effectiveLevel);
-        setThinkingLabel(effectiveLevel);
-      } catch (err) {
-        if (gen !== cycleGeneration) return;
-        setKnownThinkingLevel(confirmedThinkingLevel);
-        setThinkingLabel(confirmedThinkingLevel);
-        setChatStatus(err.message || String(err), 'error');
-      }
-    };
-    cycleQueue = cycleQueue.catch(() => {}).then(run);
-    await cycleQueue;
-  });
-
-  documentImpl.addEventListener(
-    'click',
-    (e) => {
-      if (
-        thinkingPopup.style.display !== 'none' &&
-        !thinkingPopup.contains(e.target) &&
-        !thinkingLabelBtn.contains(e.target)
-      ) {
-        closeThinkingPopup();
-      }
-    },
-    { signal: scope },
-  );
-  documentImpl.addEventListener(
-    'keydown',
-    (event) => {
-      if (event.key === 'Escape' && thinkingPopup.style.display !== 'none') closeThinkingPopup();
-    },
-    { signal: scope },
-  );
-
-  // Cycle to the next supported thinking level without opening the popup.
-  async function cycleThinkingLevel() {
-    const supported = supportedThinkingLevels(getCurrentModel(), THINKING_LEVELS);
-    const current = getKnownThinkingLevel() || '';
-    const idx = supported.indexOf(current);
-    const nextIdx = (idx + 1) % supported.length;
-    const next = supported[nextIdx];
-    if (!next || next === current) return;
-
-    if (queuedCycles === 0) confirmedThinkingLevel = current;
-    queuedCycles++;
-    const gen = ++cycleGeneration;
-    // Optimistically update local state so rapid Shift+Tab presses cycle through levels.
-    setKnownThinkingLevel(next);
-    setThinkingLabel(next);
+  function changeThinkingLevel(level, optimistic) {
+    if (scope?.aborted || isChangingModel()) return;
+    const current = getKnownThinkingLevel();
+    if (!level || level === current || !supportedThinkingLevels(getCurrentModel()).includes(level))
+      return;
+    if (queuedChanges === 0) confirmedLevel = current;
+    queuedChanges++;
+    const requestedGeneration = ++generation;
+    showPickerError();
+    if (optimistic) {
+      setKnownThinkingLevel(level);
+      setThinkingLabel(level);
+      refresh();
+    }
 
     const run = async () => {
       try {
-        if (gen !== cycleGeneration) return; // stale before reaching backend
-        const res = await chatApi.setThinkingLevel(sessionId, next);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'set thinking level failed');
-        const effectiveLevel = data.thinkingLevel || next;
-        confirmedThinkingLevel = effectiveLevel;
-        if (gen !== cycleGeneration) return; // stale; a newer cycle has started
-        setKnownThinkingLevel(effectiveLevel);
-        setThinkingLabel(effectiveLevel);
+        if (scope?.aborted || requestedGeneration !== generation) return;
+        const response = await chatApi.setThinkingLevel(sessionId, level);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'set thinking level failed');
+        confirmedLevel = result.thinkingLevel || level;
+        if (scope?.aborted || requestedGeneration !== generation) return;
+        setKnownThinkingLevel(confirmedLevel);
+        setThinkingLabel(confirmedLevel);
       } catch (err) {
-        if (gen !== cycleGeneration) return; // stale; a newer cycle has started
-        // Revert to the last level confirmed by the backend, not an optimistic value.
-        setKnownThinkingLevel(confirmedThinkingLevel);
-        setThinkingLabel(confirmedThinkingLevel);
-        setChatStatus(err.message || String(err), 'error');
+        if (scope?.aborted || requestedGeneration !== generation) return;
+        setKnownThinkingLevel(confirmedLevel);
+        setThinkingLabel(confirmedLevel);
+        const error = err.message || String(err);
+        if (!showPickerError(error)) setChatStatus(error, 'error');
       } finally {
-        queuedCycles = Math.max(0, queuedCycles - 1);
+        queuedChanges--;
+        if (!scope?.aborted) refresh();
       }
     };
-
-    // Queue requests so the backend observes the same order as the UI.
-    cycleQueue = cycleQueue.catch(() => {}).then(run);
-    return cycleQueue;
+    pendingChange = pendingChange.catch(() => {}).then(run);
+    return pendingChange;
   }
 
-  const detectedThinkingLevel = detectCurrentThinkingLevel(entries);
-  if (detectedThinkingLevel) {
-    confirmedThinkingLevel = detectedThinkingLevel;
-    setKnownThinkingLevel(detectedThinkingLevel);
-    setThinkingLabel(detectedThinkingLevel);
+  thinkingList.addEventListener(
+    'click',
+    (event) => {
+      const item = event.target.closest('.thinking-level-item');
+      if (!item || item.disabled) return;
+      void changeThinkingLevel(item.dataset.level, false);
+    },
+    { signal: scope },
+  );
+
+  const detectedLevel = detectCurrentThinkingLevel(entries);
+  if (detectedLevel) {
+    confirmedLevel = detectedLevel;
+    setKnownThinkingLevel(detectedLevel);
+    setThinkingLabel(detectedLevel);
   }
+  refresh();
 
   return {
-    open: openThinkingPopup,
-    close: closeThinkingPopup,
-    cycle: cycleThinkingLevel,
-    refresh: () => {
-      if (thinkingPopup.style.display === 'none') return;
-      if (supportedThinkingLevels(getCurrentModel()).length <= 1) closeThinkingPopup();
-      else renderThinkingList(getKnownThinkingLevel());
+    cycle: () => {
+      const levels = supportedThinkingLevels(getCurrentModel(), THINKING_LEVELS);
+      const index = levels.indexOf(getKnownThinkingLevel());
+      return changeThinkingLevel(levels[(index + 1) % levels.length], true);
     },
+    refresh,
+    whenSettled: () => pendingChange,
+    changeGeneration: () => generation,
+    isChangingEffort: () => queuedChanges > 0,
   };
 }

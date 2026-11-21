@@ -39,6 +39,8 @@
   --dim: #e8e8eb;
   --dim-2: #f1f1f3;
   --accent: #2b2c30;
+  --composer-primary: #374985;
+  --composer-on-primary: #fff;
   --userMessageBg: #f3f3f5;
   --userMessageText: #202123;
   --mdHeading: #202123;
@@ -76,6 +78,8 @@
   --dim: #383838;
   --dim-2: #2a2a2a;
   --accent: #e8e8e8;
+  --composer-primary: #b9c7fa;
+  --composer-on-primary: #182448;
   --userMessageBg: #303030;
   --userMessageText: #ececec;
   --mdHeading: #f4f4f5;
@@ -300,13 +304,15 @@
   display: none;
 }
 #spa-root #pi-chat-message {
-  padding: 13px 7px;
+  padding: 13px 48px 13px 7px;
   min-height: 60px;
+  font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.6;
   background: transparent;
   border: 0;
   resize: none;
+  transition: none;
 }
 #spa-root .pi-chat-toolbar {
   border: 0;
@@ -315,8 +321,8 @@
   display: none;
 }
 #spa-root #pi-chat-send {
-  background: var(--text);
-  color: var(--body-bg);
+  background: var(--composer-primary, var(--text));
+  color: var(--composer-on-primary, var(--body-bg));
 }
 #spa-root .pi-chat-git-footer,
 #spa-root .git-footer {
@@ -1573,9 +1579,6 @@
 #spa-root .session-grid[hidden] {
   display: none;
 }
-.mobile-model-heading {
-  display: none;
-}
 @media (max-width: 900px) {
   html {
     -webkit-text-size-adjust: 100%;
@@ -1671,51 +1674,6 @@
   }
   #spa-root #pi-chat-message {
     max-height: min(160px, calc(var(--pi-visual-height, 100dvh) * 0.3));
-  }
-  #spa-root .pi-chat-model-popup {
-    position: fixed;
-    left: 8px;
-    right: 8px;
-    bottom: auto;
-    top: calc(env(safe-area-inset-top, 0px) + 8px);
-    height: calc(var(--pi-visual-height, 100dvh) - env(safe-area-inset-top, 0px) - 16px);
-    max-height: none;
-    border-radius: 18px;
-    z-index: 1100;
-    overflow: hidden;
-    background: var(--surface);
-    box-shadow: 0 18px 60px #0007;
-  }
-  #spa-root .mobile-model-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 10px 6px 16px;
-    border-bottom: 1px solid var(--dim);
-  }
-  #spa-root .mobile-model-heading button {
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    border: 0;
-    background: transparent;
-    color: var(--text);
-  }
-  #spa-root #pi-chat-model-search {
-    font-size: 16px;
-    min-height: 48px;
-    padding: 12px 16px;
-  }
-  #spa-root .model-item {
-    min-height: 48px;
-    padding: 12px 16px;
-    white-space: normal;
-    text-align: left;
-  }
-  #spa-root .pi-chat-model-list {
-    min-height: 0;
-    overscroll-behavior: contain;
   }
   #spa-root .modal-overlay,
   #spa-root .pi-sheet-backdrop {
@@ -2308,7 +2266,8 @@ body .pi-btw-input {
 /* Attachments sit above the text, like a message draft; leave room for the
    expand button in the top-right corner and keep the text close below. */
 #spa-root .pi-chat-attachments {
-  padding: 8px 34px 2px 4px;
+  padding: 8px 48px 2px 4px;
+  gap: 8px;
 }
 #spa-root .pi-chat-attachments:not(:empty) + #pi-chat-message {
   padding-top: 8px;
@@ -2737,38 +2696,43 @@ body .pi-btw-input {
 }
 
 #spa-root #pi-chat-composer {
-  --composer-control-size: 40px;
-  --composer-control-radius: 10px;
+  --composer-control-size: 44px;
+  --composer-control-radius: 12px;
 }
 #spa-root #pi-chat-message:focus {
   outline: none;
 }
-.pi-keyboard-open #spa-root #pi-chat-message {
-  padding-inline-end: 44px;
-}
 #spa-root .pi-chat-toolbar {
-  gap: 4px;
+  gap: 6px;
   overflow: visible;
-  padding: 2px 0 0;
+  padding: 3px 0 0;
 }
-#spa-root .pi-chat-toolbar-left {
-  gap: 2px;
-  min-width: 0;
-  overflow: visible;
-}
+#spa-root .pi-chat-toolbar-left,
+#spa-root .composer-model-controls,
 #spa-root .pi-chat-toolbar .actions,
 #spa-root .pi-chat-send-group {
   display: flex;
   align-items: center;
   flex: none;
-  gap: 2px;
+  gap: 4px;
+}
+#spa-root .composer-model-controls {
+  flex: 1;
+  min-width: 0;
+}
+#spa-root .pi-chat-toolbar-left .computer-permission {
+  flex: none;
+}
+#spa-root .pi-chat-toolbar-left .computer-panel {
+  left: 3px;
+  right: auto;
+  max-height: min(340px, calc(var(--pi-visual-height, 100dvh) - 118px));
 }
 #spa-root
   :is(
     .pi-chat-icon-button,
     .pi-chat-expand-button,
     .pi-chat-model-label,
-    .pi-chat-thinking-label,
     .pi-chat-cancel,
     .pi-chat-queue,
     .pi-chat-send,
@@ -2800,13 +2764,12 @@ body .pi-btw-input {
     .pi-chat-icon-button,
     .pi-chat-expand-button,
     .pi-chat-model-label,
-    .pi-chat-thinking-label,
     .pi-chat-cancel,
     .pi-chat-queue,
     .pi-queue-toggle,
     .pi-queue-item-action
-  ):is(:hover, :focus-visible):not(:disabled),
-#spa-root .pi-chat-thinking-label[aria-expanded='true'],
+  ):is(:hover, :focus-visible, :active):not(:disabled),
+#spa-root .pi-chat-model-label[aria-expanded='true'],
 #spa-root details[open] > .pi-chat-icon-button {
   background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--text);
@@ -2826,37 +2789,58 @@ body .pi-btw-input {
 #spa-root .pi-chat-expand-button {
   top: 3px;
   right: 3px;
+  opacity: 0.82;
+  touch-action: manipulation;
 }
-#spa-root .pi-chat-expand-button.dismiss-keyboard {
-  display: none;
-}
-#spa-root .pi-chat-toolbar-left .pi-chat-model-label {
+#spa-root .composer-model-controls .pi-chat-model-label {
   justify-content: flex-start;
+  gap: 7px;
   min-width: 0;
-  max-width: 250px;
+  max-width: 310px;
   flex: 0 1 auto;
-  padding-inline: 5px;
-  font-size: 12px;
-  font-weight: 550;
+  padding-inline: 8px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
 }
-#spa-root .pi-chat-model-label > span {
+#spa-root .composer-model-name {
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-#spa-root .pi-chat-thinking-label {
+#spa-root .composer-effort-label {
+  flex: none;
   color: var(--text);
-  font-weight: 600;
+  font-size: 12px;
+}
+#spa-root .composer-model-controls .pi-chat-context-usage {
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  border-radius: var(--composer-control-radius);
+  min-width: 34px;
+  height: var(--composer-control-size);
+  padding: 0 4px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 11px;
+}
+#spa-root
+  .composer-model-controls
+  .pi-chat-context-usage:is(:hover, :focus-visible, [aria-expanded='true']) {
+  background: var(--hover);
 }
 #spa-root #pi-chat-send {
   padding-inline: 13px;
+  border-radius: 999px;
   font-weight: 600;
 }
 #spa-root #pi-chat-send:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--text) 85%, var(--body-bg));
+  background: color-mix(in srgb, var(--composer-primary, var(--text)) 90%, var(--body-bg));
 }
 #spa-root #pi-chat-send:disabled {
-  background: color-mix(in srgb, var(--text) 11%, var(--input-bg));
+  background: color-mix(in srgb, var(--text) 9%, var(--input-bg));
   color: var(--text-soft);
   opacity: 1;
 }
@@ -2932,20 +2916,21 @@ body .pi-btw-input {
 }
 
 @media (max-width: 760px) {
-  #spa-root .pi-chat-expand-button#pi-chat-expand {
-    display: none;
+  #spa-root .pi-chat-shell.expanded #pi-chat-message {
+    min-height: min(420px, calc(var(--pi-visual-height, 100dvh) * 0.54));
+    max-height: min(420px, calc(var(--pi-visual-height, 100dvh) * 0.54));
   }
-  .pi-keyboard-open #spa-root .pi-chat-expand-button.dismiss-keyboard {
-    display: inline-flex;
-    width: 44px;
-    height: 44px;
-    color: var(--text-soft);
-    opacity: 1;
+  .pi-keyboard-open #spa-root .pi-chat-shell.expanded #pi-chat-message {
+    min-height: clamp(76px, calc(var(--pi-visual-height, 100dvh) * 0.4), 210px);
+    max-height: clamp(76px, calc(var(--pi-visual-height, 100dvh) * 0.4), 210px);
   }
   #spa-root #pi-chat-send,
   #spa-root #pi-chat-cancel {
     width: var(--composer-control-size);
     padding: 0;
+  }
+  #spa-root .actions.running:has(.pi-chat-send:disabled) .pi-chat-cancel {
+    border-radius: 999px;
   }
   #spa-root :is(#pi-chat-send, #pi-chat-cancel) > span {
     position: absolute;
@@ -2954,14 +2939,21 @@ body .pi-btw-input {
     overflow: hidden;
     clip-path: inset(50%);
   }
+  #spa-root .pi-chat-toolbar:has(.actions.running #pi-chat-send:enabled) .pi-context-text {
+    display: none;
+  }
+}
+@media (max-width: 430px) {
+  #spa-root .pi-chat-toolbar:has(.actions.running #pi-chat-send:enabled) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 3px;
+  }
+  #spa-root .pi-chat-toolbar:has(.actions.running #pi-chat-send:enabled) .actions {
+    grid-column: 1 / -1;
+  }
 }
 @media (max-width: 370px) {
-  #spa-root #pi-chat-composer {
-    --composer-control-size: 38px;
-  }
-  #spa-root .pi-chat-toolbar .actions {
-    gap: 0;
-  }
   #spa-root .pi-chat-context-usage .pi-context-text {
     display: none;
   }
@@ -2991,16 +2983,35 @@ body .pi-btw-input {
   border-radius: 10px;
   overflow: hidden;
 }
+#spa-root .pi-chat-attachment:not(.image-only) {
+  min-height: 44px;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  max-width: min(228px, 100%);
+  border-radius: 12px;
+  padding: 2px 3px 2px 11px;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+#spa-root .pi-chat-attachment:not(.image-only) .pi-chat-remove {
+  width: 36px;
+  height: 36px;
+  color: var(--text-soft);
+  border: 0;
+}
 #spa-root .pi-chat-attachment-preview {
-  width: 56px;
-  height: 56px;
+  width: 68px;
+  height: 68px;
   max-width: none;
   object-fit: cover;
   border-radius: 0;
 }
 #spa-root .pi-chat-attachment.image-only .pi-chat-remove {
-  top: 3px;
-  right: 3px;
-  width: 18px;
-  height: 18px;
+  top: 0;
+  right: 0;
+  width: 32px;
+  height: 32px;
+  color: #fff;
+  border: 0;
+  background: radial-gradient(circle, rgb(15 18 25 / 85%) 10px, transparent 10.5px);
 }

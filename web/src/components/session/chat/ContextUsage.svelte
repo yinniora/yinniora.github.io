@@ -8,13 +8,16 @@
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
 
 {#if !popover}
-  <div
+  <button
     id="pi-chat-context-usage"
     class="pi-chat-context-usage"
+    type="button"
+    aria-controls="pi-chat-context-popover"
+    aria-expanded="false"
     style="display: none"
     title={t('composer.contextDetails')}
   >
-    <svg class="pi-context-circle" viewBox="0 0 36 36">
+    <svg class="pi-context-circle" viewBox="0 0 36 36" aria-hidden="true">
       <path
         class="pi-context-bg"
         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
@@ -26,7 +29,7 @@
       />
     </svg>
     <span class="pi-context-text">0%</span>
-  </div>
+  </button>
 {:else}
   <div id="pi-chat-context-popover" class="pi-chat-context-popover" style="display: none;">
     <div class="pi-popover-arrow"></div>

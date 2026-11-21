@@ -12,23 +12,19 @@ describe('ChatToolbar', () => {
     const toolbar = new ChatToolbarState();
     toolbar.modelLabel = 'gpt-test';
     toolbar.canAdjustThinking = true;
+    toolbar.selectedModel = { reasoning: true, thinkingLevels: ['low', 'high'] };
+    toolbar.thinkingLevel = 'high';
     toolbar.setStatus('running', 'running');
     render(ChatToolbar, { props: { chatAvailable: true, toolbar } });
 
     expect(document.querySelector('.composer-add summary')).toBeTruthy();
     expect(document.getElementById('pi-chat-status').textContent).toBe('running');
     expect(document.getElementById('pi-chat-status').classList.contains('running')).toBe(true);
-    expect(document.getElementById('pi-chat-thinking-label').disabled).toBe(false);
-    const thinkingControl = document.querySelector('.thinking-control');
-    expect(thinkingControl.hidden).toBe(false);
-    expect(thinkingControl.querySelector('#pi-chat-thinking-popup').hasAttribute('inert')).toBe(
-      true,
-    );
-    expect(thinkingControl.querySelector('#pi-chat-thinking-list').getAttribute('role')).toBe(
-      'group',
-    );
-    expect(document.getElementById('pi-chat-model-label').textContent).toBe('gpt-test');
-    expect(document.getElementById('pi-chat-model-label').style.display).toBe('');
+    const modelControl = document.getElementById('pi-chat-model-label');
+    expect(modelControl.getAttribute('aria-controls')).toBe('pi-chat-model-popup');
+    expect(modelControl.querySelector('.composer-model-name').textContent).toBe('gpt-test');
+    expect(modelControl.querySelector('.composer-effort-label').textContent).toBe('high');
+    expect(modelControl.style.display).toBe('');
     // Cancel + Queue surface only while a response is running; Send becomes Steer.
     expect(document.getElementById('pi-chat-cancel').style.display).toBe('');
     expect(document.getElementById('pi-chat-cancel').textContent).toBe('Stop');
@@ -43,11 +39,10 @@ describe('ChatToolbar', () => {
 
     expect(document.querySelector('.composer-add summary')).toBeNull();
     expect(document.getElementById('pi-chat-status').textContent).toBe('unavailable');
-    expect(document.getElementById('pi-chat-thinking-label').disabled).toBe(true);
-    expect(document.querySelector('.thinking-control').hidden).toBe(true);
+    expect(document.querySelector('.composer-effort-label')).toBeNull();
     expect(document.getElementById('pi-chat-model-label').disabled).toBe(true);
     expect(document.getElementById('pi-chat-model-label').style.display).toBe('none');
-    expect(document.getElementById('pi-chat-model-label').textContent).toBe('Model');
+    expect(document.querySelector('.composer-model-name').textContent).toBe('Model');
     expect(document.getElementById('pi-chat-cancel').disabled).toBe(true);
   });
 
@@ -56,7 +51,7 @@ describe('ChatToolbar', () => {
     render(ChatToolbar, { props: { chatAvailable: true, toolbar } });
 
     expect(document.getElementById('pi-chat-status').textContent).toBe('idle');
-    expect(document.querySelector('.thinking-control').hidden).toBe(true);
+    expect(document.querySelector('.composer-effort-label')).toBeNull();
     expect(document.getElementById('pi-chat-cancel').style.display).toBe('none');
     expect(document.getElementById('pi-chat-queue').style.display).toBe('none');
     expect(document.getElementById('pi-chat-send').textContent.trim()).toBe('Send');

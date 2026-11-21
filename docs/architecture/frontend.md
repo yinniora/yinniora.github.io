@@ -248,8 +248,8 @@ Mobile settings and editable overlays reveal focused fields in their own
 scroll container, with standalone iOS document pan corrected once. The
 project and new-session sheets share the keyboard-adjusted viewport and
 use opaque chrome while editing.
-The reasoning menu is positioned relative to its toolbar button, so viewport
-changes move the menu, toolbar and composer together.
+The model sheet uses the keyboard-adjusted viewport on phones and opens beside
+the composer on larger screens. The draft expands and collapses in place.
 The selected Pi worker supplies the available reasoning levels. Before a worker
 exists, or with an older Pi version, the composer uses model catalog metadata.
 The session menu offers Pi Commands and Session Tools. The searchable
@@ -317,9 +317,9 @@ Reasoning uses Pi's native registry and map semantics. Catalogs may also
 describe exact levels using the OpenCode/models.dev `capabilities.reasoning`
 or Anthropic's `capabilities.effort` and `capabilities.thinking` shapes.
 Model discovery uses the provider's read-only catalog, and switching
-reads the selected model's declared options locally. The composer shows an
-effort button with an icon and the current level. Its menu uses a checkmark
-for the selected option. The model label keeps the configured key label as
+reads the selected model's declared options locally. The model picker shows
+the available effort levels alongside the model list. The toolbar shows the
+current level and keeps the configured key label as
 worker status updates.
 
 Appearance settings can follow the device's light or dark preference in real

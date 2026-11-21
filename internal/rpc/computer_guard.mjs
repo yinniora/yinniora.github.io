@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const computerTools = new Set([
   'find_roots', 'observe_ui', 'search_ui', 'expand_ui', 'inspect_ui', 'act_ui',
   'read_text', 'wait_for', 'launch_browser', 'navigate_browser', 'evaluate_browser',
@@ -5,20 +7,23 @@ const computerTools = new Set([
 ]);
 const defaultShellTimeoutSeconds = 300;
 const approvalTimeoutMs = 120000;
+const deniedGuidance = 'Do not retry or use another tool for the blocked action. Continue unrelated work.';
+const approvalReasons = {
+  cancelled: 'This computer action was cancelled.',
+  off: 'Computer control is off for this conversation.',
+  declined: 'This computer action was declined.',
+  repeated: 'This computer action was declined.',
+};
+
+function orderedArguments(_key, value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  return Object.fromEntries(Object.keys(value).sort().map((name) => [name, value[name]]));
+}
 
 export default function guardComputerTools(pi) {
-  pi.on('before_agent_start', async (event, ctx) => {
-    const mode = await ctx.ui.select('YuGo Pi computer policy', ['ask', 'allow', 'off'], { timeout: 1500, signal: ctx.signal });
-    if (mode === 'allow') {
-      return { systemPrompt: event.systemPrompt + '\n\nYuGo Pi currently permits the registered computer tools in this conversation. An earlier approval error or timeout applies only to that attempt. If computer access is needed for the current request, use the appropriate registered tool and report its actual result.' };
-    }
-    if (mode === 'off') {
-      return { systemPrompt: event.systemPrompt + '\n\nYuGo Pi computer access is currently off for this conversation. Continue work that does not require computer access.' };
-    }
-    if (mode === 'ask') {
-      return { systemPrompt: event.systemPrompt + '\n\nYuGo Pi currently requests approval for computer operations in this conversation. When a protected computer tool is needed, use the registered tool so the app can ask. Earlier errors do not indicate the current approval state.' };
-    }
-  });
+  pi.on('before_agent_start', ({ systemPrompt }) => ({
+    systemPrompt: systemPrompt + '\n\nUse the registered computer tools when needed. Each action follows the current session approval policy. An earlier denial applies to that attempt only.',
+  }));
   pi.registerCommand('yugo-computer-guard-ready', {
     description: 'YuGo Pi computer approval is active',
     handler: async () => {},
@@ -40,18 +45,24 @@ export default function guardComputerTools(pi) {
   });
   pi.on('tool_call', async (event, ctx) => {
     if (!computerTools.has(event.toolName)) return;
-    const guidance = 'Continue any remaining work that does not require this computer action. Do not retry or perform the blocked action through another tool. If computer access is essential, explain what remains blocked and ask the user.';
+    const detail = JSON.stringify(event.input ?? {}, orderedArguments, 2);
     const request = JSON.stringify({
       tool: event.toolName,
-      detail: JSON.stringify(event.input ?? {}).slice(0, 1200),
+      detail: detail.length > 1200 ? detail.slice(0, 1200) + '…' : detail,
+      digest: createHash('sha256').update(event.toolName + '\0' + detail).digest('hex'),
     });
-    const start = Date.now();
-    const approved = await ctx.ui.confirm('YuGo Pi computer approval', request, { timeout: approvalTimeoutMs, signal: ctx.signal });
-    if (!approved) {
-      const reason = Date.now() - start >= approvalTimeoutMs
+    const start = performance.now();
+    const { signal } = ctx;
+    const decision = await ctx.ui.input('YuGo Pi computer approval', request, {
+      timeout: approvalTimeoutMs,
+      signal,
+    });
+    if (decision === 'approved' && !signal?.aborted) return;
+    const reason = approvalReasons[signal?.aborted ? 'cancelled' : decision] || (
+      performance.now() - start >= approvalTimeoutMs
         ? 'Approval timed out for this computer action.'
-        : 'This computer action was not approved.';
-      return { block: true, reason: `${reason} ${guidance}` };
-    }
+        : 'This computer action was not approved.'
+    );
+    return { block: true, reason: `${reason} ${deniedGuidance}` };
   });
 }

@@ -79,7 +79,7 @@ func TestPromptCompactsAfterMeasuredLengthStopEvenWhenPiArchivedIt(t *testing.T)
 	if err := os.WriteFile(path, []byte(fixture+`{"type":"compaction","id":"new","parentId":"omit"}`+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if needsCompaction(path, limits) {
+	if needsCompaction(path, limits, chat.Request{}) {
 		t.Fatal("old usage triggered compaction again after a saved compaction")
 	}
 }

@@ -3,7 +3,6 @@
     icon,
     CircleAlert,
     ChevronRight,
-    Gauge,
     Layers,
     Play,
     RotateCcw,
@@ -20,7 +19,6 @@
     onRetry = null,
     onCompact = null,
     onContinue = null,
-    onChooseEffort = null,
     actionsOnly = false,
   } = $props();
 </script>
@@ -66,15 +64,6 @@
       >
         {@html icon(Layers, { size: 15 })}{#if onContinue}<span>{t('activity.switchModel')}</span
           >{/if}
-      </button>{/if}
-    {#if onChooseEffort}<button
-        type="button"
-        class="reply-action-labeled"
-        aria-label={t('composer.switchEffort')}
-        title={t('composer.switchEffort')}
-        onclick={onChooseEffort}
-      >
-        {@html icon(Gauge, { size: 15 })}<span>{t('composer.switchEffort')}</span>
       </button>{/if}
     {#if onRetry}<button
         type="button"

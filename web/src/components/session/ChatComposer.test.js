@@ -170,7 +170,7 @@ describe('chat composer runner', () => {
     btn.click();
     expect(shell.classList.contains('expanded')).toBe(true);
     expect(btn.getAttribute('aria-pressed')).toBe('true');
-    expect(btn.getAttribute('aria-label')).toBe('Collapse composer');
+    expect(btn.getAttribute('aria-label')).toBe('Collapse');
     expect(storage.get('pi-chat:composer-expanded:abc')).toBe('1');
 
     btn.click();

@@ -35,6 +35,9 @@ export function createChatSelectorLoaders({
   getCurrentModelForThinking = () => null,
   getKnownThinkingLevel = () => '',
   setKnownThinkingLevel = () => {},
+  waitForThinkingChange,
+  isChangingModel,
+  showPickerError,
 } = {}) {
   const getSessionId = () => chatSessionId({ documentImpl, locationImpl, URLSearchParamsImpl });
 
@@ -54,6 +57,7 @@ export function createChatSelectorLoaders({
       setWorkerModelUpdate,
       setKnownThinkingLevel,
       setThinkingLabel,
+      waitForThinkingChange,
     });
   }
 
@@ -95,6 +99,8 @@ export function createChatSelectorLoaders({
       setKnownThinkingLevel,
       setThinkingLabel,
       setChatStatus,
+      isChangingModel,
+      showPickerError,
       chatApi,
     });
   }

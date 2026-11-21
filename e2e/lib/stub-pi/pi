@@ -102,9 +102,9 @@ function handlePrompt(cmd) {
     heldPreview = { last: user.id, computer: true };
     send({ type: "agent_start" });
     send({
-      type: "extension_ui_request", id: "fixture-computer", method: "confirm",
+      type: "extension_ui_request", id: "fixture-computer", method: "input",
       title: "YuGo Pi computer approval", timeout: 120000,
-      message: JSON.stringify({ tool: "find_roots", detail: "Fixture request" }),
+      placeholder: JSON.stringify({ tool: "find_roots", detail: "Fixture request", digest: "a".repeat(64) }),
     });
     return;
   }
@@ -254,7 +254,7 @@ function handle(cmd) {
       break;
     case "extension_ui_response":
       if (cmd.id === "fixture-computer" && heldPreview?.computer) {
-        const text = cmd.confirmed ? "The session policy approved the tool." : "The tool was blocked.";
+        const text = cmd.value === "approved" ? "The session policy approved the tool." : "The tool was blocked.";
         const assistant = messageEntry("assistant", text, heldPreview.last);
         appendEntry(assistant.entry);
         heldPreview = null;

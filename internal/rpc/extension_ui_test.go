@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"pi-web/internal/workers"
 )
@@ -53,7 +54,7 @@ func TestExtensionDialogReplyValidatesChoiceAndCannotAcknowledgeGuard(t *testing
 	w := &piRPCWorker{stdin: nopWriteCloser{&sent}, computerMode: func() string { return "ask" }}
 	defer w.Close()
 	w.handleRPCLine(`{"type":"extension_ui_request","id":"choose","method":"select","title":"Choose","options":["A","B"]}`)
-	w.handleRPCLine(`{"type":"extension_ui_request","id":"guard","method":"confirm","title":"YuGo Pi computer approval","message":"{\"Tool\":\"fixture\",\"Detail\":\"test\"}"}`)
+	sendComputerApproval(t, w, "guard", "a")
 	if dialogs := w.ExtensionUI().Dialogs; len(dialogs) != 1 || dialogs[0].ID != "choose" {
 		t.Fatalf("generic dialogs: %+v", dialogs)
 	}
@@ -77,50 +78,100 @@ func TestExtensionDialogReplyValidatesChoiceAndCannotAcknowledgeGuard(t *testing
 	}
 }
 
+func sendComputerApproval(t *testing.T, w *piRPCWorker, id, digestChar string) {
+	t.Helper()
+	request, err := json.Marshal(map[string]string{
+		"type": "extension_ui_request", "id": id, "method": "input", "title": computerApprovalTitle,
+		"placeholder": `{"tool":"find_roots","digest":"` + strings.Repeat(digestChar, 64) + `"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.handleRPCLine(string(request))
+}
+
 func TestComputerPolicyChangeResolvesPendingAndOverridesEarlierRejection(t *testing.T) {
 	var sent bytes.Buffer
 	mode := "ask"
 	w := &piRPCWorker{stdin: nopWriteCloser{&sent}, computerMode: func() string { return mode }}
-	request := func(id string) {
-		w.handleRPCLine(`{"type":"extension_ui_request","id":"` + id + `","method":"confirm","title":"YuGo Pi computer approval","message":"{\"tool\":\"find_roots\"}"}`)
-	}
-	request("first")
-	if len(w.ComputerRequests()) != 1 {
+	sendComputerApproval(t, w, "first", "a")
+	if len(w.ComputerRequests()) != 1 || !w.Status().WaitingForInput {
 		t.Fatal("approval was not queued")
 	}
 	mode = "allow"
 	w.ApplyComputerPolicy()
-	if len(w.ComputerRequests()) != 0 || !strings.Contains(sent.String(), `"confirmed":true,"id":"first"`) {
+	if len(w.ComputerRequests()) != 0 || !strings.Contains(sent.String(), `"id":"first","type":"extension_ui_response","value":"approved"`) {
 		t.Fatalf("pending action did not use the new policy: %s", &sent)
 	}
 	mode = "ask"
-	request("denied")
+	sendComputerApproval(t, w, "denied", "a")
 	if err := w.ReplyComputerRequest("denied", false); err != nil {
 		t.Fatal(err)
 	}
-	request("repeated")
-	if len(w.ComputerRequests()) != 0 || !strings.Contains(sent.String(), `"confirmed":false,"id":"repeated"`) {
-		t.Fatal("another action was prompted after a denial")
+	sendComputerApproval(t, w, "repeated", "a")
+	if len(w.ComputerRequests()) != 0 || !strings.Contains(sent.String(), `"id":"repeated","type":"extension_ui_response","value":"repeated"`) {
+		t.Fatal("the declined action prompted again immediately")
 	}
-	mode = "allow"
-	w.ApplyComputerPolicy()
-	mode = "ask"
-	request("declined-during-change")
-	mode = "allow"
-	if err := w.ReplyComputerRequest("declined-during-change", false); err != nil ||
-		!strings.Contains(sent.String(), `"confirmed":false,"id":"declined-during-change"`) {
-		t.Fatal("explicit decline was overridden by a concurrent policy update")
+	sendComputerApproval(t, w, "different", "b")
+	if len(w.ComputerRequests()) != 1 {
+		t.Fatal("a distinct action did not receive its own approval")
 	}
-	request("next")
-	w.handleRPCLine(`{"type":"extension_ui_request","id":"policy","method":"select","title":"YuGo Pi computer policy","options":["ask","allow","off"]}`)
-	if len(w.ExtensionUI().Dialogs) != 0 ||
-		!strings.Contains(sent.String(), `"confirmed":true,"id":"next"`) ||
-		!strings.Contains(sent.String(), `"value":"allow"`) {
-		t.Fatalf("current permission or internal policy lookup was not authoritative: %s", &sent)
+	if err := w.ReplyComputerRequest("different", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.ReplyComputerRequest("different", true); err == nil {
+		t.Fatal("the same approval was accepted twice")
+	}
+	sendComputerApproval(t, w, "next-different", "b")
+	if len(w.ComputerRequests()) != 1 {
+		t.Fatal("allow once changed the general policy")
 	}
 	mode = "off"
-	request("disabled")
-	if !strings.Contains(sent.String(), `"confirmed":false,"id":"disabled"`) {
+	w.ApplyComputerPolicy()
+	if w.Status().WaitingForInput || !strings.Contains(sent.String(), `"id":"next-different","type":"extension_ui_response","value":"off"`) {
+		t.Fatal("off did not cancel the pending action")
+	}
+	if err := w.ReplyComputerRequest("next-different", true); err == nil {
+		t.Fatal("off accepted a stale approval")
+	}
+	mode = "ask"
+	w.ApplyComputerPolicy()
+	sendComputerApproval(t, w, "declined-during-change", "a")
+	mode = "allow"
+	if err := w.ReplyComputerRequest("declined-during-change", false); err != nil ||
+		!strings.Contains(sent.String(), `"id":"declined-during-change","type":"extension_ui_response","value":"declined"`) {
+		t.Fatal("explicit decline was overridden by a concurrent policy update")
+	}
+	sendComputerApproval(t, w, "next", "a")
+	if len(w.ExtensionUI().Dialogs) != 0 ||
+		!strings.Contains(sent.String(), `"id":"next","type":"extension_ui_response","value":"approved"`) {
+		t.Fatalf("current permission was not authoritative: %s", &sent)
+	}
+	mode = "off"
+	sendComputerApproval(t, w, "disabled", "a")
+	if !strings.Contains(sent.String(), `"id":"disabled","type":"extension_ui_response","value":"off"`) {
 		t.Fatal("computer operation ran despite off policy")
+	}
+}
+
+func TestExpiredAndClosedComputerRequestsCannotBeApproved(t *testing.T) {
+	var sent bytes.Buffer
+	w := &piRPCWorker{stdin: nopWriteCloser{&sent}, computerMode: func() string { return "ask" }}
+	sendComputerApproval(t, w, "expired", "a")
+	pending := w.computerRequests["expired"]
+	pending.Expires = time.Now().Add(-time.Second)
+	w.computerRequests["expired"] = pending
+	if err := w.ReplyComputerRequest("expired", true); err == nil || w.Status().WaitingForInput {
+		t.Fatal("expired action still waits for approval")
+	}
+	sendComputerApproval(t, w, "closed", "b")
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.ReplyComputerRequest("closed", true); err == nil || w.Status().WaitingForInput {
+		t.Fatal("closed action still waits for approval")
+	}
+	if strings.Contains(sent.String(), `"value":"approved"`) {
+		t.Fatal("expired action approved")
 	}
 }

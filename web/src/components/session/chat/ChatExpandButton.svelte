@@ -1,5 +1,5 @@
 <script>
-  import { icon, ChevronDown, Maximize2 } from '../../../shared/icons.js';
+  import { icon, Maximize, Minimize } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
 
   let { chatAvailable = true } = $props();
@@ -14,26 +14,23 @@
   title={t('composer.expand')}
   aria-label={t('composer.expand')}
   aria-pressed="false"
-  disabled={!chatAvailable}>{@html icon(Maximize2, { size: 16 })}</button
+  aria-controls="pi-chat-message"
+  onmousedown={(event) => {
+    if (document.activeElement?.id === 'pi-chat-message') event.preventDefault();
+  }}
+  disabled={!chatAvailable}
 >
-
-<button
-  type="button"
-  class="pi-chat-expand-button dismiss-keyboard"
-  aria-label={t('composer.dismissKeyboard')}
-  title={t('composer.dismissKeyboard')}
-  onpointerdown={(event) => event.preventDefault()}
-  onclick={() => document.getElementById('pi-chat-message')?.blur()}
-  disabled={!chatAvailable}>{@html icon(ChevronDown, { size: 16 })}</button
->
+  <span class="expand-glyph">{@html icon(Maximize, { size: 18 })}</span>
+  <span class="collapse-glyph">{@html icon(Minimize, { size: 18 })}</span>
+</button>
 
 <style>
-  .dismiss-keyboard {
+  .collapse-glyph,
+  button:global([aria-pressed='true']) .expand-glyph {
     display: none;
   }
-  @media (max-width: 760px) {
-    #pi-chat-expand {
-      display: none;
-    }
+  .expand-glyph,
+  button:global([aria-pressed='true']) .collapse-glyph {
+    display: grid;
   }
 </style>

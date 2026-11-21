@@ -1,3 +1,5 @@
+import { t } from '../../../shared/i18n.js';
+
 export function setupComposerExpansion({
   sessionId = '',
   shell,
@@ -12,7 +14,7 @@ export function setupComposerExpansion({
     if (!shell) return;
     shell.classList.toggle('expanded', !!expanded);
     if (expandButton) {
-      const label = expanded ? 'Collapse composer' : 'Expand composer';
+      const label = t(expanded ? 'activity.collapseShort' : 'composer.expand');
       expandButton.setAttribute('aria-pressed', expanded ? 'true' : 'false');
       expandButton.setAttribute('aria-label', label);
       expandButton.title = label;
@@ -28,17 +30,20 @@ export function setupComposerExpansion({
   }
   apply(initialExpanded);
 
-  expandButton?.addEventListener('click', () => {
+  function toggle() {
     const willExpand = !shell?.classList.contains('expanded');
+    const keyboardOpen =
+      textarea?.ownerDocument.documentElement.classList.contains('pi-keyboard-open');
     apply(willExpand);
     try {
       storage?.setItem(storageKey, willExpand ? '1' : '0');
     } catch {
       // Ignore storage availability errors; expansion still works for this page.
     }
-    if (willExpand && textarea && typeof textarea.focus === 'function')
-      textarea.focus({ preventScroll: true });
-  });
+    if (willExpand || keyboardOpen) textarea?.focus({ preventScroll: true });
+  }
 
-  return { apply, storageKey };
+  expandButton?.addEventListener('click', toggle);
+
+  return { apply, storageKey, dispose: () => expandButton?.removeEventListener('click', toggle) };
 }

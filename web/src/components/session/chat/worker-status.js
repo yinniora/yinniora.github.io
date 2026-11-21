@@ -13,6 +13,7 @@ export function setupWorkerStatusPolling({
   getKnownThinkingLevel = () => '',
   setKnownThinkingLevel = () => {},
   getWorkerModelUpdate = () => null,
+  getModelSelectionRevision = () => 0,
   setCompacting = () => {},
   setWorkerRunning = () => {},
   setExtensionUI = () => {},
@@ -38,17 +39,27 @@ export function setupWorkerStatusPolling({
       return;
     }
     inflight = true;
+    const modelSelectionRevision = getModelSelectionRevision();
     try {
       const response = await chatApi?.getWorkerStatus?.(sessionId, { signal: scope.signal });
       if (!response?.ok) return;
       const data = await response.json();
       if (scope.signal.aborted) return;
       setExtensionUI(data.extensionUI);
-      const apiModelLabel = data.model
-        ? data.model + (data.modelProvider ? ' @ ' + data.modelProvider : '')
-        : '';
-      if (apiModelLabel) setKnownModelLabel(apiModelLabel);
-      if (data.thinkingLevel) setKnownThinkingLevel(data.thinkingLevel);
+      if (
+        modelSelectionRevision !== null &&
+        modelSelectionRevision === getModelSelectionRevision()
+      ) {
+        if (data.model)
+          setKnownModelLabel(data.model + (data.modelProvider ? ' @ ' + data.modelProvider : ''));
+        if (data.thinkingLevel) setKnownThinkingLevel(data.thinkingLevel);
+        setModelLabel(getKnownModelLabel());
+        setThinkingLabel(getKnownThinkingLevel());
+        const onWorkerModelUpdate = getWorkerModelUpdate?.();
+        if (data.modelProvider && data.model && onWorkerModelUpdate) {
+          onWorkerModelUpdate(data.modelProvider, data.model, data.thinkingLevels);
+        }
+      }
       setCompacting(Boolean(data.compacting));
       setWorkerRunning(data.state === 'running' && Boolean(data.model));
       const deliver = deliveryPending();
@@ -78,13 +89,7 @@ export function setupWorkerStatusPolling({
       }
       lastHandledPrompt = data.handledPrompt || '';
       if (data.state && !deliver) lastWorkerState = data.state;
-      setModelLabel(getKnownModelLabel());
-      setThinkingLabel(getKnownThinkingLevel());
       updateContextUsage();
-      const onWorkerModelUpdate = getWorkerModelUpdate?.();
-      if (data.modelProvider && data.model && onWorkerModelUpdate) {
-        onWorkerModelUpdate(data.modelProvider, data.model, data.thinkingLevels);
-      }
     } catch {
       // A failed poll does not change the last known Pi run state.
     } finally {

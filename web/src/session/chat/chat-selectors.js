@@ -5,18 +5,27 @@ export function isScopedModel(model) {
 }
 
 export function groupModelsByProvider(models, filter = '') {
-  const q = filter.toLowerCase();
-  const byProvider = {};
+  const q = filter.trim().toLowerCase();
+  const byProvider = Object.create(null);
   models.forEach((model) => {
-    if (q) {
-      const name = (model.name || model.id || model.modelId || '').toLowerCase();
-      const provider = `${model.provider || ''} ${model.providerLabel || ''}`.toLowerCase();
-      if (!name.includes(q) && !provider.includes(q)) return;
-    }
     const provider = model.provider || 'unknown';
     if (!byProvider[provider]) byProvider[provider] = [];
     byProvider[provider].push(model);
   });
+  if (q) {
+    for (const [provider, group] of Object.entries(byProvider)) {
+      if (
+        provider.toLowerCase().includes(q) ||
+        group.some(({ providerLabel }) => providerLabel?.toLowerCase().includes(q))
+      )
+        continue;
+      const matches = group.filter(({ name, id, modelId }) =>
+        `${name || ''} ${id || modelId || ''}`.toLowerCase().includes(q),
+      );
+      if (matches.length) byProvider[provider] = matches;
+      else delete byProvider[provider];
+    }
+  }
   return byProvider;
 }
 

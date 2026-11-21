@@ -520,7 +520,7 @@ test("mobile workspace collapses projects, returns home and fits the keyboard vi
   ).toBe("16px");
   const picker = await page.locator("#pi-chat-model-popup").boundingBox();
   expect(picker!.y + picker!.height).toBeLessThanOrEqual(421);
-  await page.locator(".mobile-model-heading button").click();
+  await page.locator("#pi-chat-model-close").click();
   const message = page.locator("#pi-chat-message");
   await message.tap();
   await page.evaluate(() => {
@@ -537,6 +537,28 @@ test("mobile workspace collapses projects, returns home and fits the keyboard vi
   await expect(message).toHaveValue("A draft");
   const dock = (await page.locator("#pi-chat-composer").boundingBox())!;
   expect(dock.y + dock.height).toBeCloseTo(415, 0);
+
+  const expand = page.locator("#pi-chat-expand");
+  const collapsed = (await message.boundingBox())!.height;
+  await expand.tap();
+  await expect(expand).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(async () => (await message.boundingBox())!.height).toBeGreaterThan(collapsed + 40);
+  await expect(message).toBeFocused();
+  await expect(message).toHaveValue("A draft");
+  await expand.tap();
+  await expect(expand).toHaveAttribute("aria-pressed", "false");
+  await expect(message).toBeFocused();
+  await expect.poll(async () => Math.round((await message.boundingBox())!.height)).toBe(Math.round(collapsed));
+
+  await page.locator(".composer-add summary").tap();
+  const attachmentMenu = page.locator(".composer-add-menu");
+  const upload = attachmentMenu.getByRole("button", { name: "Upload files" });
+  await expect(upload).toHaveCSS("font-size", "16px");
+  expect((await upload.boundingBox())!.height).toBeGreaterThanOrEqual(52);
+  expect((await attachmentMenu.boundingBox())!.width).toBeLessThanOrEqual(224);
+  const draftBounds = (await message.boundingBox())!;
+  await message.tap({ position: { x: draftBounds.width - 64, y: draftBounds.height / 2 } });
+  await expect(attachmentMenu).toBeHidden();
 
   const fullHeight = page.viewportSize()!.height;
   await page.evaluate((height) => {
@@ -1247,6 +1269,7 @@ test("composer switches effort on model change and sends a file using the attach
     });
     const fetchOriginal = window.fetch.bind(window);
     let active: { provider: string; modelId: string } | undefined;
+    let level = "off";
     window.fetch = async (input, init) => {
       switch (new URL(String(input), location.href).pathname) {
         case "/api/models":
@@ -1257,12 +1280,16 @@ test("composer switches effort on model change and sends a file using the attach
           ] });
         case "/api/set-model":
           active = JSON.parse(String(init?.body));
+          level = active?.provider === "other-key" ? "medium" : "off";
           return Response.json(active?.provider === "catalog" && active?.modelId === "parameter-model"
             ? { ok: true, thinkingLevel: "off", thinkingLevels: ["off", "low", "max"] }
             : { ok: true });
+        case "/api/set-thinking-level":
+          level = JSON.parse(String(init?.body)).level;
+          return Response.json({ ok: true, thinkingLevel: level });
         case "/api/worker-status":
           return Response.json(active
-            ? { state: "idle", modelProvider: active.provider, model: active.modelId, thinkingLevel: "off" }
+            ? { state: "idle", modelProvider: active.provider, model: active.modelId, thinkingLevel: level }
             : { state: "idle" });
         default:
           return fetchOriginal(input, init);
@@ -1271,55 +1298,58 @@ test("composer switches effort on model change and sends a file using the attach
   });
   await collapseScratchpad(page);
   await page.goto("/session?id=" + encodeURIComponent(id));
-  const effort = page.locator("#pi-chat-thinking-label");
-  await expect(effort).toBeHidden();
-  await page.locator("#pi-chat-model-label").click();
-  await page.locator('.model-item[data-provider="catalog"][data-model-id="parameter-model"]').click();
-  await expect(effort).toHaveAttribute("title", "Switch effort · off");
-  await expect(effort.locator("svg").first()).toBeVisible();
-  await expect(effort.locator("span")).toBeVisible();
-  await expect(effort).toHaveCSS("height", "40px");
-  await expect(page.locator("#pi-chat-model-label")).toHaveText("Pro key · parameter-model");
-  const mobile = await isMobileLayout(page);
-  const message = page.locator("#pi-chat-message");
-  const keyboard = (visible: boolean) => page.evaluate((value) => {
-    (window as Window & { setKeyboardVisible?: (visible: boolean) => void }).setKeyboardVisible?.(value);
-  }, visible);
-  if (mobile) {
-    await message.focus();
-    await keyboard(true);
+  const modelControl = page.locator("#pi-chat-model-label");
+  const modelName = modelControl.locator(".composer-model-name");
+  const effortSummary = modelControl.locator(".composer-effort-label");
+  const effortRow = page.locator("#pi-chat-effort-controls");
+  const picker = page.locator("#pi-chat-model-popup");
+  const search = page.locator("#pi-chat-model-search");
+  await expect(effortSummary).toBeHidden();
+  await modelControl.click();
+  await expect(picker).toBeVisible();
+  await expect(modelControl).toHaveAttribute("aria-expanded", "true");
+  const draft = page.locator("#pi-chat-message");
+  await draft.fill("Preserve this draft");
+  await search.fill("no matching catalog entry");
+  await search.press("Enter");
+  await expect(picker.locator(".model-item")).toHaveCount(0);
+  await expect(draft).toHaveValue("Preserve this draft");
+  await search.fill("Pro key");
+  await expect(picker.locator(".model-item")).toHaveCount(2);
+  await search.clear();
+  const model = picker.locator('.model-item[data-provider="catalog"][data-model-id="parameter-model"]');
+  await model.click();
+  await expect(model).toHaveAttribute("aria-pressed", "true");
+  await expect(modelName).toHaveText("Pro key · parameter-model");
+  await expect(effortSummary).toHaveText("off");
+  await expect(picker.locator(".thinking-level-item")).toHaveCount(3);
+  await expect(picker.locator(".thinking-level-item[data-level=high]")).toHaveCount(0);
+  await expect(picker.locator(".thinking-level-item[data-level=off]")).toHaveAttribute("aria-pressed", "true");
+  await picker.locator(".thinking-level-item[data-level=max]").click();
+  await expect(effortSummary).toHaveText("maximum");
+  await expect(picker.locator(".thinking-level-item[data-level=max]")).toHaveAttribute("aria-pressed", "true");
+  if (await isMobileLayout(page)) {
+    await search.focus();
+    await page.evaluate(() => (window as Window & { setKeyboardVisible?: (value: boolean) => void }).setKeyboardVisible?.(true));
     await expect(page.locator("html")).toHaveClass(/pi-keyboard-open/);
-    await effort.dispatchEvent("click");
-  } else await effort.click();
-  await expect(page.locator("#pi-chat-thinking-list button")).toHaveCount(3);
-  await expect(page.locator("#pi-chat-thinking-list button[data-level=high]")).toHaveCount(0);
-  await expect(page.locator("#pi-chat-thinking-list button[data-level=off]")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#pi-chat-thinking-list button[data-level=max]")).toBeVisible();
-  const popup = page.locator("#pi-chat-thinking-popup");
-  const menuGap = () => popup.evaluate((element) => {
-    const anchor = element.parentElement!.querySelector("button")!.getBoundingClientRect();
-    return Math.round(anchor.top - element.getBoundingClientRect().bottom);
-  });
-  await expect.poll(menuGap).toBe(6);
-  if (mobile) {
-    const initial = (await popup.boundingBox())!.y;
-    await message.blur();
-    await keyboard(false);
+    await expect.poll(async () => {
+      const rect = (await picker.boundingBox())!;
+      return rect.y >= 0 && rect.y + rect.height <= 416;
+    }).toBe(true);
+    await search.blur();
+    await page.evaluate(() => (window as Window & { setKeyboardVisible?: (value: boolean) => void }).setKeyboardVisible?.(false));
     await expect(page.locator("html")).not.toHaveClass(/pi-keyboard-open/);
-    await expect.poll(async () => (await popup.boundingBox())!.y > initial + 120).toBe(true);
-    await expect.poll(menuGap).toBe(6);
   }
-  await effort.click();
-  await expect(popup).toHaveAttribute("inert", "");
-  await page.locator("#pi-chat-model-label").click();
-  await page.locator('.model-item[data-provider="other-key"][data-model-id="parameter-model"]').click();
-  await effort.click();
-  await expect(page.locator("#pi-chat-thinking-list button")).toHaveCount(2);
-  await expect(page.locator("#pi-chat-thinking-list button[data-level=xhigh]")).toBeVisible();
-  await effort.click();
-  await page.locator("#pi-chat-model-label").click();
-  await page.locator('.model-item[data-model-id="fixed-model-thinking"]').click();
-  await expect(effort).toBeHidden();
+  await picker.locator('.model-item[data-provider="other-key"][data-model-id="parameter-model"]').click();
+  await expect(picker.locator(".thinking-level-item")).toHaveCount(2);
+  await expect(picker.locator(".thinking-level-item[data-level=xhigh]")).toBeVisible();
+  await picker.locator('.model-item[data-model-id="fixed-model-thinking"]').click();
+  await expect(effortSummary).toBeHidden();
+  await expect(effortRow).toBeHidden();
+  await page.locator("#pi-chat-model-close").click();
+  await expect(picker).toHaveAttribute("inert", "");
+  await expect(modelControl).toHaveAttribute("aria-expanded", "false");
+  await draft.clear();
 
   const permission = page.locator(".computer-permission summary");
   await permission.click();

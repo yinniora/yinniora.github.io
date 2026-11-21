@@ -93,9 +93,9 @@
       .getElementById('pi-chat-composer')
       ?.dispatchEvent(new CustomEvent('pi:retry-prompt', { detail: t('activity.continuePrompt') }));
   }
-  function openControl(id, event) {
+  function chooseModel(event) {
     event.stopPropagation();
-    document.getElementById(id)?.click();
+    document.getElementById('pi-chat-model-label')?.click();
   }
 
   // Re-run post-render side effects whenever the rendered path changes.
@@ -174,12 +174,7 @@
         {/each}
       </ActivityDisclosure>
       {#if section.unfinished && chatAvailable && !sessionRunning && sectionIndex >= latestFrom}
-        <ReplyError
-          actionsOnly
-          onContinue={continueTask}
-          onChooseModel={(event) => openControl('pi-chat-model-label', event)}
-          onChooseEffort={(event) => openControl('pi-chat-thinking-label', event)}
-        />
+        <ReplyError actionsOnly onContinue={continueTask} onChooseModel={chooseModel} />
       {/if}
       {#if section.outputs.length}
         {@render renderOutputs?.(section.outputs)}

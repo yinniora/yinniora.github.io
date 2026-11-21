@@ -35,9 +35,11 @@ export function setupContextPopover({
 
   const hide = () => {
     popover.style.display = 'none';
+    usageCapsule.setAttribute('aria-expanded', 'false');
   };
   const show = () => {
     popover.style.display = 'block';
+    usageCapsule.setAttribute('aria-expanded', 'true');
     updateContextUsage();
     position();
   };
@@ -77,15 +79,21 @@ export function setupContextPopover({
     if (popover.style.display !== 'none') position();
   };
 
+  const onKeydown = (event) => {
+    if (event.key === 'Escape' && popover.style.display !== 'none') hide();
+  };
+
   usageCapsule.addEventListener('click', onCapsuleClick);
   popover.addEventListener('click', onPopoverClick);
   documentImpl.addEventListener('click', onDocumentClick);
+  usageCapsule.addEventListener('keydown', onKeydown);
   windowImpl.addEventListener?.('resize', onResize, { passive: true });
 
   return {
     position,
     dispose: () => {
       usageCapsule.removeEventListener('click', onCapsuleClick);
+      usageCapsule.removeEventListener('keydown', onKeydown);
       popover.removeEventListener('click', onPopoverClick);
       documentImpl.removeEventListener('click', onDocumentClick);
       windowImpl.removeEventListener?.('resize', onResize, { passive: true });

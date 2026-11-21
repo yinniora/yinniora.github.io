@@ -11,15 +11,18 @@ describe('ChatSelectorPopups', () => {
   it('renders selector runtime anchors with stable ids and classes', () => {
     render(ChatSelectorPopups);
 
-    expect(document.getElementById('pi-chat-model-popup').className).toBe('pi-chat-model-popup');
-    expect(document.getElementById('pi-chat-model-popup').style.display).toBe('none');
+    const picker = document.getElementById('pi-chat-model-popup');
+    expect(picker.classList.contains('pi-chat-model-popup')).toBe(true);
+    expect(picker.style.display).toBe('none');
+    expect(picker.getAttribute('role')).toBe('dialog');
+    expect(picker.querySelector('#pi-chat-effort-controls').hidden).toBe(true);
     expect(document.getElementById('pi-chat-model-search').getAttribute('autocomplete')).toBe(
       'off',
     );
     expect(document.getElementById('pi-chat-model-search').getAttribute('placeholder')).toBe(
       t('composer.searchModels'),
     );
-    expect(document.getElementById('pi-chat-model-list').className).toBe('pi-chat-model-list');
+    expect(picker.querySelector('.pi-chat-model-list').id).toBe('pi-chat-model-list');
 
     expect(document.getElementById('pi-chat-slash-popup').className).toBe('pi-chat-slash-popup');
     expect(document.getElementById('pi-chat-slash-list').className).toBe('pi-chat-slash-list');

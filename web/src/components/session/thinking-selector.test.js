@@ -4,9 +4,7 @@ import { setupThinkingLevelSelector } from './chat/thinking-selector.js';
 function createDom() {
   const div = document.createElement('div');
   div.innerHTML = `
-    <button id="pi-chat-thinking-label">off</button>
-    <div id="pi-chat-thinking-popup" style="display:none"></div>
-    <div id="pi-chat-thinking-list"></div>
+    <div id="pi-chat-effort-controls" hidden><div id="pi-chat-thinking-list"></div></div>
   `;
   document.body.appendChild(div);
   return div;
@@ -17,11 +15,11 @@ function cleanupDom(el) {
 }
 
 describe('setupThinkingLevelSelector', () => {
-  it('returns { open, close, cycle } API', () => {
+  it('returns the unified panel refresh and keyboard cycle controls', () => {
     const el = createDom();
     const api = setupThinkingLevelSelector({ documentImpl: document });
-    expect(api).toHaveProperty('open');
-    expect(api).toHaveProperty('close');
+    expect(api).toHaveProperty('refresh');
+    expect(api).toHaveProperty('whenSettled');
     expect(api).toHaveProperty('cycle');
     cleanupDom(el);
   });

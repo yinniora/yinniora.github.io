@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,11 +22,25 @@ type computerApprover interface {
 }
 
 func (s *Server) ComputerMode(sessionID string) string {
-	var mode string
-	if s.db != nil && s.db.QueryRow(`SELECT mode FROM session_computer_mode WHERE session_id = ?`, sessionID).Scan(&mode) == nil {
-		return mode
+	if s.db == nil {
+		return "off"
 	}
-	return "ask"
+	var mode string
+	switch err := s.db.QueryRow(`SELECT mode FROM session_computer_mode WHERE session_id = ?`, sessionID).Scan(&mode); {
+	case err == nil:
+		return mode
+	case errors.Is(err, sql.ErrNoRows):
+		return "ask"
+	default:
+		return "off"
+	}
+}
+
+type computerUpdate struct {
+	Action    string `json:"action"`
+	Mode      string `json:"mode"`
+	RequestID string `json:"requestID"`
+	Allow     *bool  `json:"allow"`
 }
 
 func (s *Server) handleComputerUse(w http.ResponseWriter, r *http.Request) {
@@ -43,37 +59,14 @@ func (s *Server) handleComputerUse(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, 503, "computer approval is unavailable")
 		return
 	}
-	mode := s.ComputerMode(id)
 	if r.Method == http.MethodPost {
-		var req struct {
-			Action    string `json:"action"`
-			Mode      string `json:"mode"`
-			RequestID string `json:"requestID"`
-			Allow     bool   `json:"allow"`
-		}
+		var req computerUpdate
 		if !decodeJSONBody(w, r, &req) {
 			return
 		}
 		switch req.Action {
-		case "mode":
-			if req.Mode != "ask" && req.Mode != "allow" && req.Mode != "off" {
-				writeJSONError(w, 400, "invalid computer mode")
-				return
-			}
-			s.computerPolicyMu.Lock()
-			_, err = s.db.ExecContext(r.Context(), `INSERT INTO session_computer_mode (session_id, mode) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET mode=excluded.mode`, id, req.Mode)
-			if err == nil {
-				manager.ApplyComputerPolicy(id)
-			}
-			s.computerPolicyMu.Unlock()
-			if err != nil {
-				writeJSONError(w, 500, "could not save computer mode")
-				return
-			}
-			mode = s.ComputerMode(id)
-		case "answer":
-			if req.RequestID == "" || manager.ReplyComputerRequest(id, req.RequestID, req.Allow) != nil {
-				writeJSONError(w, 409, "approval expired")
+		case "mode", "answer":
+			if !s.updateComputerApproval(w, r, manager, id, resolved.Path, req) {
 				return
 			}
 		case "check":
@@ -92,12 +85,53 @@ func (s *Server) handleComputerUse(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	commands, checked, _ := s.chatSender.GetCommands(ctx, id)
+	commands, checked, commandErr := s.chatSender.GetCommands(ctx, id)
 	loaded := slices.ContainsFunc(commands, func(command workers.SlashCommand) bool { return command.Name == "computer-use" })
 	_, packageErr := os.Stat(filepath.Join(s.agentDir, "npm", "node_modules", "@injaneity", "pi-computer-use", "package.json"))
 	requests := manager.ComputerRequests(id)
 	if requests == nil {
 		requests = []workers.ComputerRequest{}
 	}
-	writeJSON(w, 200, map[string]any{"mode": mode, "requests": requests, "installed": loaded || packageErr == nil, "loaded": loaded, "checked": checked})
+	writeJSON(w, 200, map[string]any{"mode": s.ComputerMode(id), "requests": requests, "installed": loaded || packageErr == nil, "loaded": loaded, "checked": checked && commandErr == nil})
+}
+
+func (s *Server) updateComputerApproval(w http.ResponseWriter, r *http.Request, manager computerApprover, id, path string, req computerUpdate) bool {
+	s.sessionManagementMu.Lock()
+	defer s.sessionManagementMu.Unlock()
+	hidden, err := s.sessionTrashed(id)
+	if err != nil {
+		writeJSONError(w, 500, "cannot read session state")
+		return false
+	}
+	if _, err := os.Stat(path); hidden || errors.Is(err, os.ErrNotExist) {
+		writeJSONError(w, 410, "session is no longer available")
+		return false
+	} else if err != nil {
+		writeJSONError(w, 500, "cannot read session state")
+		return false
+	}
+	if req.Action == "answer" {
+		if req.RequestID == "" || req.Allow == nil {
+			writeJSONError(w, 400, "missing approval decision")
+			return false
+		}
+		if manager.ReplyComputerRequest(id, req.RequestID, *req.Allow) != nil {
+			writeJSONError(w, 409, "approval expired")
+			return false
+		}
+		return true
+	}
+	if req.Mode != "ask" && req.Mode != "allow" && req.Mode != "off" {
+		writeJSONError(w, 400, "invalid computer mode")
+		return false
+	}
+	previous := s.ComputerMode(id)
+	if _, err := s.db.ExecContext(r.Context(), `INSERT INTO session_computer_mode (session_id, mode) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET mode=excluded.mode`, id, req.Mode); err != nil {
+		writeJSONError(w, 500, "could not save computer mode")
+		return false
+	}
+	if previous != req.Mode {
+		manager.ApplyComputerPolicy(id)
+	}
+	return true
 }

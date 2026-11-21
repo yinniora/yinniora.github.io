@@ -112,7 +112,7 @@ func (s *Server) maybeAutoTitleContext(ctx context.Context, sessID string) {
 	// auto-title, the local heuristic is good enough: same visible result, no
 	// model round trip. The model is still used for the first title.
 	var title string
-	if eachTurn && titledBefore {
+	if eachTurn && (titledBefore || inputs.AutoTitled) {
 		title = deriveTitleFromInput(basis)
 	} else {
 		title = strings.ToValidUTF8(s.generateTitleContext(ctx, basis), "")
