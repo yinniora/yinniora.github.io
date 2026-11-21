@@ -271,7 +271,7 @@ export function runChatComposer({
       queueButton,
       textarea,
       attachments,
-      setChatStatus,
+      notify: showToast,
       autoResizeTextarea,
       updateSendEnabled,
       queueApi,

@@ -18,6 +18,7 @@ export class QueueStore {
   items = $state([]);
   paused = $state(false);
   focusIndex = $state(-1);
+  mutating = $state(false);
 
   actions = {
     sendNow: () => {},
@@ -78,7 +79,7 @@ export class QueueStore {
           this.#refreshAgain = false;
           try {
             const snapshot = await this.#api.list();
-            this.#mergeServerSnapshot(snapshot);
+            if (!this.#refreshAgain) this.#mergeServerSnapshot(snapshot);
           } catch {
             /* The next notification can retry a missed snapshot. */
           }
@@ -93,42 +94,46 @@ export class QueueStore {
   #mergeServerSnapshot(snapshot) {
     const serverItems = Array.isArray(snapshot?.items) ? snapshot.items : [];
     const steers = this.items.filter((item) => item.kind === 'steer');
-    const queued = serverItems.map((entry) => ({
-      id: `q-${entry.position}`,
-      kind: 'queued',
-      position: entry.position,
-      text: String(entry.message ?? ''),
-      displayText: String(entry.displayText ?? entry.message ?? ''),
-      files: [],
-    }));
+    const queued = serverItems.map(this.#queuedItem);
     this.items = [...queued, ...steers];
     this.paused = !!snapshot?.paused;
     this.#clampFocus();
   }
 
+  #queuedItem(entry) {
+    return {
+      id: `q-${entry.position}`,
+      kind: 'queued',
+      position: entry.position,
+      text: String(entry.message ?? ''),
+      displayText: String(entry.displayText ?? entry.message ?? ''),
+      hasAttachments: !!entry.hasAttachments,
+    };
+  }
+
   // ── Mutations (queued items go through the API) ───────────────────────────
 
-  /** Append a server-side queued item. Returns the canonical item or null on
-   *  failure. We do a fresh list() after POST instead of awaiting `refresh()`
-   *  — refresh's in-flight-promise coalescing would otherwise hand us back a
-   *  snapshot taken *before* our insert if another refresh was already
-   *  in-flight (very easy to hit during rapid double-queue clicks). */
-  enqueueQueued = async ({ message, displayText } = {}) => {
+  /** A successful POST owns the draft even if the subsequent refresh fails. */
+  enqueueQueued = async ({ message, displayText, files = [] } = {}) => {
     if (!this.#api) return null;
+    let item;
     try {
-      const item = await this.#api.add(message, displayText);
-      const snapshot = await this.#api.list();
-      this.#mergeServerSnapshot(snapshot);
-      return {
-        id: `q-${item.position}`,
-        kind: 'queued',
-        position: item.position,
-        text: String(item.message ?? message ?? ''),
-        displayText: String(item.displayText ?? displayText ?? message ?? ''),
-      };
+      item = this.#queuedItem(
+        await (files.length
+          ? this.#api.add(message, displayText, files)
+          : this.#api.add(message, displayText)),
+      );
     } catch {
       return null;
     }
+    if (!this.items.some(({ id }) => id === item.id)) {
+      const index = this.items.findIndex(
+        (row) => row.kind === 'steer' || row.position > item.position,
+      );
+      this.items.splice(index === -1 ? this.items.length : index, 0, item);
+    }
+    void this.refresh();
+    return item;
   };
 
   /** Push a transient steer chip (browser-only, never persisted). */
@@ -165,6 +170,7 @@ export class QueueStore {
       }
     }
     this.takeLocalById(id);
+    void this.refresh();
     return true;
   };
 
@@ -183,16 +189,19 @@ export class QueueStore {
 
   setPaused = async (value) => {
     const next = !!value;
-    if (this.paused === next) return;
+    if (this.paused === next || this.mutating) return;
+    this.mutating = true;
     this.paused = next;
     if (this.#api) {
       try {
         await this.#api.setPaused(next);
       } catch {
         this.paused = !next;
-        await this.refresh();
+      } finally {
+        void this.refresh();
       }
     }
+    this.mutating = false;
   };
 
   togglePaused = () => this.setPaused(!this.paused);

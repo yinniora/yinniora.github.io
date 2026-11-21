@@ -65,18 +65,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	chatReq, err := chat.ParseRequest(r, chat.DefaultMaxImageBytes, chat.DefaultMaxRequestBytes)
 	if err != nil {
-		switch {
-		case errors.Is(err, chat.ErrEmptyRequest):
-			writeJSONError(w, http.StatusBadRequest, err.Error())
-		case errors.Is(err, chat.ErrImageTooLarge), errors.Is(err, chat.ErrFileTooLarge):
-			writeJSONError(w, http.StatusRequestEntityTooLarge, err.Error())
-		case errors.Is(err, chat.ErrUnsupportedImageType):
-			writeJSONError(w, http.StatusUnsupportedMediaType, err.Error())
-		case errors.As(err, new(*http.MaxBytesError)):
-			writeJSONError(w, http.StatusRequestEntityTooLarge, err.Error())
-		default:
-			writeJSONError(w, http.StatusBadRequest, err.Error())
-		}
+		writeChatRequestError(w, err)
 		return
 	}
 	if s.chatSender == nil {
@@ -140,6 +129,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		_ = os.RemoveAll(uploadDir)
 	}
 	writeJSONError(w, http.StatusServiceUnavailable, "could not submit chat right now")
+}
+
+func writeChatRequestError(w http.ResponseWriter, err error) {
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, chat.ErrImageTooLarge), errors.Is(err, chat.ErrFileTooLarge), errors.As(err, new(*http.MaxBytesError)):
+		status = http.StatusRequestEntityTooLarge
+	case errors.Is(err, chat.ErrUnsupportedImageType):
+		status = http.StatusUnsupportedMediaType
+	}
+	writeJSONError(w, status, err.Error())
 }
 
 // recentSessionActivityWindow is the grace period after a JSONL write during

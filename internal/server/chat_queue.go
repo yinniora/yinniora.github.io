@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"pi-web/internal/chat"
 	"pi-web/internal/chatqueue"
 	"pi-web/internal/sessions"
 	"pi-web/internal/workers"
@@ -76,6 +77,15 @@ func (s *Server) handleChatQueuePost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data;") {
+		request, err := chat.ParseRequest(r, chat.DefaultMaxImageBytes, chat.DefaultMaxRequestBytes)
+		if err != nil {
+			writeChatRequestError(w, err)
+			return
+		}
+		s.appendQueueItem(w, sessionID, request, r.FormValue("displayText"))
+		return
+	}
 	var body struct {
 		Action      string `json:"action"`
 		Position    int64  `json:"position"`
@@ -94,11 +104,11 @@ func (s *Server) handleChatQueuePost(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "message is required")
 		return
 	}
-	displayText := body.DisplayText
-	if strings.TrimSpace(displayText) == "" {
-		displayText = message
-	}
-	item, err := s.chatQueue.Add(sessionID, message, displayText)
+	s.appendQueueItem(w, sessionID, chat.Request{Message: message}, body.DisplayText)
+}
+
+func (s *Server) appendQueueItem(w http.ResponseWriter, sessionID string, request chat.Request, displayText string) {
+	item, err := s.chatQueue.AddRequest(sessionID, request, strings.TrimSpace(displayText))
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "add queue item: "+err.Error())
 		return
@@ -171,7 +181,12 @@ func (s *Server) handleChatQueueDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.queueDispatches.Delete(sessionID)
-	if _, exists, err := s.chatQueue.Find(sessionID, pos); err != nil || pos <= 0 || !exists {
+	if pos <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "position must be positive")
+		return
+	}
+	item, exists, err := s.chatQueue.Find(sessionID, pos)
+	if err != nil || !exists {
 		writeJSONError(w, http.StatusNotFound, "queued message no longer exists")
 		return
 	}
@@ -180,6 +195,10 @@ func (s *Server) handleChatQueueDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.notifyQueueChanged(sessionID)
+	if r.URL.Query().Get("edit") == "1" {
+		writeJSON(w, http.StatusOK, item)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

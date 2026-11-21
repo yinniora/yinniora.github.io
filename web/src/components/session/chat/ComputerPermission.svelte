@@ -115,7 +115,7 @@
       aria-label={t('computer.title')}
       title={[t('computer.title'), modeLabel].filter(Boolean).join(' · ')}
     >
-      {@html icon(ShieldCheck, { size: 18 })}
+      {@html icon(ShieldCheck, { size: 16 })}
       {#if waiting}<span class="pending-dot" aria-label={t('computer.waiting')}></span>{/if}
     </summary>
     <div class="computer-panel">

@@ -99,8 +99,8 @@ reply. Folding a running group is remembered in memory for that run only, and
 every open group also has a collapse control at its end for long runs.
 
 Keyboard hints are hidden on touch screens (`hover: none` or `pointer: coarse`).
-The queue and steer panel shows a touch hint there instead, and tapping a queued
-row reveals Edit and Send now buttons that replace the E and ↩ keys. Errors show a
+Queued rows have visible Edit, Send now and Remove controls. Pending guidance
+shows Edit, Move to queue and Withdraw until dispatch. Errors show a
 collapsed detail card. Consecutive rejections for the same model in a turn
 share one visible card. Pi web workers cancel automatic retry backoff for
 provider rejections, but let Pi retry transport drops such as a reset TLS

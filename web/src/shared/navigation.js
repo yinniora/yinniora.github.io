@@ -89,6 +89,7 @@ export function handleNavClick(event, url, options) {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
   navigate(url, options);
+  return true;
 }
 
 // A page with several entry points can return to its originating route.

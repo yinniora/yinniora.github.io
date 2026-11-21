@@ -10,6 +10,7 @@
     Pencil,
     Send,
     ListPlus,
+    Paperclip,
   } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
 
@@ -31,11 +32,13 @@
   const bothKinds = $derived(steerCount > 0 && queuedCount > 0);
 
   const statusLabel = $derived(
-    steerCount > 0 && queuedCount === 0
-      ? t('composer.queueSteeringCount')
-      : store.paused
-        ? t('composer.queuePaused')
-        : t('composer.queueActive'),
+    queuedCount && store.paused
+      ? t('composer.queuePaused')
+      : bothKinds
+        ? t('composer.queueAria')
+        : steerCount > 0
+          ? t('composer.queueSteeringCount')
+          : t('composer.queueActive'),
   );
   const countLabel = $derived(formatCount(queuedCount, steerCount));
   const activeDescendantId = $derived(
@@ -76,7 +79,7 @@
 
   function onEdit(item) {
     if (item.kind === 'steer' && item.editable) store.actions.editSteer?.(item.id);
-    else store.actions.edit?.(item.id);
+    else if (item.kind === 'queued') store.actions.edit?.(item.id);
   }
 
   // Document-level keyboard routing so the shortcuts work from anywhere on the
@@ -105,7 +108,14 @@
 
   function onDocumentKeydown(event) {
     if (!visible) return;
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey
+    )
+      return;
     const key = event.key;
     const known =
       key === 'ArrowUp' ||
@@ -117,7 +127,8 @@
       key === 'e' ||
       key === 'E';
     if (!known) return;
-    if (!shouldHandleShortcut(event.target, key)) return;
+    if (event.target?.closest?.('button, a, summary') || !shouldHandleShortcut(event.target, key))
+      return;
 
     if (key === 'ArrowDown') {
       event.preventDefault();
@@ -132,6 +143,7 @@
       return;
     }
     if (key === 'Escape') {
+      if (store.focusIndex < 0) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       store.setFocusIndex(-1);
@@ -193,7 +205,7 @@
       <div class="pi-queue-status">
         <span class="pi-queue-status-label">{statusLabel}</span>
         {#if countLabel}<span class="pi-queue-status-count"> · {countLabel}</span>{/if}
-        {#if store.persistsLocally && queuedCount > 0}
+        {#if store.persistsLocally && queuedCount > 0 && !bothKinds && !store.paused}
           <span
             class="pi-queue-status-saved"
             title={t('composer.queueSavedLocallyHint')}
@@ -209,19 +221,21 @@
             <button
               type="button"
               class="pi-queue-toggle pi-queue-toggle--resume"
+              disabled={store.mutating}
               onclick={onResume}
               title={t('composer.queueResumeHint')}
             >
-              {@html icon(Play, { size: 13 })}<span>{t('composer.resume')}</span>
+              {@html icon(Play, { size: 16 })}<span>{t('composer.resume')}</span>
             </button>
           {:else}
             <button
               type="button"
               class="pi-queue-toggle"
+              disabled={store.mutating}
               onclick={onPause}
               title={t('composer.queuePauseHint')}
             >
-              {@html icon(Pause, { size: 13 })}<span>{t('composer.pause')}</span>
+              {@html icon(Pause, { size: 16 })}<span>{t('composer.pause')}</span>
             </button>
           {/if}
         {/if}
@@ -246,6 +260,7 @@
             <li
               id={`pi-queue-item-${item.id}`}
               class="pi-queue-item"
+              data-has-attachments={item.hasAttachments || undefined}
               class:pi-queue-item--focused={store.focusIndex === indexById.get(item.id)}
               role="option"
               aria-selected={store.focusIndex === indexById.get(item.id)}
@@ -253,7 +268,7 @@
               onmousedown={(event) => event.preventDefault()}
             >
               <span class="pi-queue-item-icon" aria-hidden="true">
-                {@html icon(Layers, { size: 13 })}
+                {@html icon(item.hasAttachments ? Paperclip : Layers, { size: 16 })}
               </span>
               <span class="pi-queue-item-text">{chipText(item)}</span>
               <span class="pi-queue-item-actions">
@@ -265,7 +280,7 @@
                   onclick={(event) => {
                     event.stopPropagation();
                     onEdit(item);
-                  }}>{@html icon(Pencil, { size: 14 })}</button
+                  }}>{@html icon(Pencil, { size: 16 })}</button
                 >
                 <button
                   type="button"
@@ -275,7 +290,7 @@
                   onclick={(event) => {
                     event.stopPropagation();
                     store.actions.sendNow?.(item.id);
-                  }}>{@html icon(Send, { size: 14 })}</button
+                  }}>{@html icon(Send, { size: 16 })}</button
                 >
                 <button
                   type="button"
@@ -285,7 +300,7 @@
                   onclick={(event) => {
                     event.stopPropagation();
                     onDelete(item);
-                  }}>{@html icon(X, { size: 14 })}</button
+                  }}>{@html icon(X, { size: 16 })}</button
                 >
               </span>
             </li>
@@ -318,10 +333,9 @@
               onmousedown={(event) => event.preventDefault()}
             >
               <span class="pi-queue-item-icon" aria-hidden="true">
-                {@html icon(CornerDownRight, { size: 13 })}
+                {@html icon(item.detail?.files?.length ? Paperclip : CornerDownRight, { size: 16 })}
               </span>
               <span class="pi-queue-item-text">{chipText(item)}</span>
-              <span class="pi-queue-item-tag">{t('composer.steerTag')}</span>
               <span class="pi-queue-item-actions">
                 {#if item.editable}
                   <button
@@ -332,7 +346,7 @@
                     onclick={(event) => {
                       event.stopPropagation();
                       onEdit(item);
-                    }}>{@html icon(Pencil, { size: 14 })}</button
+                    }}>{@html icon(Pencil, { size: 16 })}</button
                   >
                   <button
                     type="button"
@@ -342,7 +356,7 @@
                     onclick={(event) => {
                       event.stopPropagation();
                       store.actions.queueSteer?.(item.id);
-                    }}>{@html icon(ListPlus, { size: 14 })}</button
+                    }}>{@html icon(ListPlus, { size: 16 })}</button
                   >
                   <button
                     type="button"
@@ -352,7 +366,7 @@
                     onclick={(event) => {
                       event.stopPropagation();
                       onDelete(item);
-                    }}>{@html icon(X, { size: 14 })}</button
+                    }}>{@html icon(X, { size: 16 })}</button
                   >
                 {:else}
                   <button
@@ -363,7 +377,7 @@
                     onclick={(event) => {
                       event.stopPropagation();
                       onDelete(item);
-                    }}>{@html icon(X, { size: 14 })}</button
+                    }}>{@html icon(X, { size: 16 })}</button
                   >
                 {/if}
               </span>

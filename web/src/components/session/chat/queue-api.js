@@ -29,17 +29,28 @@ export function createQueueApi({ sessionId, fetchImpl = fetch } = {}) {
     async list() {
       return readJSON(await fetchImpl(base, { headers: { Accept: 'application/json' } }));
     },
-    async add(message, displayText) {
+    async add(message, displayText, files = []) {
+      const headers = { Accept: 'application/json' };
+      let body;
+      if (files.length) {
+        body = new FormData();
+        body.set('message', message);
+        body.set('displayText', displayText || '');
+        appendChatFiles(body, files);
+      } else {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify({ message, displayText });
+      }
       return readJSON(
         await fetchImpl(base, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ message, displayText }),
+          headers,
+          body,
         }),
       );
     },
-    async remove(position) {
-      const url = `${base}&position=${encodeURIComponent(position)}`;
+    async remove(position, { edit = false } = {}) {
+      const url = `${base}&position=${encodeURIComponent(position)}${edit ? '&edit=1' : ''}`;
       return readJSON(await fetchImpl(url, { method: 'DELETE' }));
     },
     async sendNow(position) {
@@ -61,4 +72,11 @@ export function createQueueApi({ sessionId, fetchImpl = fetch } = {}) {
       );
     },
   };
+}
+
+export function appendChatFiles(body, files) {
+  for (const file of files) {
+    const image = /^image\/(png|jpeg|webp|gif)$/i.test(file.type);
+    body.append(image ? 'images' : 'files', file);
+  }
 }

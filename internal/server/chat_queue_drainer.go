@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -178,13 +179,27 @@ func (d *queueDrainer) drainSession(sessionID string) {
 }
 
 func (s *Server) sendQueued(ctx context.Context, path string, item chatqueue.Item, onlyWhenIdle bool) error {
-	err := s.chatSender.Send(ctx, item.SessionID, path, chat.Request{
-		Message: item.Message, OnlyWhenIdle: onlyWhenIdle,
-	})
+	var request chat.Request
+	var err error
+	if item.HasAttachments {
+		err = json.Unmarshal(item.Attachments, &request)
+	}
+	request.Message = item.Message
+	request.OnlyWhenIdle = onlyWhenIdle
+	var uploadDir string
+	if err == nil {
+		uploadDir, err = s.saveChatFiles(item.SessionID, &request)
+	}
+	if err == nil {
+		err = s.chatSender.Send(ctx, item.SessionID, path, request)
+	}
 	if err == nil {
 		err = s.chatQueue.Remove(item.SessionID, item.Position)
 	}
 	if errors.Is(err, workers.ErrPiSessionBusy) {
+		if uploadDir != "" {
+			_ = os.RemoveAll(uploadDir)
+		}
 		return err
 	}
 	if err != nil {

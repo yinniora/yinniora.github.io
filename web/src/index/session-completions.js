@@ -1,3 +1,5 @@
+import { SvelteMap } from 'svelte/reactivity';
+
 const STORAGE_KEY = 'yugo:session-completions:v1';
 let state;
 
@@ -6,11 +8,11 @@ export function initializeSessionCompletions() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
     if (Number.isFinite(saved?.since) && Array.isArray(saved.seen)) {
-      state = { since: saved.since, seen: new Map(saved.seen) };
+      state = { since: saved.since, seen: new SvelteMap(saved.seen) };
       return state;
     }
   } catch {}
-  state = { since: Date.now(), seen: new Map() };
+  state = { since: Date.now(), seen: new SvelteMap() };
   persist();
   return state;
 }
@@ -34,10 +36,14 @@ export function markSessionCompletionSeen(id, entries) {
     (entry) =>
       entry.type === 'message' &&
       entry.message?.role === 'assistant' &&
-      ['', 'stop', 'length'].includes(entry.message.stopReason || '') &&
+      ['', 'stop'].includes(entry.message.stopReason || '') &&
       entry.timestamp,
   );
-  const timestamp = Date.parse(latest?.timestamp);
+  markCompletionSeen(id, latest?.timestamp);
+}
+
+export function markCompletionSeen(id, completedAt) {
+  const timestamp = Date.parse(completedAt);
   const { since, seen } = initializeSessionCompletions();
   if (!(timestamp > Math.max(since, seen.get(id) || 0))) return;
   seen.delete(id);

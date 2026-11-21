@@ -149,6 +149,33 @@ test.describe("steer / queue (stubbed pi)", () => {
     await expect(page.locator("#messages")).not.toContainText(steerMsg);
   });
 
+  test("moving guidance into the queue preserves its file when reopened for editing", async ({
+    page,
+    sessionsDir,
+  }, testInfo) => {
+    const { textarea } = await openRunningSession(page, sessionsDir, testInfo, "steer-file", {
+      slowMs: 30000,
+    });
+    await page.locator("#pi-chat-files").setInputFiles({
+      name: "notes.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("queued attachment"),
+    });
+    await textarea.fill("Keep this file");
+    await page.locator("#pi-chat-send").click();
+    const steer = page.locator(".pi-queue-item--steer");
+    await steer.getByRole("button", { name: "Send it after the current turn instead" }).click();
+    await expect(steer).toHaveCount(0);
+    const queued = page.locator(".pi-queue-item").filter({ hasText: "Keep this file" });
+    await expect(queued).toBeVisible();
+    await expect(queued).toHaveAttribute("data-has-attachments", "true");
+    await textarea.fill("A newer draft");
+    await queued.getByRole("button", { name: "Edit" }).click();
+    await expect(queued).toHaveCount(0);
+    await expect(textarea).toHaveValue("Keep this file\n\nA newer draft");
+    await expect(page.locator("#pi-chat-attachments")).toContainText("notes.txt");
+  });
+
   test("queued messages stack, are deletable, and auto-send after the run", async ({
     page,
     sessionsDir,

@@ -21,7 +21,7 @@ export function setupSteerQueue({
   queueButton,
   textarea,
   attachments = { files: () => [], composeMessage: (typed) => typed, clear: () => {} },
-  setChatStatus = () => {},
+  notify = () => {},
   autoResizeTextarea = () => {},
   updateSendEnabled = () => {},
   queueApi = null,
@@ -34,6 +34,12 @@ export function setupSteerQueue({
   const sending = new Set();
   const steerRequests = new WeakMap();
 
+  function reportFailure(error) {
+    const message =
+      error?.message === 'session is busy' ? t('piSession.busy') : t('activity.failed');
+    notify(message);
+  }
+
   function hasContent() {
     const typed = textarea ? textarea.value.trim() : '';
     return typed.length > 0 || !!attachments.files?.().length;
@@ -43,10 +49,15 @@ export function setupSteerQueue({
     if (queueButton) queueButton.disabled = !hasContent();
   }
 
-  function enqueueFromComposer() {
-    const typed = textarea ? textarea.value.trim() : '';
-    const message = attachments.composeMessage(typed);
+  async function enqueueFromComposer() {
+    const text = textarea?.value || '';
+    const displayText = text.trim();
+    const message = attachments.composeMessage(displayText);
     const files = (attachments.files?.() || []).slice();
+    const detail = {
+      files,
+      draft: { text, textAttachments: attachments.textAttachments?.() || [] },
+    };
     if (!message && files.length === 0) return false;
     // Clear the composer synchronously so a rapid second queue click can read
     // fresh content from the textarea before our POST round-trips. The store
@@ -57,8 +68,10 @@ export function setupSteerQueue({
     updateSendEnabled();
     updateQueueEnabled();
     if (textarea && typeof textarea.focus === 'function') textarea.focus();
-    void store.enqueueQueued({ message, displayText: typed, files });
-    return true;
+    if (await store.enqueueQueued({ message, displayText, files })) return true;
+    restoreDraft({ detail });
+    reportFailure();
+    return false;
   }
 
   async function sendNow(id) {
@@ -81,10 +94,7 @@ export function setupSteerQueue({
         if (!consumed) store.pushSteer({ text: focused.text });
       }
     } catch (error) {
-      setChatStatus(
-        error.message === 'session is busy' ? t('piSession.busy') : t('activity.failed'),
-        'error',
-      );
+      reportFailure(error);
       await store.refresh?.();
     } finally {
       sending.delete(id);
@@ -93,24 +103,29 @@ export function setupSteerQueue({
 
   async function edit(id) {
     const focused = store.items.find((it) => it.id === id);
-    if (!focused || focused.kind !== 'queued') return;
-    if (queueApi && Number.isInteger(focused.position)) {
-      try {
-        await queueApi.remove(focused.position);
-      } catch {
-        setChatStatus(t('activity.failed'), 'error');
-        await store.refresh?.();
-        return;
+    if (!focused || focused.kind !== 'queued' || sending.has(id)) return;
+    sending.add(id);
+    try {
+      const item = await queueApi?.remove(focused.position, { edit: true });
+      const payload = item?.attachments;
+      const files = (payload?.Files || []).map(({ Name, Data }) => decodeFile(Name, Data));
+      for (const [index, image] of (payload?.Images || []).entries()) {
+        const extension = image.mimeType.split('/')[1];
+        files.push(decodeFile(`image-${index + 1}.${extension}`, image.data, image.mimeType));
       }
+      store.takeLocalById(id);
+      restoreDraft({ detail: { draft: { text: item?.message ?? focused.text }, files } });
+    } catch (error) {
+      reportFailure(error);
+    } finally {
+      sending.delete(id);
+      void store.refresh?.();
     }
-    store.takeLocalById(id);
-    if (textarea) {
-      textarea.value = focused.displayText || focused.text || '';
-      autoResizeTextarea();
-      updateSendEnabled();
-      updateQueueEnabled();
-      if (typeof textarea.focus === 'function') textarea.focus();
-    }
+  }
+
+  function decodeFile(name, data, type = '') {
+    const bytes = Uint8Array.from(windowImpl.atob(data), (character) => character.charCodeAt(0));
+    return new windowImpl.File([bytes], name, { type });
   }
 
   function restoreDraft(item) {
@@ -119,7 +134,7 @@ export function setupSteerQueue({
     textarea.value = [original, textarea.value].filter(Boolean).join('\n\n');
     if (item.detail) {
       attachments.restore?.({
-        files: [...item.detail.files, ...attachments.files()],
+        files: [...(item.detail.files || []), ...attachments.files()],
         textAttachments: [
           ...(item.detail.draft?.textAttachments || []),
           ...(attachments.textAttachments?.() || []),
@@ -129,7 +144,7 @@ export function setupSteerQueue({
     autoResizeTextarea();
     updateSendEnabled();
     updateQueueEnabled();
-    if (typeof textarea.focus === 'function') textarea.focus();
+    if (typeof textarea.focus === 'function') textarea.focus({ preventScroll: true });
   }
 
   // Only a draft that has not been dispatched can be edited or requeued.
@@ -155,21 +170,17 @@ export function setupSteerQueue({
   // turn instead of being folded into it.
   async function queueSteer(id) {
     const item = store.items.find((it) => it.id === id && it.kind === 'steer');
-    if (!item?.detail?.cancelBeforeSend?.()) return false;
+    if (!queueApi || !item?.detail?.cancelBeforeSend?.()) return false;
     store.takeLocalById(id);
-    if (queueApi) {
-      const added = await store.enqueueQueued({
-        message: item.text,
-        displayText: item.displayText,
-        files: item.detail.files,
-      });
-      if (!added) {
-        restoreDraft(item);
-        setChatStatus(t('activity.failed'), 'error');
-        return false;
-      }
-    }
-    return true;
+    const added = await store.enqueueQueued({
+      message: item.text,
+      displayText: item.displayText,
+      files: item.detail.files,
+    });
+    if (added) return true;
+    restoreDraft(item);
+    reportFailure();
+    return false;
   }
 
   async function resume() {
@@ -296,6 +307,8 @@ export function setupSteerQueue({
     queuedCount: () => store.queuedCount,
     steerCount: () => store.steerCount,
     dispose: () => {
+      queueButton?.removeEventListener('click', enqueueFromComposer);
+      textarea?.removeEventListener('input', updateQueueEnabled);
       windowImpl.removeEventListener('pi-chat-message-sent', onMessageSent);
       windowImpl.removeEventListener('pi-chat-message-failed', onMessageFailed);
       windowImpl.removeEventListener('pi-chat-message-delivering', onMessageDelivering);

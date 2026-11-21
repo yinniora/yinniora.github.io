@@ -15,9 +15,12 @@ package chatqueue
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
+
+	"pi-web/internal/chat"
 )
 
 // ItemsTableDDL creates the queue items table. Registered in server.initDB.
@@ -27,6 +30,7 @@ const ItemsTableDDL = `CREATE TABLE IF NOT EXISTS chat_queue_items (
 	message      TEXT NOT NULL,
 	display_text TEXT NOT NULL,
 	created_at   DATETIME NOT NULL,
+	attachments  BLOB,
 	PRIMARY KEY (session_id, position)
 )`
 
@@ -46,11 +50,25 @@ const StateTableDDL = `CREATE TABLE IF NOT EXISTS chat_queue_state (
 
 // Item is a single queued message in the order the user added it.
 type Item struct {
-	SessionID   string    `json:"sessionId"`
-	Position    int64     `json:"position"`
-	Message     string    `json:"message"`
-	DisplayText string    `json:"displayText"`
-	CreatedAt   time.Time `json:"createdAt"`
+	SessionID      string          `json:"sessionId"`
+	Position       int64           `json:"position"`
+	Message        string          `json:"message"`
+	DisplayText    string          `json:"displayText"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	HasAttachments bool            `json:"hasAttachments,omitempty"`
+	Attachments    json.RawMessage `json:"attachments,omitempty"`
+}
+
+func MigrateAttachments(db *sql.DB) error {
+	var exists int
+	if err := db.QueryRow(`SELECT count(*) FROM pragma_table_info('chat_queue_items') WHERE name = 'attachments'`).Scan(&exists); err != nil {
+		return err
+	}
+	if exists == 0 {
+		_, err := db.Exec(`ALTER TABLE chat_queue_items ADD COLUMN attachments BLOB`)
+		return err
+	}
+	return nil
 }
 
 // Snapshot is the full state returned to the browser: the ordered items plus
@@ -87,7 +105,7 @@ func (s *Store) List(sessionID string) (Snapshot, error) {
 		return Snapshot{}, errors.New("sessionID is required")
 	}
 	rows, err := s.db.Query(
-		`SELECT position, message, display_text, created_at
+		`SELECT position, message, display_text, created_at, attachments IS NOT NULL
 		 FROM chat_queue_items WHERE session_id = ? ORDER BY position ASC`,
 		sessionID,
 	)
@@ -99,7 +117,7 @@ func (s *Store) List(sessionID string) (Snapshot, error) {
 	for rows.Next() {
 		var item Item
 		item.SessionID = sessionID
-		if err := rows.Scan(&item.Position, &item.Message, &item.DisplayText, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.Position, &item.Message, &item.DisplayText, &item.CreatedAt, &item.HasAttachments); err != nil {
 			return Snapshot{}, fmt.Errorf("scan item: %w", err)
 		}
 		items = append(items, item)
@@ -138,11 +156,25 @@ func (s *Store) isPaused(sessionID string) (bool, error) {
 // position is the previous max+1 (or 1 if the queue was empty); positions are
 // monotonic per session, never reused.
 func (s *Store) Add(sessionID, message, displayText string) (Item, error) {
+	return s.AddRequest(sessionID, chat.Request{Message: message}, displayText)
+}
+
+func (s *Store) AddRequest(sessionID string, request chat.Request, displayText string) (Item, error) {
 	if sessionID == "" {
 		return Item{}, errors.New("sessionID is required")
 	}
-	if message == "" {
+	message := request.Message
+	hasAttachments := len(request.Files) != 0 || len(request.Images) != 0
+	if message == "" && !hasAttachments {
 		return Item{}, errors.New("message is required")
+	}
+	var attachments []byte
+	if hasAttachments {
+		var err error
+		attachments, err = json.Marshal(chat.Request{Images: request.Images, Files: request.Files})
+		if err != nil {
+			return Item{}, err
+		}
 	}
 	if displayText == "" {
 		displayText = message
@@ -177,9 +209,9 @@ func (s *Store) Add(sessionID, message, displayText string) (Item, error) {
 		return Item{}, fmt.Errorf("bump next position: %w", err)
 	}
 	if _, err := tx.Exec(
-		`INSERT INTO chat_queue_items (session_id, position, message, display_text, created_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		sessionID, next, message, displayText, now,
+		`INSERT INTO chat_queue_items (session_id, position, message, display_text, created_at, attachments)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		sessionID, next, message, displayText, now, attachments,
 	); err != nil {
 		return Item{}, fmt.Errorf("insert item: %w", err)
 	}
@@ -187,11 +219,12 @@ func (s *Store) Add(sessionID, message, displayText string) (Item, error) {
 		return Item{}, fmt.Errorf("commit: %w", err)
 	}
 	return Item{
-		SessionID:   sessionID,
-		Position:    next,
-		Message:     message,
-		DisplayText: displayText,
-		CreatedAt:   now,
+		SessionID:      sessionID,
+		Position:       next,
+		Message:        message,
+		DisplayText:    displayText,
+		CreatedAt:      now,
+		HasAttachments: hasAttachments,
 	}, nil
 }
 
@@ -218,19 +251,22 @@ func (s *Store) Find(sessionID string, position int64) (Item, bool, error) {
 		return Item{}, false, errors.New("sessionID is required")
 	}
 	row := s.db.QueryRow(
-		`SELECT position, message, display_text, created_at
+		`SELECT position, message, display_text, created_at, COALESCE(attachments, '')
 		 FROM chat_queue_items WHERE session_id = ? AND (? = 0 OR position = ?)
 		 ORDER BY position ASC LIMIT 1`,
 		sessionID, position, position,
 	)
 	var item Item
 	item.SessionID = sessionID
-	if err := row.Scan(&item.Position, &item.Message, &item.DisplayText, &item.CreatedAt); err != nil {
+	var attachments []byte
+	if err := row.Scan(&item.Position, &item.Message, &item.DisplayText, &item.CreatedAt, &attachments); err != nil {
 		if err == sql.ErrNoRows {
 			return Item{}, false, nil
 		}
 		return Item{}, false, fmt.Errorf("query head: %w", err)
 	}
+	item.Attachments = attachments
+	item.HasAttachments = len(attachments) != 0
 	return item, true, nil
 }
 

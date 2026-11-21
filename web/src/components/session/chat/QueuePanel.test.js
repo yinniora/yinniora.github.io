@@ -31,7 +31,7 @@ describe('QueuePanel', () => {
 
     const row = document.querySelector('.pi-queue-item--steer');
     expect(row.querySelector('.pi-queue-item-text').textContent).toBe('polish the header');
-    expect(row.querySelector('.pi-queue-item-tag').textContent).toBe('steering');
+    expect(row.querySelector('.pi-queue-item-icon svg')).not.toBeNull();
 
     const [edit, toQueue, withdraw] = row.querySelectorAll('.pi-queue-item-action');
     await edit.click();

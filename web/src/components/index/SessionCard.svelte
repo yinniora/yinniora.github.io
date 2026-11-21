@@ -1,8 +1,8 @@
 <script>
   import { openHub } from '../../shared/hub.js';
-  import { icon, Ellipsis } from '../../shared/icons.js';
+  import { icon, CircleAlert, Ellipsis } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
-  import { hasUnseenCompletion } from '../../index/session-completions.js';
+  import { hasUnseenCompletion, markCompletionSeen } from '../../index/session-completions.js';
   import { handleNavClick } from '../../shared/navigation.js';
   import { prefetchSession } from '../../routes/session-prefetch.js';
   import {
@@ -24,10 +24,14 @@
     !running && (!lastState || lastState === 'completed') && hasUnseenCompletion(session),
   );
   const waiting = $derived(running ? runningStatus?.waitingForInput : lastState === 'waiting');
-  const endedEarly = $derived(!running && ['failed', 'timedOut', 'stopped'].includes(lastState));
-  const dotLabel = $derived(
-    t(waiting ? 'piExtension.waiting' : endedEarly ? 'activity.' + lastState : 'common.done'),
+  const failed = $derived(!running && ['failed', 'timedOut'].includes(lastState));
+  const flagLabel = $derived(
+    t(waiting ? 'piExtension.waiting' : failed ? `activity.${lastState}` : 'common.done'),
   );
+
+  function openSession(event) {
+    if (handleNavClick(event, href)) markCompletionSeen(session.id, session.lastCompletedAt);
+  }
 
   // Start /api/session as soon as the user signals intent (hover or press), so
   // the response is usually back by the time SessionPage mounts. All three
@@ -37,12 +41,13 @@
   }
 </script>
 
+<!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icons -->
 <div class="hub-card-wrap">
   <a
     class="session-card"
     class:session-card--running={running}
     {href}
-    onclick={(event) => handleNavClick(event, href)}
+    onclick={openSession}
     onpointerenter={startPrefetch}
     onmousedown={startPrefetch}
     ontouchstart={startPrefetch}
@@ -53,14 +58,22 @@
     <div class="session-title-row">
       <div class="session-title">{title}</div>
       <div class="session-card-flags">
-        {#if waiting || completed || endedEarly}
+        {#if failed}
+          <span
+            class="session-problem-indicator"
+            role="img"
+            aria-label={flagLabel}
+            title={flagLabel}
+          >
+            {@html icon(CircleAlert, { size: 14 })}
+          </span>
+        {:else if waiting || completed}
           <span
             class="session-completion-dot"
-            class:waiting={waiting || lastState === 'timedOut'}
-            class:failed={endedEarly && lastState !== 'timedOut'}
+            class:waiting
             role="img"
-            aria-label={dotLabel}
-            title={dotLabel}
+            aria-label={flagLabel}
+            title={flagLabel}
           ></span>
         {/if}
         {#if !session.chatAvailable}
@@ -86,7 +99,6 @@
     </div>
   </a>
 
-  <!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icon -->
   <button
     class="hub-card-menu"
     type="button"
@@ -114,8 +126,10 @@
   .session-completion-dot.waiting {
     background: var(--warning);
   }
-  .session-completion-dot.failed {
-    background: var(--danger);
+  .session-problem-indicator {
+    display: inline-flex;
+    flex: none;
+    color: var(--danger);
   }
   .hub-card-menu {
     position: absolute;

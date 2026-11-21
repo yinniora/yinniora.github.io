@@ -1,5 +1,5 @@
 <script>
-  import { icon, KeyboardOff, Maximize2 } from '../../../shared/icons.js';
+  import { icon, ChevronDown, Maximize2 } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
 
   let { chatAvailable = true } = $props();
@@ -24,7 +24,7 @@
   title={t('composer.dismissKeyboard')}
   onpointerdown={(event) => event.preventDefault()}
   onclick={() => document.getElementById('pi-chat-message')?.blur()}
-  disabled={!chatAvailable}>{@html icon(KeyboardOff, { size: 18 })}</button
+  disabled={!chatAvailable}>{@html icon(ChevronDown, { size: 16 })}</button
 >
 
 <style>
@@ -34,14 +34,6 @@
   @media (max-width: 760px) {
     #pi-chat-expand {
       display: none;
-    }
-    :global(.pi-keyboard-open) .dismiss-keyboard {
-      display: grid;
-      place-items: center;
-      width: 44px;
-      height: 44px;
-      padding: 0;
-      opacity: 1;
     }
   }
 </style>

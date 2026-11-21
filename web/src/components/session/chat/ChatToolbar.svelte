@@ -3,8 +3,7 @@
     icon,
     ArrowUp,
     Camera,
-    ChevronDown,
-    Clock,
+    ListPlus,
     CornerDownRight,
     Image,
     Gauge,
@@ -58,7 +57,7 @@
       {#if chatAvailable}
         <details class="composer-add" bind:this={attachMenu}>
           <summary class="pi-chat-icon-button" aria-label={t('composer.addAttachment')}
-            >{@html icon(Plus, { size: 18 })}</summary
+            >{@html icon(Plus, { size: 16 })}</summary
           >
           <div class="composer-add-menu">
             <button type="button" onclick={() => chooseAttachment('pi-chat-files')}
@@ -87,7 +86,7 @@
         class="pi-chat-model-label"
         title={modelTitle}
         style:display={chatAvailable ? '' : 'none'}
-        disabled={!chatAvailable}>{modelTitle}</button
+        disabled={!chatAvailable}><span>{modelTitle}</span></button
       >
       <ContextUsage />
     </div>
@@ -103,9 +102,8 @@
           aria-controls="pi-chat-thinking-popup"
           aria-expanded="false"
           disabled={!chatAvailable}
-          >{@html icon(Gauge, { size: 18 })}
-          <span>{effortLabel || t('composer.switchEffort')}</span>
-          {@html icon(ChevronDown, { size: 12 })}</button
+          >{@html icon(Gauge, { size: 16 })}
+          {#if effortLabel}<span>{effortLabel}</span>{/if}</button
         >
         <div id="pi-chat-thinking-popup" class="pi-chat-thinking-popup" style="display: none" inert>
           <div
@@ -124,12 +122,10 @@
         title={t('composer.stopHint')}
         aria-label={t('composer.cancelRunning')}
         disabled={toolbar.statusText === 'cancelling' || toolbar.compacting || !chatAvailable}
-        >{@html icon(Square, { size: 12, class: 'pi-chat-stop-glyph' })}<span
+        >{@html icon(Square, { size: 16, class: 'pi-chat-stop-glyph' })}<span
           >{t('composer.stop')}</span
         ></button
       >
-      <!-- Steer and Queue share one split button: Steer (submit) joins the
-           current run, the clock half queues the draft for later. -->
       <div class="pi-chat-send-group" class:running={toolbar.isRunning}>
         <button
           type="button"
@@ -138,12 +134,11 @@
           style:display={toolbar.isRunning ? '' : 'none'}
           title={t('composer.queueHint')}
           aria-label={t('composer.queue')}
-          disabled>{@html icon(Clock, { size: 16 })}<span>{t('composer.queue')}</span></button
+          disabled>{@html icon(ListPlus, { size: 16 })}<span>{t('composer.queue')}</span></button
         >
         <button type="submit" id="pi-chat-send" class="pi-chat-send" disabled>
           {@html icon(toolbar.isRunning ? CornerDownRight : ArrowUp, {
-            size: 18,
-            class: 'composer-send-icon',
+            size: 16,
           })}
           <span>{toolbar.isRunning ? t('composer.steer') : t('composer.send')}</span>
         </button>
@@ -172,23 +167,6 @@
 />
 
 <style>
-  :global(#spa-root) .pi-chat-thinking-label {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    min-height: 40px;
-    padding: 5px 9px;
-    border: 1px solid color-mix(in srgb, var(--text) 45%, var(--input-bg));
-    border-radius: 10px;
-    color: var(--text);
-    background: color-mix(in srgb, var(--text) 14%, var(--input-bg));
-    font-size: 13px;
-    font-weight: 650;
-  }
-  .pi-chat-thinking-label:is(:hover, :focus-visible) {
-    background: color-mix(in srgb, var(--text) 22%, var(--input-bg));
-  }
   .thinking-control {
     position: relative;
   }
@@ -202,12 +180,6 @@
     max-height: min(320px, max(84px, calc(var(--pi-visual-height, 100dvh) - 150px)));
     overscroll-behavior: contain;
   }
-  .pi-chat-thinking-label :global(svg:last-child) {
-    transition: rotate var(--motion-control, 140ms) ease;
-  }
-  .pi-chat-thinking-label:global([aria-expanded='true']) :global(svg:last-child) {
-    rotate: 180deg;
-  }
   .pi-chat-toolbar {
     overflow: visible;
   }
@@ -219,17 +191,7 @@
     flex: none;
   }
   .composer-add summary {
-    display: grid;
-    place-items: center;
-    min-width: 36px;
-    height: 36px;
     list-style: none;
-    cursor: pointer;
-    border-radius: 10px;
-  }
-  .composer-add summary:is(:hover, :focus-visible) {
-    background: color-mix(in srgb, var(--text) 10%, transparent);
-    color: var(--text);
   }
   .composer-add summary::-webkit-details-marker {
     display: none;

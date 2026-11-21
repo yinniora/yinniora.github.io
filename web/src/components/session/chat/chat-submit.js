@@ -1,3 +1,5 @@
+import { appendChatFiles } from './queue-api.js';
+
 // A phone that lost its link to the Mac usually reconnects on its own within a
 // few seconds. Rather than throwing the draft away on the first reset, keep the
 // request in flight and retry over this window before reporting anything.
@@ -77,10 +79,7 @@ export function setupChatSubmission({
     }
     const body = new FormDataImpl();
     body.set('message', message);
-    for (const file of files) {
-      const image = /^image\/(png|jpeg|webp|gif)$/i.test(file.type);
-      body.append(image ? 'images' : 'files', file);
-    }
+    appendChatFiles(body, files);
     sendButton.dataset.sending = '1';
     sendButton.disabled = true;
     const detail = { message, files, draft, steering: isSteering() };

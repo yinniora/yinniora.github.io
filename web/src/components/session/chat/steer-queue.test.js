@@ -79,6 +79,30 @@ describe('setupSteerQueue (server-backed)', () => {
     expect(textarea.value).toBe('');
   });
 
+  it('restores the failed queue draft and attachments without overwriting newer text', async () => {
+    const { queueButton, textarea } = makeDom();
+    const api = makeApi();
+    let rejectAdd;
+    api.add.mockImplementationOnce(() => new Promise((_, reject) => (rejectAdd = reject)));
+    const store = new QueueStore({ api });
+    const file = new File(['data'], 'notes.txt');
+    const attachments = {
+      files: vi.fn().mockReturnValueOnce([file]).mockReturnValueOnce([file]).mockReturnValue([]),
+      composeMessage: (text) => text,
+      clear: vi.fn(),
+      restore: vi.fn(),
+    };
+    const handle = setupSteerQueue({ store, queueButton, textarea, queueApi: api, attachments });
+    textarea.value = 'original';
+    const pending = handle.enqueueFromComposer();
+    textarea.value = 'newer';
+    rejectAdd(new Error('rejected'));
+    expect(await pending).toBe(false);
+    expect(textarea.value).toBe('original\n\nnewer');
+    expect(attachments.restore).toHaveBeenCalledWith({ files: [file], textAttachments: [] });
+    handle.dispose();
+  });
+
   it('subsequent sends during an active run produce steer rows in the store', () => {
     const { queueButton, textarea } = makeDom();
     const store = new QueueStore();
@@ -311,12 +335,10 @@ describe('setupSteerQueue (server-backed)', () => {
   it('editSteer pulls the text back into the composer and drops the chip', () => {
     const { queueButton, textarea } = makeDom();
     const store = new QueueStore();
-    const sent = [];
     setupSteerQueue({
       store,
       queueButton,
       textarea,
-      setChatStatus: (text) => sent.push(text),
     });
     window.dispatchEvent(new CustomEvent('pi-chat-message-sent', { detail: { message: 'first' } }));
     window.dispatchEvent(

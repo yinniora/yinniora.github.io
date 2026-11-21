@@ -84,6 +84,15 @@ describe('QueueStore (server-backed)', () => {
     expect(store.queuedCount).toBe(0);
   });
 
+  it('retains the acknowledged row when the queue refresh fails', async () => {
+    const api = makeApi();
+    api.list.mockRejectedValue(new Error('network'));
+    const store = new QueueStore({ api });
+    expect(await store.enqueueQueued({ message: 'saved' })).toMatchObject({ text: 'saved' });
+    expect(store.items).toHaveLength(1);
+    expect(api.add).toHaveBeenCalledTimes(1);
+  });
+
   it('removeById on a steer row does not call the api', async () => {
     const api = makeApi();
     const store = new QueueStore({ api });

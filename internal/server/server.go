@@ -312,6 +312,10 @@ func initDB(agentDir string) (*sql.DB, error) {
 			return nil, fmt.Errorf("create %s: %w", s.name, err)
 		}
 	}
+	if err := chatqueue.MigrateAttachments(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate chat queue attachments: %w", err)
+	}
 	migrateLegacyBtwSession(db)
 	return db, nil
 }

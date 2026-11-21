@@ -227,13 +227,11 @@ docked panel (`QueuePanel.svelte`) sits above the composer card showing every
 pending message — queued and in-flight steers alike — with keyboard navigation,
 pause/resume, and per-row delete / send-now / edit actions.
 
-- **Steer** sends the message immediately through the same `POST /api/chat` path.
-  Because the worker is already `running`, `piRPCWorker.Prompt` tags the command
-  `streamingBehavior:"steer"` (step 4) so pi folds it into the active turn. The
-  message appears as a steer row in the panel until the run completes; the user
-  can also dismiss the row early (the message is still with pi). Steers are
-  **browser-local** — closing the tab discards any unsent steer chip.
-- **Queue** holds the message on the **server** in the `chat_queue_items`
+- **Steer** gives the user a short window to withdraw the draft, return it to
+  the composer, or move it to the queue before sending `POST /api/chat`.
+  Once dispatched, the row can be dismissed and Pi receives the message with
+  `streamingBehavior:"steer"` to fold it into the active turn.
+- **Queue** holds the message and its attachments on the server in the `chat_queue_items`
   SQLite table (see `internal/chatqueue`). The autonomous backend drainer
   (`internal/server/chat_queue_drainer.go`) watches every session: whenever a
   worker transitions `running → idle`, the periodic 5-second tick fires, or a
@@ -252,8 +250,8 @@ pause/resume, and per-row delete / send-now / edit actions.
 REST surface (single handler in `internal/server/chat_queue.go`):
 
 - `GET    /api/chat/queue?id=<sessionID>`            → `{items, paused}`
-- `POST   /api/chat/queue?id=<sessionID>`            body `{message, displayText}`
-- `DELETE /api/chat/queue?id=<sessionID>&position=N`
+- `POST   /api/chat/queue?id=<sessionID>` accepts `{message, displayText}` or multipart form data with the same attachment fields as `/api/chat`.
+- `DELETE /api/chat/queue?id=<sessionID>&position=N` returns the saved draft, including attachments, when `edit=1` is included.
 - `PATCH  /api/chat/queue?id=<sessionID>`            body `{paused}`
 
 On every mutation the server broadcasts an SSE `queue` event on the session

@@ -8,6 +8,7 @@ import {
   uniqueSessionName,
   writeSession,
   assistantTextEntry,
+  appendEntry,
 } from "../lib/sessions";
 
 test("leaving a running conversation isolates its completion from the next conversation", async ({
@@ -134,6 +135,31 @@ test("an unseen completed reply keeps its dot until the conversation is opened",
   await page.reload();
   await expect(card(first)).toBeVisible();
   await expect(dot).toHaveCount(0);
+});
+
+test("the session failure badge persists after reading and clears after recovery", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const { entries, lastId } = buildSession({ cwd: realWorkingDir() });
+  const failure = assistantTextEntry(lastId, "");
+  const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "failed-badge"), [
+    ...entries,
+    { ...failure.entry, message: { ...failure.entry.message, stopReason: "error", errorMessage: "Request failed" } },
+  ]);
+  const card = page.locator(`.session-card[data-session-id="${id}"]`);
+  const badge = card.getByRole("img", { name: "Failed" });
+  await page.goto("/");
+  await expect(badge).toBeVisible();
+  await card.click();
+  await expect(page.locator("#messages")).toContainText("Failed");
+  await page.locator(".session-header-back").click();
+  await expect(badge).toBeVisible();
+  await expect(card.locator(".session-completion-dot")).toHaveCount(0);
+
+  appendEntry(sessionsDir, id, assistantTextEntry(failure.id, "Recovered.").entry);
+  await expect(badge).toHaveCount(0);
+  await expect(card.locator(".session-completion-dot")).toBeVisible();
 });
 
 test("a stalled session stays navigable and can be retried in place", async ({

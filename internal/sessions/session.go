@@ -214,7 +214,7 @@ func applySummaryContext(s *SessionSummary, path, fileName, sessionInfoName, hea
 }
 
 func isCompletedReply(role, stopReason string) bool {
-	return role == "assistant" && (stopReason == "" || stopReason == "stop" || stopReason == "length")
+	return role == "assistant" && (stopReason == "" || stopReason == "stop")
 }
 
 func isQuestionResult(role, toolName string) bool {
@@ -233,7 +233,7 @@ func (s *SessionSummary) trackTurn(role, stopReason, timestamp string, question 
 		s.LastTurnState = "waiting"
 	case s.LastTurnState == "waiting" || s.LastTurnState == "timedOut" || s.LastTurnState == "stopped":
 		// An acknowledgement following an unanswered question is not task completion.
-	case role == "assistant" && stopReason == "error":
+	case role == "assistant" && (stopReason == "error" || stopReason == "length"):
 		s.LastTurnState = "failed"
 	case role == "assistant" && stopReason == "aborted":
 		s.LastTurnState = "stopped"
