@@ -1,0 +1,2 @@
+# Preserve the original bytes of vendored, checksum-pinned licenses.
+licenses/*/LICENSE* -text

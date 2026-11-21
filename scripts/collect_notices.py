@@ -35,7 +35,8 @@ def collect():
                 raise RuntimeError(f'No license text for {name}@{version}; inspect before distributing.')
             directory = ROOT / 'licenses' / override['directory']
             files = license_files(directory)
-            assert len(files) == 1 and hashlib.sha256(files[0].read_bytes()).hexdigest() == override['sha256']
+            if len(files) != 1 or hashlib.sha256(files[0].read_bytes()).hexdigest() != override['sha256']:
+                raise RuntimeError(f'Vendored license for {name}@{version} does not match its pinned SHA-256.')
             source += '\nLicense text source: ' + override['source']
         inventory.append({'name': name, 'version': version, 'license': declared})
         texts = '\n\n'.join(path.name + '\n' + path.read_text(encoding='utf-8', errors='replace') for path in files)
