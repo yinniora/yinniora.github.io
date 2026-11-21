@@ -377,7 +377,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	expires := d.now().Add(3 * time.Minute)
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
-		name = "iPhone"
+		name = "Remote device"
 	}
 	if s.remoteControl != nil && metadata["relayAuth"] == true {
 		ticket := s.remoteControl.EnrollmentTicket(pairingString(metadata["signalUrl"]), pairingString(metadata["iceUrl"]))

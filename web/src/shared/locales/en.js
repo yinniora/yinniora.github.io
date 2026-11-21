@@ -14,9 +14,9 @@ export default {
   'remote.phase.ice': 'Obtaining relay connection credentials…',
   'remote.phase.signal': 'Connecting to the signaling server…',
   'remote.phase.gathering': 'Finding a P2P or relay route…',
-  'remote.phase.answer': 'Waiting for the Mac handshake…',
+  'remote.phase.answer': 'Waiting for the host handshake…',
   'remote.phase.channel': 'Establishing the encrypted channel…',
-  'remote.phase.auth': 'Verifying this device on the Mac…',
+  'remote.phase.auth': 'Verifying this device on the host…',
   'remote.phase.sync': 'Connected. Synchronizing the workspace…',
   'remote.phase.fallback': 'Tailscale did not answer. Trying Automatic (direct + relay)…',
   'models.title': 'Models',
@@ -886,7 +886,7 @@ export default {
   'remote.invalidPairing':
     'This is not a valid YuGo Pi pairing link. Create a fresh code on the Mac.',
   'remote.expiredPairing':
-    'This pairing code has expired. Authenticate on the Mac to create another.',
+    'This pairing code has expired. Authenticate on the host to create another.',
   'remote.transport': 'Connection',
   'remote.auto': 'Automatic',
   'remote.tailscale': 'Prefer P2P',
@@ -902,30 +902,31 @@ export default {
   'remote.startFailed': 'The secure app could not start. Check the connection, then retry.',
   'devices.copyPairLink': 'Copy pairing link',
   'devices.appPairHint':
-    'In the Home Screen YuGo Pi app, tap Scan QR code. You can also copy this link and paste it inside that app.',
+    'In YuGo Pi on your mobile device, tap Scan QR code. You can also copy the link and paste it into the client.',
   'remote.pairFirst':
-    'On your Mac, open YuGo YuGo Pi → Devices, authenticate, then scan the single-use QR code.',
-  'remote.connecting': 'Verifying the Mac and opening an encrypted connection…',
+    'On your host, open YuGo Pi → Devices, authenticate, then scan the single-use QR code.',
+  'remote.connecting': 'Verifying the host and opening an encrypted connection…',
   'remote.denied':
-    'This device is not approved or its access was revoked. Authenticate on the Mac and pair again.',
-  'remote.timeout': 'The Mac did not respond. Check that it is online.',
-  'remote.identityFailed': 'Mac identity mismatch. The connection was blocked.',
-  'remote.disconnected': 'The encrypted connection to the Mac was disconnected.',
+    'This device is not approved or its access was revoked. Authenticate on the host and pair again.',
+  'remote.timeout': 'The host did not respond. Check that it is online.',
+  'remote.identityFailed': 'Host identity mismatch. The connection was blocked.',
+  'remote.disconnected': 'The encrypted connection to the host was disconnected.',
   'remote.relayFailed': 'The relay could not be reached.',
-  'remote.offline': 'The Mac is currently offline.',
+  'remote.offline': 'The host is currently offline.',
   'remote.tooLarge': 'The attachment is too large.',
-  'remote.failed': 'Connection failed. Check that the Mac is online and pair again.',
+  'remote.failed': 'Connection failed. Check that the host is online and pair again.',
   'remote.preparing': 'Preparing a secure connection…',
   'devices.title': 'Devices',
   'devices.headline': 'Only the devices you approve',
-  'devices.intro': 'Device approval stays on the Mac. P2P and the relay only carry the connection.',
+  'devices.intro': 'Devices are approved on the host. P2P and the relay carry the connection.',
   'devices.name': 'Device name',
+  'devices.defaultName': 'Remote device',
   'devices.createCode': 'Authenticate and show QR code',
-  'devices.authenticating': 'Waiting for Mac authentication…',
+  'devices.authenticating': 'Waiting for host authentication…',
   'devices.authHint':
-    'Touch ID or Mac account authentication is required every time a new pairing code is created.',
+    'The host requires system authentication each time you create a pairing code.',
   'devices.qrAlt': 'Single-use device pairing QR code',
-  'devices.scan': 'Scan inside the YuGo Pi app on your iPhone',
+  'devices.scan': 'Scan in YuGo Pi on your mobile device',
   'devices.expires': 'Single use · expires in {seconds}s',
   'devices.expired': 'This code has expired. Authenticate on the Mac to create another.',
   'devices.whitelist': 'Approved devices',
@@ -934,11 +935,11 @@ export default {
   'devices.revoked': 'Revoked',
   'devices.revoke': 'Revoke access',
   'devices.confirmRevoke': 'Revoke and disconnect',
-  'devices.macOnly': 'Open YuGo Pi on the Mac to add or manage approved devices.',
+  'devices.macOnly': 'Open YuGo Pi on the host to add or manage approved devices.',
   'devices.notEnabled': 'Device pairing has not been configured on this installation.',
   'devices.loadFailed': 'The device list could not be loaded. Try again.',
   'devices.macApprovalFailed':
-    'Mac authentication was cancelled or unavailable. No pairing code was created.',
+    'System authentication was cancelled or unavailable. No pairing code was created.',
   'devices.revokeFailed': 'Access could not be revoked. Try again.',
   'outputs.open': 'Open',
   'outputs.previewUnavailable': 'Preview is unavailable. You can download the file to open it.',
@@ -1073,18 +1074,18 @@ export default {
   'connection.p2p': 'P2P',
   'connection.relay': 'Relay',
   'remote.relayDenied':
-    'Relay access was not authorized. Retry, or create a fresh pairing code on the Mac.',
+    'Relay access was not authorized. Retry, or create a fresh pairing code on the host.',
   'remoteSettings.title': 'Remote control and devices',
   'remoteSettings.intro':
-    'Connect a phone or another computer. This host approves and remembers paired devices.',
+    'Connect a phone, tablet, or another computer. This host approves and remembers paired devices.',
   'remoteSettings.loading': 'Loading remote settings\u2026',
   'remoteSettings.setupRequired': 'The device approval helper is required for remote control.',
   'remoteSettings.macOnly': 'Open these settings directly on the host to set up remote access.',
   'remoteSettings.private': 'Connect with Tailscale',
   'remoteSettings.privateDetected':
-    'Tailscale is available. Enable it here, then pair the phone from Devices.',
+    'Tailscale is available. Enable it here, then pair your device from Devices.',
   'remoteSettings.privateReady':
-    'Private signaling is configured. Connect your phone to the same Tailscale network.',
+    'Private signaling is configured. Connect your other device to the same Tailscale network.',
   'remoteSettings.privateHint':
     'Connect both devices to the same Tailscale network to use this option.',
   'remoteSettings.enablePrivate': 'Enable Tailscale connection',
@@ -1093,12 +1094,15 @@ export default {
   'remoteSettings.privateFailed':
     'Could not enable Tailscale. Check that it is signed in, HTTPS is enabled and the host can configure Serve.',
   'remoteSettings.lan': 'Connect on the same network',
-  'remoteSettings.lanHint': 'Use the YuGo Pi iPhone app to pair over the same Wi-Fi network.',
-  'remoteSettings.lanReady': 'Local pairing is ready for the YuGo Pi iPhone app.',
+  'remoteSettings.lanHint':
+    'Connect both devices to the same network and scan in YuGo Pi on your mobile device. The native iOS and iPadOS app currently supports local-network pairing.',
+  'remoteSettings.lanReady':
+    'Local pairing is enabled. Scan using the native YuGo Pi app for iOS or iPadOS.',
   'remoteSettings.enableLAN': 'Enable local connection',
   'remoteSettings.lanFailed':
     'Could not enable the local connection. Check that this host is on a private IPv4 network.',
-  'remote.lanNeedsApp': 'Pair over the local network from inside the YuGo Pi app.',
+  'remote.lanNeedsApp':
+    'Scan in the native YuGo Pi app for iOS or iPadOS to connect over the local network.',
   'remoteSettings.relaySetup': 'Connect with your server',
   'remoteSettings.relayReady': 'Connected server · {server}',
   'remoteSettings.activation': 'Relay activation code or private configuration',
@@ -1131,7 +1135,7 @@ export default {
   'remoteSettings.turnSecret': 'TURN shared secret',
   'remoteSettings.authHint':
     'Authenticate on this host. YuGo Pi verifies HTTPS and the relay credentials before saving.',
-  'remoteSettings.saved': 'Connection verified and saved. Open Devices to pair a phone.',
+  'remoteSettings.saved': 'Connection verified and saved. Open Devices to pair another device.',
   'remoteSettings.authenticating':
     'Waiting for system authentication and connection verification\u2026',
   'remoteSettings.save': 'Authenticate, verify and save',

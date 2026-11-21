@@ -6,7 +6,7 @@ const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { promisify } = require('node:util');
 
-const API = 'https://api.github.com/repos/yinniora/yugo-pi/releases/latest';
+const API = 'https://api.github.com/repos/yinniora/yugo-pi/releases?per_page=10';
 const RELEASES = 'https://github.com/yinniora/yugo-pi/releases';
 const VERSION = /^(\d{1,7})\.(\d{1,7})\.(\d{1,7})-yugo\.(\d{1,7})$/;
 const MAX_ASSET_SIZE = 1024 ** 3;
@@ -16,6 +16,10 @@ const DOWNLOAD_HOSTS = new Set([
 
 function versionParts(version) {
   return VERSION.exec(version)?.slice(1).map(Number);
+}
+
+function compareVersions(left, right) {
+  return left.map((part, index) => part - right[index]).find(Boolean) || 0;
 }
 
 function assetName(version, platform, arch, portable) {
@@ -45,15 +49,22 @@ async function checkClientUpdate(current, { platform, arch, portable, fetchImpl 
     if (length > 2 * 1024 * 1024) throw new Error('发行信息过大。');
     chunks.push(bytes);
   }
-  const release = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  const version = typeof release.tag_name === 'string' && release.tag_name.startsWith('yugo-v')
-    ? release.tag_name.slice(6) : '';
-  const latest = versionParts(version);
-  if (!latest || release.draft || release.prerelease) throw new Error('无法验证 YuGo Pi 的发行版本。');
-  const difference = latest.map((part, index) => part - installed[index]).find(Boolean);
-  if (!(difference > 0)) return null;
+  const releases = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  if (!Array.isArray(releases)) throw new Error('无法验证 YuGo Pi 的发行版本。');
+  let selected;
+  for (const release of releases) {
+    if (!release || release.draft || typeof release.tag_name !== 'string' || !release.tag_name.startsWith('yugo-v')) continue;
+    const version = release.tag_name.slice(6);
+    const parts = versionParts(version);
+    if (parts && (!selected || compareVersions(parts, selected.parts) > 0)) {
+      selected = { version, parts, assets: release.assets };
+    }
+  }
+  if (!selected) throw new Error('无法验证 YuGo Pi 的发行版本。');
+  if (compareVersions(selected.parts, installed) <= 0) return null;
+  const { version, assets } = selected;
   const name = assetName(version, platform, arch, portable);
-  const matching = (Array.isArray(release.assets) ? release.assets : []).filter((asset) => asset?.name === name);
+  const matching = (Array.isArray(assets) ? assets : []).filter((asset) => asset?.name === name);
   const [asset] = matching;
   if (!name || matching.length !== 1 || asset.state !== 'uploaded' ||
       !Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.size > MAX_ASSET_SIZE ||

@@ -16,7 +16,7 @@
   let enabled = $state(false);
   let busy = $state(false);
   let error = $state('');
-  let name = $state('iPhone');
+  let name = $state('');
   let qr = $state('');
   let pairLink = $state('');
   let copied = $state(false);
@@ -82,7 +82,7 @@
     try {
       const data = await postJSON('/api/devices', {
         action: 'pair',
-        name,
+        name: name.trim() || t('devices.defaultName'),
         qrVersion: 2,
         ...(lan ? { lan: true } : {}),
       });
@@ -150,7 +150,12 @@
       <div class="device-pair-form">
         <label for="device-name">{t('devices.name')}</label>
         <div>
-          <input id="device-name" bind:value={name} maxlength="100" />
+          <input
+            id="device-name"
+            bind:value={name}
+            placeholder={t('devices.defaultName')}
+            maxlength="100"
+          />
           <button onclick={() => pair(canPairLAN)} disabled={busy || (!canPair && !canPairLAN)}>
             {@html icon(Plus, { size: 16 })}{t(
               busy ? 'devices.authenticating' : 'devices.createCode',

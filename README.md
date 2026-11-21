@@ -1,6 +1,6 @@
 # YuGo Pi
 
-[中文](user-docs/readme/README.zh.md) · [License](LICENSE) · [Upstream](https://github.com/ygncode/pi-web)
+[中文安装与配对](docs/quickstart.zh.md) · [License](LICENSE) · [Upstream](https://github.com/ygncode/pi-web)
 
 YuGo Pi is an independently maintained, MIT-licensed variant of **pi-web**,
 originally created by **Set Kyar Wa Lar (YGNCode)**. It is not an official
@@ -39,12 +39,15 @@ Bug reports and contributions for this variant belong in this repository.
    installer](docs/architecture/self-hosted-remote.md) and paste its activation
    code in **Connect with your server**. You can also deploy to an existing,
    trusted SSH destination from the desktop. On the same Wi-Fi network, the
-   native iPhone client can pair with the host's local connection.
+   native iOS and iPadOS client can pair with the host's local connection.
 3. In **Devices**, authenticate on the host to show one code for the enabled
-   connections. Scan it from the phone app. Android users can install the release APK. iPhone users
+   connections. Scan it from the client. Android users can install the release APK. iPhone and iPad users
    can open the [web app](https://yinniora.github.io/) in Safari and add it to the
    Home Screen. An [iOS project](apps/ios/README.md) is also available for signed
    device builds and TestFlight.
+
+   When you enable another connection later, scan a new code from the same
+   client to add the route to that client's existing device authorization.
 
 Host installers include the backend and the desktop window. The separately
 named **YuGo Pi Client** apps connect to a host. See [platform downloads and

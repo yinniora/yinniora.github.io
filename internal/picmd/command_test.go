@@ -2,6 +2,7 @@ package picmd
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -9,7 +10,10 @@ import (
 
 func TestCommandUsesPackagedNodeDirectly(t *testing.T) {
 	runtime := t.TempDir()
-	node := filepath.Join(runtime, "bundled node")
+	node := filepath.Join(runtime, "bundled node.exe")
+	if err := os.WriteFile(node, nil, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	cli := filepath.Join(runtime, "pi cli.js")
 	t.Setenv("PI_WEB_PI_NODE", node)
 	t.Setenv("PI_WEB_PI_SCRIPT", cli)
