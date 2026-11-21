@@ -1,7 +1,7 @@
 // The independently hosted client sends HTTP over the authenticated page's
 // DTLS channel. Media Range requests stream through the same encrypted path.
-const CACHE = 'pi-remote-0.1.0-yugo.49';
-const SHELL = ['/', '/icon.svg', '/manifest.webmanifest' , "/assets/main-BC-4Nyaq.css", "/assets/main-ByWQwQwu.js", "/assets/remote-index-Ca9Svsew.js", "/assets/remote-index-RnQm2Z7O.css", "/assets/rolldown-runtime-XKyaHtl9.js"];
+const CACHE = 'pi-remote-0.1.0-yugo.50';
+const SHELL = ['/', '/icon.svg', '/manifest.webmanifest' , "/assets/main-5SfJmjFQ.js", "/assets/main-CsBhtVCh.css", "/assets/remote-index-B66se91q.css", "/assets/remote-index-DS27usxk.js", "/assets/rolldown-runtime-XKyaHtl9.js"];
 const APP_ROUTES = new Set(['/', '/index.html', '/session', '/settings', '/models', '/schedules']);
 const isAppClient = (client) => {
   if (!client || client.type !== 'window') return false;
