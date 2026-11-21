@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
+
+	"pi-web/internal/picmd"
 )
 
 // OneShot spawns `pi --mode rpc`, sends a single command, awaits the matching
@@ -19,11 +20,10 @@ import (
 // still load — including globally installed ones that register models — but
 // project extensions from this checkout are not loaded on top of that copy.
 func OneShot(ctx context.Context, command string, extraFields map[string]any) (json.RawMessage, error) {
-	if _, err := exec.LookPath("pi"); err != nil {
-		return nil, fmt.Errorf("pi executable not found: %w", err)
+	cmd := picmd.Command(ctx, "--mode", "rpc")
+	if cmd.Err != nil {
+		return nil, fmt.Errorf("pi executable not found: %w", cmd.Err)
 	}
-
-	cmd := exec.CommandContext(ctx, "pi", "--mode", "rpc")
 	cmd.Dir = detachedPiDir()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

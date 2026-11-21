@@ -168,6 +168,25 @@ exit 2
 	}
 }
 
+func TestConfigureTailscaleSignalWillNotReusePublicFunnel(t *testing.T) {
+	dir := t.TempDir()
+	called := filepath.Join(dir, "serve.log")
+	writeFakeTailscale(t, dir, `#!/bin/sh
+case "$1:$2" in
+  status:--json) echo '{"BackendState":"Running","Self":{"DNSName":"host.tail.ts.net."}}' ;;
+  serve:status) echo '{"AllowFunnel":{"host.tail.ts.net:31417":true},"Web":{"host.tail.ts.net:31417":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:31417"}}}}}' ;;
+  *) echo unexpected > "`+called+`"; exit 1 ;;
+esac
+`)
+	_, _, err := configureTailscaleSignal(context.Background(), 31417)
+	if err == nil || !strings.Contains(err.Error(), "already configured") {
+		t.Fatalf("expected public rule conflict, got %v", err)
+	}
+	if _, err := os.Stat(called); !os.IsNotExist(err) {
+		t.Fatal("changed a public Funnel")
+	}
+}
+
 func TestConfigureTailscaleServeIgnoresRulesOnOtherPorts(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "tailscale-args.log")

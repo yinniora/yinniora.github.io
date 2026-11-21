@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { readRemoteConfig, saveRemoteConfig } from './config.js';
+import { authenticateRelay } from './relay-auth.js';
 vi.mock('./identity.js', async (original) => ({
   ...(await original()),
   getDeviceIdentity: vi.fn(async () => ({})),
@@ -30,7 +32,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function setup({ status = 200, answer = true, authorize = true, complete = true } = {}) {
+async function setup({
+  status = 200,
+  answer = true,
+  authorize = true,
+  complete = true,
+  preference = 'vps',
+  routes = {},
+  directOpenDelay = 0,
+} = {}) {
   vi.stubGlobal(
     'fetch',
     vi.fn(
@@ -51,13 +61,17 @@ async function setup({ status = 200, answer = true, authorize = true, complete =
   );
   let peer;
   const offers = [];
+  const sockets = [];
   vi.stubGlobal(
     'WebSocket',
     class extends EventTarget {
       constructor(url) {
         super();
         this.url = url;
-        queueMicrotask(() => this.onopen?.());
+        sockets.push(this);
+        if (url === routes.directUrl && directOpenDelay)
+          setTimeout(() => this.onopen?.(), directOpenDelay);
+        else queueMicrotask(() => this.onopen?.());
       }
       send(data) {
         const packet = JSON.parse(data);
@@ -72,7 +86,10 @@ async function setup({ status = 200, answer = true, authorize = true, complete =
             }),
           );
       }
-      close() {}
+      close() {
+        this.closed = true;
+        this.dispatchEvent(new Event('close'));
+      }
     },
   );
   vi.stubGlobal(
@@ -119,11 +136,53 @@ async function setup({ status = 200, answer = true, authorize = true, complete =
   );
   const { RemoteClient } = await import('./client.js');
   return {
-    client: new RemoteClient({ ...config }, { preference: 'vps' }),
+    client: new RemoteClient({ ...config, ...routes }, { preference }),
     offers,
+    sockets,
     getPeer: () => peer,
   };
 }
+
+it('keeps a previously authorized direct route until a mixed QR finishes authenticating', async () => {
+  const directUrl = 'wss://host.tail.example/remote-signal';
+  saveRemoteConfig({ version: 1, fingerprint, clientUrl: config.clientUrl, directUrl });
+  const { client } = await setup({ answer: false, routes: { directUrl } });
+  const result = client.openConnection().catch((error) => error);
+  await vi.advanceTimersByTimeAsync(20001);
+  expect((await result).code).toBe('signalTimeout');
+  expect(readRemoteConfig()).toEqual({
+    version: 1,
+    fingerprint,
+    clientUrl: config.clientUrl,
+    directUrl,
+  });
+});
+
+it('connects using the direct route when the faster relay socket refuses its capability', async () => {
+  const directUrl = 'wss://host.tail.example/remote-signal';
+  const relayTicket = 'signed-vps-capability';
+  authenticateRelay.mockRejectedValueOnce(
+    Object.assign(new Error('denied'), { code: 'relayDenied' }),
+  );
+  const { client, offers, sockets } = await setup({
+    preference: 'auto',
+    routes: { directUrl, relayTicket },
+    directOpenDelay: 20,
+  });
+  const result = client.openConnection();
+  await vi.advanceTimersByTimeAsync(20);
+  await result;
+  expect(client.socket.url).toBe(directUrl);
+  const relaySocket = sockets.find((socket) => socket.url === config.signalUrl);
+  expect(relaySocket.closed).toBe(true);
+  expect(authenticateRelay.mock.calls.at(-1)[0]).toBe(relaySocket);
+  expect(offers).toHaveLength(1);
+  expect(JSON.stringify(offers[0])).not.toContain(relayTicket);
+  expect(JSON.stringify(offers[0])).not.toContain(config.ticket);
+  expect(readRemoteConfig()).toMatchObject({ directUrl, signalUrl: config.signalUrl, fingerprint });
+  expect(readRemoteConfig()).not.toHaveProperty('relayTicket');
+  expect(readRemoteConfig()).not.toHaveProperty('ticket');
+});
 
 it('reports relay authorization failures before waiting on an impossible relay-only channel', async () => {
   const { client } = await setup({ status: 401 });

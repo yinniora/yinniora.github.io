@@ -31,20 +31,50 @@ export function base64ToBytes(value) {
   return Uint8Array.from(raw, (char) => char.charCodeAt(0));
 }
 
+function validLANSignalingURL(value) {
+  const match = /^wss:\/\/(\d{1,3}(?:\.\d{1,3}){3}):([1-9]\d{0,4})\/remote-signal$/.exec(value);
+  if (!match || match[0] !== value || Number(match[2]) > 65535) return false;
+  const parts = match[1].split('.');
+  const [a, b] = parts.map(Number);
+  if (parts.some((part) => Number(part) > 255 || String(Number(part)) !== part)) return false;
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
 export function validateRemoteConfig(config) {
   config.fingerprint = normalizedFingerprint(config.fingerprint);
+  const direct = config.directUrl ? new URL(config.directUrl) : null;
+  if (
+    direct &&
+    (direct.protocol !== 'wss:' ||
+      !direct.hostname ||
+      direct.username ||
+      direct.password ||
+      direct.hash)
+  )
+    throw new Error('Invalid direct connection');
+  if (config.lanUrl && !validLANSignalingURL(config.lanUrl))
+    throw new Error('Invalid LAN connection');
+  if (!config.signalUrl && !config.iceUrl) {
+    if ((!direct && !config.lanUrl) || config.relayAuth)
+      throw new Error('Invalid direct connection');
+    return config;
+  }
   const signal = new URL(config.signalUrl);
   const ice = new URL(config.iceUrl);
   if (
     signal.protocol !== 'wss:' ||
     ice.protocol !== 'https:' ||
     signal.host !== ice.host ||
+    !signal.hostname ||
     signal.username ||
-    signal.password
+    signal.password ||
+    ice.username ||
+    ice.password ||
+    signal.hash ||
+    ice.hash ||
+    direct?.href === signal.href
   )
     throw new Error('Invalid relay connection');
-  if (config.directUrl && new URL(config.directUrl).protocol !== 'wss:')
-    throw new Error('Invalid direct connection');
   return config;
 }
 

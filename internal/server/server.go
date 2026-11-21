@@ -40,6 +40,8 @@ const globalSessID = "__all__"
 // owns rpc workers).
 type Deps struct {
 	RemoteControl       *relay.Controller
+	PrivateSignal       func(context.Context) (endpoint, consentURL string, err error)
+	EnableLAN           func() error
 	TrashProjectFiles   func(context.Context, string) (string, error)
 	AgentDir            string
 	SessionsDir         string
@@ -55,7 +57,9 @@ type Deps struct {
 	RemoteBootstrap     func() map[string]any
 	// Updater reports current/latest version + changelog. Optional; when nil
 	// the version endpoints are not registered.
-	Updater *updater.Checker
+	Updater        *updater.Checker
+	ManagedUpdate  func(context.Context, string) (ManagedUpdateResult, error)
+	ManagedRestart func() error
 	// RunInstall installs the latest pi-web package (e.g. `pi install ...`).
 	// Optional; when nil /api/update responds 503.
 	RunInstall func(ctx context.Context) error
@@ -77,6 +81,8 @@ type Server struct {
 	nativeModelLimits     nativeModelLimitCache
 	removedModelProviders map[string]struct{}
 	remoteControl         *relay.Controller
+	privateSignal         func(context.Context) (endpoint, consentURL string, err error)
+	enableLAN             func() error
 	sessionManagementMu   sync.Mutex
 	trashProjectFiles     func(context.Context, string) (string, error)
 	agentDir              string
@@ -113,6 +119,9 @@ type Server struct {
 	queueDrainer          *queueDrainer
 	queueDispatches       sync.Map
 	updater               *updater.Checker
+	managedUpdate         func(context.Context, string) (ManagedUpdateResult, error)
+	managedRestart        func() error
+	managedUpdateState    managedUpdateState
 	runInstall            func(ctx context.Context) error
 	runRestart            func() error
 	updateMu              sync.Mutex // serializes install/restart operations
@@ -190,6 +199,8 @@ func New(deps Deps) (*Server, error) {
 		schedules:             schedules.NewStore(db),
 		chatQueue:             chatqueue.NewStore(db),
 		updater:               deps.Updater,
+		managedUpdate:         deps.ManagedUpdate,
+		managedRestart:        deps.ManagedRestart,
 		runInstall:            deps.RunInstall,
 		runRestart:            deps.RunRestart,
 		disableBackgroundJobs: deps.DisableBackgroundJobs,
@@ -213,6 +224,8 @@ func New(deps Deps) (*Server, error) {
 		}
 		s.devices.bootstrap = deps.RemoteBootstrap
 		s.remoteControl = deps.RemoteControl
+		s.privateSignal = deps.PrivateSignal
+		s.enableLAN = deps.EnableLAN
 		if s.remoteControl != nil {
 			s.devices.changed = s.remoteControl.SyncDevices
 		}
@@ -439,6 +452,10 @@ func (s *Server) Register(mux *http.ServeMux) {
 		mux.HandleFunc("/api/check-update", s.auth.Wrap(s.visibleSession(s.handleCheckUpdate)))
 		mux.HandleFunc("/api/update", s.auth.Wrap(s.visibleSession(s.handleUpdate)))
 		mux.HandleFunc("/api/restart", s.auth.Wrap(s.visibleSession(s.handleRestart)))
+	}
+	if s.managedUpdate != nil {
+		mux.HandleFunc("/api/yugo-update", s.auth.Wrap(s.handleManagedUpdate))
+		mux.HandleFunc("/api/yugo-update/restart", s.auth.Wrap(s.handleManagedRestart))
 	}
 }
 

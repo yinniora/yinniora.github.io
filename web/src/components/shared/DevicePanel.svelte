@@ -12,6 +12,7 @@
   let devices = $state([]);
   let canManage = $state(false);
   let canPair = $state(true);
+  let canPairLAN = $state(false);
   let enabled = $state(false);
   let busy = $state(false);
   let error = $state('');
@@ -34,6 +35,7 @@
     );
     canManage = !!data.canManage;
     canPair = data.canPair !== false;
+    canPairLAN = !!data.canPairLAN;
     enabled = !!data.enabled;
   }
   function dateLabel(value) {
@@ -71,14 +73,19 @@
       error = t('devices.loadFailed');
     }
   }
-  async function pair() {
+  async function pair(lan = false) {
     busy = true;
     error = '';
     qr = '';
     pairLink = '';
     copied = false;
     try {
-      const data = await postJSON('/api/devices', { action: 'pair', name, qrVersion: 2 });
+      const data = await postJSON('/api/devices', {
+        action: 'pair',
+        name,
+        qrVersion: 2,
+        ...(lan ? { lan: true } : {}),
+      });
       pairLink = data.url;
       qr = await QRCode.toDataURL(data.url, { width: 640, margin: 2, errorCorrectionLevel: 'M' });
       expires = Date.parse(data.expiresAt);
@@ -137,28 +144,27 @@
     {#if !enabled}<p class="device-notice">{t('devices.notEnabled')}</p>
     {:else if !canManage}<p class="device-notice">{t('devices.macOnly')}</p>
     {:else}
-      <details class="device-server-settings">
+      <details class="device-server-settings" open={!canPair && !canPairLAN}>
         <summary>{t('remoteSettings.title')}</summary><RemoteSettings showDevices={false} />
       </details>
       <div class="device-pair-form">
         <label for="device-name">{t('devices.name')}</label>
         <div>
-          <input id="device-name" bind:value={name} maxlength="100" /><button
-            onclick={pair}
-            disabled={busy || !canPair}
-            >{@html icon(Plus, { size: 16 })}{busy
-              ? t('devices.authenticating')
-              : t('devices.createCode')}</button
-          >
+          <input id="device-name" bind:value={name} maxlength="100" />
+          <button onclick={() => pair(canPairLAN)} disabled={busy || (!canPair && !canPairLAN)}>
+            {@html icon(Plus, { size: 16 })}{t(
+              busy ? 'devices.authenticating' : 'devices.createCode',
+            )}
+          </button>
         </div>
-        <p>{t(canPair ? 'devices.authHint' : 'remoteSettings.configureFirst')}</p>
+        <p>{t(canPair || canPairLAN ? 'devices.authHint' : 'remoteSettings.configureFirst')}</p>
       </div>
       {#if qr}
         <div class="device-qr">
           {#if remaining > 0}<img src={qr} alt={t('devices.qrAlt')} /><strong
               >{t('devices.scan')}</strong
             ><span>{t('devices.expires', { seconds: remaining })}</span>
-            <p>{t('devices.appPairHint')}</p>
+            <p>{t(canPairLAN && !canPair ? 'remote.lanNeedsApp' : 'devices.appPairHint')}</p>
             <button
               type="button"
               onclick={async () => {

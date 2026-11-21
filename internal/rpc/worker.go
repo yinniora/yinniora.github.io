@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"pi-web/internal/chat"
+	"pi-web/internal/picmd"
 	"pi-web/internal/workers"
 )
 
@@ -134,9 +135,6 @@ func sessionHeaderCWD(sessionPath string) string {
 }
 
 func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink, guardPath string, computerMode func() string, extensions ...string) (workers.ChatWorker, error) {
-	if _, err := exec.LookPath("pi"); err != nil {
-		return nil, fmt.Errorf("pi executable not found: %w", err)
-	}
 	args := []string{"--mode", "rpc"}
 	if guardPath != "" {
 		args = append(args, "-e", guardPath)
@@ -146,7 +144,10 @@ func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink, guard
 			args = append(args, "-e", extension)
 		}
 	}
-	cmd := exec.Command("pi", args...)
+	cmd := picmd.Command(context.Background(), args...)
+	if cmd.Err != nil {
+		return nil, fmt.Errorf("pi executable not found: %w", cmd.Err)
+	}
 	cmd.Dir = workerDir(sessionPath)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

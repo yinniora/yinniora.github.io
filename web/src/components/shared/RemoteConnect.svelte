@@ -41,6 +41,7 @@
     if (!next || busy) return;
     stopCamera();
     config = next;
+    if (!next.signalUrl) preference = 'auto';
     busy = true;
     error = '';
     diagnostics = null;
@@ -74,6 +75,15 @@
   async function startCamera() {
     stopCamera();
     error = '';
+    const nativeScanner = globalThis.webkit?.messageHandlers?.yugoNativeScanner;
+    if (typeof nativeScanner?.postMessage === 'function') {
+      try {
+        nativeScanner.postMessage('scan');
+        return;
+      } catch {
+        // Use the web scanner if the native wrapper cannot open its camera.
+      }
+    }
     scanning = true;
     const generation = scanGeneration;
     const scanner = createCameraScanner();
@@ -172,17 +182,19 @@
   </div>
   <h1>{t('remote.welcome')}</h1>
   <p class="connect-intro">{t('remote.appHint')}</p>
-  <fieldset disabled={busy} class="connect-routes">
-    <legend>{t('remote.transport')}</legend>
-    {#each ['auto', 'tailscale', 'vps'] as mode (mode)}
-      <label class:selected={preference === mode}
-        ><input type="radio" name="connection-route" value={mode} bind:group={preference} />{t(
-          `remote.${mode}`,
-        )}</label
-      >
-    {/each}
-  </fieldset>
-  <p class="connect-hint">{t(`remote.${preference}Hint`)}</p>
+  {#if config?.signalUrl}
+    <fieldset disabled={busy} class="connect-routes">
+      <legend>{t('remote.transport')}</legend>
+      {#each ['auto', 'tailscale', 'vps'] as mode (mode)}
+        <label class:selected={preference === mode}
+          ><input type="radio" name="connection-route" value={mode} bind:group={preference} />{t(
+            `remote.${mode}`,
+          )}</label
+        >
+      {/each}
+    </fieldset>
+    <p class="connect-hint">{t(`remote.${preference}Hint`)}</p>
+  {/if}
   {#if error}<p class="connect-error" role="alert">{error}</p>{/if}
   {#if diagnostics}<button
       type="button"

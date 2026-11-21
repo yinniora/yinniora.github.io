@@ -27,12 +27,33 @@ Bug reports and contributions for this variant belong in this repository.
 
 - Settings → Models: labeled API keys, per-key model refresh, multi-select application, applied-model removal and shared Mac/mobile conversation pickers.
 
-## Apps
+## Quick start
 
-Each [release](https://github.com/yinniora/yugo-pi/releases) includes client apps
-for Android (APK), Windows, macOS and Linux, plus the native macOS host windows.
-None of these needs a paid signing identity. iOS is not packaged; use Safari ›
-Add to Home Screen instead. For install notes, see [apps/README.md](apps/README.md).
+1. On the computer that will run Pi, download its **YuGo Pi Host** installer
+   from [YuGo Releases](https://github.com/yinniora/yugo-pi/releases). Open YuGo
+   Pi after installation. Existing Pi data is reused. For a fresh setup, open
+   Settings → Models and configure a model provider.
+2. For phone access, open **Settings → Remote control and devices** on the
+   host. With Tailscale, join the same tailnet on both devices and select
+   **Enable Tailscale connection**. To use your own relay, run the [relay
+   installer](docs/architecture/self-hosted-remote.md) and paste its activation
+   code in **Connect with your server**. You can also deploy to an existing,
+   trusted SSH destination from the desktop. On the same Wi-Fi network, the
+   native iPhone client can pair with the host's local connection.
+3. In **Devices**, authenticate on the host to show one code for the enabled
+   connections. Scan it from the phone app. Android users can install the release APK. iPhone users
+   can open the [web app](https://yinniora.github.io/) in Safari and add it to the
+   Home Screen. An [iOS project](apps/ios/README.md) is also available for signed
+   device builds and TestFlight.
+
+Host installers include the backend and the desktop window. The separately
+named **YuGo Pi Client** apps connect to a host. See [platform downloads and
+system requirements](apps/README.md). The version dialog checks YuGo releases.
+Select **Download and install update** on the host. Compatible versions can
+replace just the backend and restart when Pi is idle. Other versions open the
+system installer after the complete package is verified.
+
+The same release includes a web-client ZIP for independent HTTPS hosting.
 
 ## Build and install
 
@@ -44,10 +65,10 @@ relay credentials or certificates are distributed with the source.
 git clone https://github.com/yinniora/yugo-pi.git
 cd yugo-pi
 make check
-make build remote-build VERSION=0.1.0-yugo.4
+make build remote-build VERSION="$(node -p 'require("./package.json").version')"
 python3 scripts/collect_notices.py
 python3 scripts/build_macos.py
-python3 scripts/install_remote_macos.py --client https://YOUR-INDEPENDENT-CLIENT/
+python3 scripts/install_remote_macos.py --start
 ```
 
 The default local endpoint is `http://127.0.0.1:31415`; remote access is enabled
@@ -67,10 +88,9 @@ hosted phone program must remain separate from an untrusted relay.
 
 YuGo Pi has its own `yugo-v*` releases. The Mac service automatically tracks
 official commits every six hours and shows a review reminder on Mac and phone.
-Runtime upgrades remain manual: we review official changes, prepare a YuGo
-patch and verify our features before publishing. The app and Pi extension do
-not install the upstream npm package. Official changes are fetched into an
-isolated review worktree:
+Official updates go through a separate review before they become YuGo releases.
+The version dialog can download YuGo packages after publication. Official
+changes are fetched into an isolated review worktree:
 
 ```bash
 python3 scripts/sync_upstream.py check

@@ -1,0 +1,103 @@
+name: YuGo Host Packages
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    name: Host (${{ matrix.platform }}/${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, platform: darwin, arch: arm64, goarch: arm64 }
+          - { runner: macos-15-intel, platform: darwin, arch: x64, goarch: amd64 }
+          - { runner: ubuntu-24.04, platform: linux, arch: x64, goarch: amd64 }
+          - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64, goarch: arm64 }
+          - { runner: windows-latest, platform: win, arch: x64, goarch: amd64 }
+          - { runner: windows-11-arm, platform: win, arch: arm64, goarch: arm64 }
+    defaults:
+      run:
+        shell: bash
+    env:
+      HOST_ARCH: ${{ matrix.arch }}
+      HOST_PLATFORM: ${{ matrix.platform }}
+      CGO_ENABLED: 0
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+            apps/desktop/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-dotnet@v5
+        if: matrix.platform == 'win'
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build embedded frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Build host backend and stage bundled Pi
+        run: |
+          python scripts/collect_notices.py
+          VERSION="$(node -p 'require("./package.json").version')"
+          test "$(go env GOARCH)" = '${{ matrix.goarch }}'
+          mkdir -p build
+          BINARY=build/pi-web
+          APPROVAL=()
+          if [ "$HOST_PLATFORM" = win ]; then
+            BINARY="$BINARY.exe"
+            dotnet publish apps/desktop/host-approval/windows/ApproveDevice.csproj \
+              -c Release -r "win-$HOST_ARCH" --self-contained -o build/host-approval
+            APPROVAL=(--approval build/host-approval/approve-device.exe)
+          elif [ "$HOST_PLATFORM" = linux ]; then
+            APPROVAL=(--approval scripts/approve-host-linux)
+          fi
+          go build -ldflags="-s -w -X main.version=$VERSION" -o "$BINARY" ./cmd/pi-web
+          test "$("$BINARY" -version)" = "$VERSION"
+          python scripts/stage_host_runtime.py --binary "$BINARY" --platform "$HOST_PLATFORM" \
+            --arch "$HOST_ARCH" --output build/host-runtime "${APPROVAL[@]}"
+          NODE=build/host-runtime/bin/node
+          if [ "$HOST_PLATFORM" = win ]; then NODE=build/host-runtime/node.exe; fi
+          "$NODE" build/host-runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js --version
+      - name: Package macOS host
+        if: matrix.platform == 'darwin'
+        run: |
+          VERSION="$(node -p 'require("./package.json").version')"
+          python scripts/build_macos.py
+          python scripts/package_host_macos.py --runtime build/host-runtime --output dist \
+            --version "$VERSION" --arch "$HOST_ARCH"
+      - name: Package Windows or Linux host
+        if: matrix.platform != 'darwin'
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm ci --no-audit --no-fund
+          PLATFORM="$HOST_PLATFORM"
+          if [ "$PLATFORM" = win ]; then PLATFORM=win32; fi
+          node package-host.js "$PLATFORM" "$HOST_ARCH" ../../build/host-runtime
+      - uses: actions/upload-artifact@v7
+        with:
+          name: yugo-host-${{ matrix.platform }}-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            dist/yugo-pi-host-*.pkg
+            apps/desktop/dist/host/yugo-pi-host-*.deb
+            apps/desktop/dist/host/yugo-pi-host-*.exe

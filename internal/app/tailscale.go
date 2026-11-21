@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -84,6 +85,14 @@ const (
 // configureTailscaleServe publishes the local HTTP server through Tailscale Serve.
 // Tailscale owns HTTPS/certs; pi-web keeps listening only on localhost.
 func configureTailscaleServe(ctx context.Context, port string) (string, bool, error) {
+	return configureTailscaleTarget(ctx, port, "http://127.0.0.1:"+port)
+}
+
+type tailscaleConsentRequired struct{ url string }
+
+func (e tailscaleConsentRequired) Error() string { return "Tailscale HTTPS needs approval" }
+
+func configureTailscaleTarget(ctx context.Context, port, target string) (string, bool, error) {
 	hostname, err := tailscaleSelfDNS(ctx)
 	if err != nil {
 		return "", false, err
@@ -92,8 +101,7 @@ func configureTailscaleServe(ctx context.Context, port string) (string, bool, er
 	if err != nil {
 		return "", false, err
 	}
-	target := "http://127.0.0.1:" + port
-	url := "https://" + hostname + ":" + port
+	endpoint := "https://" + hostname + ":" + port
 
 	state, err := tailscaleServeRuleState(ctx, bin, port, target)
 	if err != nil {
@@ -101,7 +109,7 @@ func configureTailscaleServe(ctx context.Context, port string) (string, bool, er
 	}
 	switch state {
 	case serveRuleSame:
-		return url, true, nil
+		return endpoint, true, nil
 	case serveRuleConflict:
 		return "", false, fmt.Errorf("tailscale HTTPS port %s is already configured for another service; not overwriting it. To replace it, run: tailscale serve --bg --https=%s %s", port, port, target)
 	}
@@ -109,12 +117,18 @@ func configureTailscaleServe(ctx context.Context, port string) (string, bool, er
 	cmdCtx, cancel := context.WithTimeout(ctx, tailscaleCommandTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, bin, "serve", "--bg", "--https="+port, target)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		for _, field := range strings.Fields(string(output)) {
+			link := strings.Trim(field, "<>()\"'")
+			u, parseErr := url.Parse(link)
+			if parseErr == nil && u.Scheme == "https" && u.Host == "login.tailscale.com" && u.User == nil && strings.HasPrefix(u.Path, "/f/serve") {
+				return "", false, tailscaleConsentRequired{url: u.String()}
+			}
+		}
 		return "", false, fmt.Errorf("tailscale serve failed: %w", err)
 	}
-	return url, true, nil
+	return endpoint, true, nil
 }
 
 // tailscaleServeConfig is the subset of `tailscale serve status --json`
@@ -122,7 +136,8 @@ func configureTailscaleServe(ctx context.Context, port string) (string, bool, er
 // port appears as a bare key only under TCP, which holds no proxy target; the
 // proxy lives under Web, keyed "<magicdns-name>:<port>".
 type tailscaleServeConfig struct {
-	TCP map[string]struct {
+	AllowFunnel map[string]bool
+	TCP         map[string]struct {
 		HTTPS      bool   `json:"HTTPS"`
 		HTTP       bool   `json:"HTTP"`
 		TCPForward string `json:"TCPForward"`
@@ -147,15 +162,18 @@ func tailscaleServeRuleState(ctx context.Context, bin, port, target string) (ser
 	}
 
 	claimed := false
+	for hostPort, public := range cfg.AllowFunnel {
+		if public && strings.HasSuffix(hostPort, ":"+port) {
+			return serveRuleConflict, nil
+		}
+	}
 	for hostPort, web := range cfg.Web {
 		if !strings.HasSuffix(hostPort, ":"+port) {
 			continue
 		}
 		claimed = true
-		for _, handler := range web.Handlers {
-			if handler.Proxy == target {
-				return serveRuleSame, nil
-			}
+		if web.Handlers["/"].Proxy == target {
+			return serveRuleSame, nil
 		}
 	}
 	if claimed {

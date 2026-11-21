@@ -69,7 +69,7 @@ func VerifyDeviceProof(raw json.RawMessage, nonce, fingerprint, signature string
 
 func LoadIdentity(filename string) (*webrtc.Certificate, string, error) {
 	var certificate *webrtc.Certificate
-	if data, err := os.ReadFile(filename); err == nil {
+	if data, err := readPrivateFile(filename); err == nil {
 		certificate, err = webrtc.CertificateFromPEM(string(data))
 		if err != nil {
 			return nil, "", err
@@ -98,7 +98,7 @@ func LoadIdentity(filename string) (*webrtc.Certificate, string, error) {
 		if err := os.MkdirAll(filepath.Dir(filename), 0700); err != nil {
 			return nil, "", err
 		}
-		file, err := os.OpenFile(filename, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		file, err := createPrivateFile(filename)
 		if err != nil {
 			return nil, "", err
 		}

@@ -82,6 +82,8 @@ export function shortVersion(v) {
 
 export function versionLabel(info) {
   if (!info || !info.current) return '…';
+  if (info.yugoRelease?.hasUpdate)
+    return `${shortVersion(info.current)} → ${shortVersion(info.yugoRelease.latest)}`;
   if (info.hasUpdate && info.latest)
     return `${shortVersion(info.current)} → ${shortVersion(info.latest)}`;
   return shortVersion(info.current);

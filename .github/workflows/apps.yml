@@ -14,6 +14,10 @@ permissions:
   contents: read
 
 jobs:
+  hosts:
+    name: Full host installer
+    uses: ./.github/workflows/host-apps.yml
+
   desktop:
     name: Desktop client (${{ matrix.name }})
     runs-on: ${{ matrix.os }}

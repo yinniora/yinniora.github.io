@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"pi-web/internal/auth"
+	"pi-web/internal/relay"
 )
 
 const deviceSchema = `CREATE TABLE IF NOT EXISTS approved_devices (
@@ -168,7 +169,9 @@ func (d *deviceAccess) authorize(ctx context.Context, id string, publicKey json.
 	}
 	stamp := d.now().UTC().Format(time.RFC3339Nano)
 	_, err = d.db.ExecContext(ctx, `INSERT INTO approved_devices(id,public_key,name,created_at,last_seen) VALUES(?,?,?,?,?)
- ON CONFLICT(id) DO UPDATE SET name=excluded.name,last_seen=excluded.last_seen,revoked_at=''`, id, string(publicKey), pending.name, stamp, stamp)
+ ON CONFLICT(id) DO UPDATE SET
+ name=CASE WHEN approved_devices.revoked_at='' THEN approved_devices.name ELSE excluded.name END,
+ last_seen=excluded.last_seen,revoked_at=''`, id, string(publicKey), pending.name, stamp, stamp)
 	return err
 }
 
@@ -216,6 +219,23 @@ func (d *deviceAccess) remove(id string, forget bool) error {
 	return nil
 }
 
+func pairingRouteAvailable(connection map[string]any) bool {
+	direct := pairingString(connection["directUrl"])
+	signalURL := pairingString(connection["signalUrl"])
+	iceURL := pairingString(connection["iceUrl"])
+	if signalURL == "" && iceURL == "" {
+		relayAuth, _ := connection["relayAuth"].(bool)
+		return !relayAuth && relay.ValidDirectSignalingURL(direct)
+	}
+	signal, signalErr := url.Parse(signalURL)
+	ice, iceErr := url.Parse(iceURL)
+	return signalErr == nil && iceErr == nil &&
+		signal.Scheme == "wss" && ice.Scheme == "https" &&
+		signal.Hostname() != "" && signal.Host == ice.Host &&
+		signal.User == nil && ice.User == nil && signal.Fragment == "" && ice.Fragment == "" &&
+		(direct == "" || (direct != signalURL && relay.ValidDirectSignalingURL(direct)))
+}
+
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if s.devices == nil {
@@ -227,9 +247,8 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	if d.bootstrap != nil {
 		connection = d.bootstrap()
 	}
-	signal, _ := url.Parse(fmt.Sprint(connection["signalUrl"]))
-	ice, _ := url.Parse(fmt.Sprint(connection["iceUrl"]))
-	canPair := signal != nil && ice != nil && signal.Scheme == "wss" && ice.Scheme == "https" && signal.Host != "" && signal.Host == ice.Host
+	canPair := pairingRouteAvailable(connection)
+	canPairLAN := relay.ValidLANSignalingURL(pairingString(connection["lanUrl"]))
 	admin := localDeviceAdmin(r)
 	if r.Method == http.MethodGet {
 		out := []map[string]any{}
@@ -257,7 +276,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		writeJSON(w, 200, map[string]any{"enabled": true, "canManage": admin, "canPair": canPair, "devices": out, "connection": connection, "currentDevice": auth.ApprovedDeviceID(r)})
+		writeJSON(w, 200, map[string]any{"enabled": true, "canManage": admin, "canPair": canPair, "canPairLAN": canPairLAN, "devices": out, "connection": connection, "currentDevice": auth.ApprovedDeviceID(r)})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -266,6 +285,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Action, Name, ID string
+		LAN              bool           `json:"lan"`
 		QRVersion        int            `json:"qrVersion"`
 		Features         deviceFeatures `json:"features"`
 	}
@@ -318,8 +338,8 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, 403, "Mac system authentication is not configured; no pairing code was created.")
 		return
 	}
-	if !canPair {
-		writeJSONError(w, 409, "Configure a verified remote server before pairing.")
+	if (body.LAN && !canPairLAN) || (!body.LAN && !canPair) {
+		writeJSONError(w, 409, "Set up a secure remote connection before pairing.")
 		return
 	}
 	if !d.approvalMu.TryLock() {
@@ -334,6 +354,14 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metadata := d.bootstrap()
+	if (body.LAN && !relay.ValidLANSignalingURL(pairingString(metadata["lanUrl"]))) ||
+		(!body.LAN && !pairingRouteAvailable(metadata)) {
+		writeJSONError(w, 409, "Set up a secure remote connection before pairing.")
+		return
+	}
+	if !body.LAN {
+		delete(metadata, "lanUrl")
+	}
 	metadata["locale"] = s.getSetting("pi-web:v1:locale", "en")
 	clientURL, _ := metadata["clientUrl"].(string)
 	client, err := url.Parse(clientURL)
@@ -351,6 +379,14 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "iPhone"
 	}
+	if s.remoteControl != nil && metadata["relayAuth"] == true {
+		ticket := s.remoteControl.EnrollmentTicket(pairingString(metadata["signalUrl"]), pairingString(metadata["iceUrl"]))
+		if ticket == "" {
+			writeJSONError(w, 409, "The relay configuration changed. Request a new pairing code.")
+			return
+		}
+		metadata["relayTicket"] = ticket
+	}
 	d.mu.Lock()
 	for key, pair := range d.tickets {
 		if !d.now().Before(pair.expires) {
@@ -365,14 +401,9 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	d.tickets[hashDeviceSecret(secret)] = deviceTicket{name: name, expires: expires}
 	d.mu.Unlock()
 	metadata["ticket"] = secret
-	if s.remoteControl != nil {
-		if ticket := s.remoteControl.EnrollmentTicket(); ticket != "" {
-			metadata["relayTicket"] = ticket
-		}
-	}
 	metadata["expiresAt"] = expires.UTC().Format(time.RFC3339)
 	data, _ := json.Marshal(metadata)
-	if body.QRVersion == 2 {
+	if body.QRVersion == 2 && !body.LAN {
 		if compact, err := compactPairingData(metadata, expires); err == nil {
 			data = compact
 		}

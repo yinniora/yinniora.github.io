@@ -78,6 +78,48 @@ func TestManagerCreatesOneWorkerPerSession(t *testing.T) {
 	}
 }
 
+func TestManagerRestartWaitsForPendingAndActiveSend(t *testing.T) {
+	worker := &fakeChatWorker{}
+	starting := make(chan struct{})
+	started := make(chan struct{})
+	manager := NewManagerWithTTL(func(string, string) (ChatWorker, error) {
+		close(starting)
+		<-started
+		return worker, nil
+	}, 0)
+	t.Cleanup(func() { _ = manager.Close() })
+	sending := make(chan error, 1)
+	ctx := context.Background()
+	go func() {
+		sending <- manager.Send(ctx, "a.jsonl", "/tmp/a.jsonl", chat.Request{Message: "first"})
+	}()
+	<-starting
+	if _, err := manager.PrepareRestart(); !errors.Is(err, ErrRestartBusy) || !manager.Busy() {
+		t.Errorf("pending worker should block restart, got %v", err)
+	}
+	close(started)
+	if err := <-sending; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.PrepareRestart(); !errors.Is(err, ErrRestartBusy) || !manager.Busy() {
+		t.Errorf("running worker should block restart, got %v", err)
+	}
+	worker.mu.Lock()
+	worker.streaming = false
+	worker.mu.Unlock()
+	release, err := manager.PrepareRestart()
+	if err != nil {
+		t.Fatalf("idle worker should allow restart, got %v", err)
+	}
+	if err := manager.Send(ctx, "a.jsonl", "/tmp/a.jsonl", chat.Request{Message: "blocked"}); !errors.Is(err, ErrRestarting) {
+		t.Errorf("send after restart commit returned %v", err)
+	}
+	release()
+	if err := manager.Send(ctx, "a.jsonl", "/tmp/a.jsonl", chat.Request{Message: "retry"}); err != nil {
+		t.Errorf("send after releasing restart guard returned %v", err)
+	}
+}
+
 func TestManagerGetCommandsPeeksWithoutSpawning(t *testing.T) {
 	created := 0
 	manager := NewManager(func(string, string) (ChatWorker, error) {

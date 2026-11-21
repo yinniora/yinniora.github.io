@@ -8,10 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"pi-web/internal/auth"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"pi-web/internal/auth"
+	"pi-web/internal/relay"
 )
 
 func deviceTestServer(t *testing.T, approve func(context.Context, string) error) *Server {
@@ -110,6 +113,218 @@ func TestPairTicketSingleUseExpiryAndRevoke(t *testing.T) {
 	s.devices.now = func() time.Time { return time.Now().Add(4 * time.Minute) }
 	if err := s.devices.authorize(context.Background(), "late", pub, ticket); err == nil {
 		t.Fatal("expired ticket authenticated")
+	}
+}
+
+func TestDirectPairingWorksWithoutRelay(t *testing.T) {
+	const direct = "wss://host.tail.example/remote-signal"
+	var approvals int
+	s := deviceTestServer(t, func(context.Context, string) error { approvals++; return nil })
+	s.devices.bootstrap = func() map[string]any {
+		return map[string]any{
+			"version": 1, "clientUrl": "https://client.example/", "fingerprint": "test",
+			"directUrl": direct,
+		}
+	}
+	assertStatus := func(method, body string, status int) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, "http://localhost/api/devices", strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:123"
+		w := httptest.NewRecorder()
+		s.handleDevices(w, r)
+		if w.Code != status {
+			t.Fatalf("%s devices returned %d, want %d: %s", method, w.Code, status, w.Body)
+		}
+		return w
+	}
+	status := assertStatus("GET", "", 200)
+	var pairing struct{ CanPair bool }
+	if err := json.Unmarshal(status.Body.Bytes(), &pairing); err != nil || !pairing.CanPair {
+		t.Fatal("verified direct route should allow pairing:", err)
+	}
+	reply := assertStatus("POST", `{"action":"pair","name":"Phone","qrVersion":2}`, 200)
+	var out struct{ URL string }
+	if err := json.Unmarshal(reply.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	qr, err := url.Parse(out.URL)
+	if err != nil || qr.Host != "client.example" || qr.RawQuery != "" {
+		t.Fatal("invalid pairing link", err)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(qr.Fragment, "pair="))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ticket struct{ DirectURL, Ticket, SignalURL, ICEURL, RelayTicket string }
+	if err = json.Unmarshal(payload, &ticket); err != nil ||
+		ticket.DirectURL != direct || len(ticket.Ticket) != 64 ||
+		ticket.SignalURL != "" || ticket.ICEURL != "" || ticket.RelayTicket != "" || approvals != 1 {
+		t.Fatal("direct pairing should carry only the private route and its authorized device ticket:", err)
+	}
+	if err = s.devices.authorize(context.Background(), "phone", json.RawMessage(`{}`), ticket.Ticket); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.devices.authorize(context.Background(), "stranger", json.RawMessage(`{}`), ticket.Ticket); err == nil {
+		t.Fatal("direct pairing ticket was accepted twice")
+	}
+}
+
+func TestRescanAddsRelayAndLANToExistingDirectDevice(t *testing.T) {
+	const direct = "wss://host.tail.example/remote-signal"
+	const lan = "wss://192.168.2.9:43124/remote-signal"
+	const client = "https://client.example/"
+	room := strings.Repeat("r", 32)
+	signal, ice := "wss://relay.example/signal?room="+room, "https://relay.example/ice?room="+room
+	var approvals int
+	s := deviceTestServer(t, func(context.Context, string) error { approvals++; return nil })
+	host, err := relay.NewHost(filepath.Join(t.TempDir(), "identity.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configure := func(config relay.ConnectionConfig) {
+		t.Helper()
+		control, err := relay.NewController(host, filepath.Join(t.TempDir(), "connection.json"), config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.remoteControl, s.devices.bootstrap = control, control.Bootstrap
+	}
+	code := func(request string) map[string]any {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodPost, "http://localhost/api/devices", strings.NewReader(request))
+		r.RemoteAddr = "127.0.0.1:123"
+		w := httptest.NewRecorder()
+		s.handleDevices(w, r)
+		var reply struct{ URL string }
+		if err := json.Unmarshal(w.Body.Bytes(), &reply); err != nil || w.Code != http.StatusOK {
+			t.Fatalf("pair returned %d: %s", w.Code, w.Body)
+		}
+		u, err := url.Parse(reply.URL)
+		if err != nil || u.Hostname() != "client.example" || u.RawQuery != "" {
+			t.Fatal("invalid pairing URL", err)
+		}
+		data, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(u.Fragment, "pair="))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var metadata map[string]any
+		if err := json.Unmarshal(data, &metadata); err != nil {
+			t.Fatal(err)
+		}
+		return metadata
+	}
+	configure(relay.ConnectionConfig{ClientURL: client, DirectURL: direct})
+	first := code(`{"action":"pair","name":"Personal phone"}`)
+	key := json.RawMessage(`{"kty":"EC","crv":"P-256"}`)
+	if err := s.AuthorizeRemoteDevice(context.Background(), "phone-key", key, first["ticket"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	var originalCreated string
+	if err := s.db.QueryRow(`SELECT created_at FROM approved_devices WHERE id='phone-key'`).Scan(&originalCreated); err != nil {
+		t.Fatal(err)
+	}
+	configure(relay.ConnectionConfig{
+		ClientURL: client, DirectURL: direct, SignalURL: signal, ICEURL: ice,
+		ClientSecret: strings.Repeat("secret-", 8), HostToken: strings.Repeat("host-", 8), TURNSecret: strings.Repeat("turn-", 8),
+	})
+	if err := s.remoteControl.SetLANURL(lan); err != nil {
+		t.Fatal(err)
+	}
+	if ticket := s.remoteControl.EnrollmentTicket(signal, "https://other.example/ice?room="+room); ticket != "" {
+		t.Fatal("issued a relay capability for a mismatched route")
+	}
+	updated := code(`{"action":"pair","qrVersion":2,"lan":true}`)
+	if approvals != 2 || updated["fingerprint"] != first["fingerprint"] || updated["directUrl"] != direct ||
+		updated["lanUrl"] != lan || updated["signalUrl"] != signal || updated["iceUrl"] != ice || updated["relayAuth"] != true || pairingString(updated["relayTicket"]) == "" {
+		t.Fatal("one code did not carry all routes and relay capability for the original identity")
+	}
+	for _, key := range []string{"clientSecret", "hostToken", "turnSecret"} {
+		if _, ok := updated[key]; ok {
+			t.Fatalf("QR included host-only credential %s", key)
+		}
+	}
+	if err := s.AuthorizeRemoteDevice(context.Background(), "phone-key", key, updated["ticket"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	var name, created, storedKey string
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM approved_devices`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("route update duplicated device: %d %v", count, err)
+	}
+	if err := s.db.QueryRow(`SELECT name,created_at,public_key FROM approved_devices WHERE id='phone-key'`).Scan(&name, &created, &storedKey); err != nil ||
+		name != "Personal phone" || created != originalCreated || storedKey != string(key) {
+		t.Fatal("route update replaced the device's original identity or custom name", err)
+	}
+}
+
+func TestPairingRouteRejectsInvalidDirectAndPartialRelay(t *testing.T) {
+	for _, connection := range []map[string]any{
+		{"directUrl": "ws://host.tail.example/remote-signal"},
+		{"directUrl": "wss://user:pass@host.tail.example/remote-signal"},
+		{"directUrl": "wss://host.tail.example/remote-signal#credential"},
+		{"directUrl": "wss://host.tail.example/remote-signal", "signalUrl": "wss://broker.example/signal"},
+		{"directUrl": "wss://host.tail.example/remote-signal", "relayAuth": true},
+	} {
+		if pairingRouteAvailable(connection) {
+			t.Fatal("accepted malformed transport", connection)
+		}
+	}
+}
+
+func TestLANPairingRequiresExplicitNativeQRCodeRequest(t *testing.T) {
+	const lan = "wss://192.168.2.9:43124/remote-signal"
+	const direct = "wss://host.tail.example/remote-signal"
+	var approvals int
+	s := deviceTestServer(t, func(context.Context, string) error { approvals++; return nil })
+	useDirect := false
+	s.devices.bootstrap = func() map[string]any {
+		config := map[string]any{"lanUrl": lan, "version": 1, "clientUrl": "https://client.example/"}
+		if useDirect {
+			config["directUrl"] = direct
+		}
+		return config
+	}
+	requestCode := func(body string, status int) string {
+		t.Helper()
+		r := httptest.NewRequest("POST", "http://localhost/api/devices", strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:123"
+		w := httptest.NewRecorder()
+		s.handleDevices(w, r)
+		if w.Code != status {
+			t.Fatalf("pair returned %d, want %d: %s", w.Code, status, w.Body)
+		}
+		if status != 200 {
+			return ""
+		}
+		var out struct{ URL string }
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		qr, err := url.Parse(out.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(qr.Fragment, "pair="))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(payload)
+	}
+	const regular = `{"action":"pair","qrVersion":2}`
+	const native = `{"action":"pair","qrVersion":2,"lan":true}`
+	requestCode(regular, 409)
+	if approvals != 0 {
+		t.Fatal("an unavailable browser route prompted for OS authentication")
+	}
+	if got := requestCode(native, 200); !strings.Contains(got, lan) || approvals != 1 {
+		t.Fatal("native LAN request did not require approval and add its endpoint")
+	}
+	useDirect = true
+	if got := requestCode(regular, 200); strings.Contains(got, lan) || !strings.Contains(got, direct) {
+		t.Fatal("browser QR leaked LAN or replaced Tailscale")
+	}
+	if got := requestCode(native, 200); !strings.Contains(got, lan) || !strings.Contains(got, direct) {
+		t.Fatal("native QR omitted its LAN or private endpoint")
 	}
 }
 func TestRemoteHTTPGatedEvenWithForwardedLoopback(t *testing.T) {

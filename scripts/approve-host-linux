@@ -1,0 +1,99 @@
+#!/bin/sh
+# Windows and macOS use a platform helper with the same stdout contract.
+set -efu
+unset DBUS_SYSTEM_BUS_ADDRESS SYSTEMD_BUS_ADDRESS
+
+case "${1-}" in
+    --remote-server)
+        [ "$#" -eq 2 ] && [ -n "$2" ] || exit 1
+        action=org.yugopi.configure-remote
+        ;;
+    *)
+        [ "$#" -eq 1 ] || exit 1
+        action=org.yugopi.approve-pairing
+        ;;
+esac
+
+uid=$(/usr/bin/id -u)
+[ "$uid" -ne 0 ] || exit 1
+session=$(/usr/bin/loginctl show-user "$uid" --property=Display --value --no-pager)
+case "$session" in
+    ''|*[!A-Za-z0-9]*) exit 1 ;;
+esac
+
+active_desktop() {
+    properties=$(/usr/bin/loginctl show-session "$session" --no-pager \
+        --property=Active --property=Remote --property=LockedHint --property=Seat \
+        --property=Type --property=Class --property=User --property=Leader) || return 1
+    active= remote= locked= seat= type= class= owner= leader=
+    while IFS='=' read -r key value; do
+        case "$key" in
+            Active) active=$value ;;
+            Remote) remote=$value ;;
+            LockedHint) locked=$value ;;
+            Seat) seat=$value ;;
+            Type) type=$value ;;
+            Class) class=$value ;;
+            User) owner=$value ;;
+            Leader) leader=$value ;;
+        esac
+    done <<EOF
+$properties
+EOF
+    [ "$active" = yes ] && [ "$remote" = no ] && [ "$locked" = no ] &&
+        [ -n "$seat" ] && [ "$owner" = "$uid" ] && [ "$class" = user ] || return 1
+    case "$type" in
+        wayland|x11) ;;
+        *) return 1 ;;
+    esac
+    case "$leader" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ "$leader" -gt 1 ]
+}
+
+active_desktop || exit 1
+subject=$leader
+# Prefer the helper's process when it belongs to this desktop session. Desktop
+# launchers may instead place the host in a separate systemd user scope.
+current=$(/usr/bin/loginctl show-session self --property=Id --value --no-pager 2>/dev/null || true)
+if [ "$current" = "$session" ]; then
+    subject=$$
+fi
+if [ "$(/usr/bin/stat -c %u "/proc/$subject" 2>/dev/null || true)" != "$uid" ]; then
+    # The login manager can own the session leader. Use a process owned by the
+    # signed-in user in the same logind scope in that case.
+    group=$(/usr/bin/systemctl show "session-$session.scope" --property=ControlGroup --value)
+    case "$group" in
+        /user.slice/*/session-"$session".scope) ;;
+        *) exit 1 ;;
+    esac
+    subject=
+    while IFS= read -r candidate; do
+        case "$candidate" in
+            ''|*[!0-9]*) continue ;;
+        esac
+        if [ "$(/usr/bin/stat -c %u "/proc/$candidate" 2>/dev/null || true)" = "$uid" ]; then
+            subject=$candidate
+            break
+        fi
+    done < "/sys/fs/cgroup$group/cgroup.procs"
+    [ -n "$subject" ] || exit 1
+fi
+IFS= read -r stat < "/proc/$subject/stat" || exit 1
+# /proc's comm field can contain spaces and right parentheses. Its last closing
+# parenthesis precedes field 3. Field 22 identifies this particular process.
+set -- ${stat##*) }
+[ "$#" -ge 20 ] || exit 1
+shift 19
+start=$1
+case "$start" in
+    ''|*[!0-9]*) exit 1 ;;
+esac
+
+# The action uses auth_self without caching and allows interaction only through
+# the desktop's registered agent.
+/usr/bin/pkcheck --action-id "$action" --process "$subject,$start,$uid" \
+    --allow-user-interaction </dev/null >/dev/null || exit 1
+active_desktop || exit 1
+printf '%s\n' approved

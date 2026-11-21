@@ -121,4 +121,38 @@ describe('VersionController', () => {
     openVersionModal();
     expect(await screen.findByRole('button', { name: 'Update & Restart' })).toBeInTheDocument();
   });
+
+  it('downloads a published YuGo update in the app and reports the system installer', async () => {
+    const fetchImpl = vi.fn((url) =>
+      url === '/api/yugo-update'
+        ? jsonResponse({ mode: 'installer', needsRestart: false, version: '0.1.0-yugo.62' })
+        : jsonResponse({
+            current: '0.1.0-yugo.61',
+            trackingOnly: true,
+            yugoRelease: {
+              latest: '0.1.0-yugo.62',
+              hasUpdate: true,
+              url: 'https://github.com/yinniora/yugo-pi/releases',
+            },
+          }),
+    );
+    render(VersionController, { props: { fetchImpl } });
+    await waitFor(() =>
+      expect(document.querySelector('[data-version-status]').textContent).toContain(
+        '→ v0.1.0-yugo.62',
+      ),
+    );
+    openVersionModal();
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Download and install update' }),
+    );
+    expect(
+      await screen.findByText('Update downloaded. Finish installing in the system window.'),
+    ).toBeInTheDocument();
+    expect(fetchImpl).toHaveBeenCalledWith(
+      '/api/yugo-update',
+      expect.objectContaining({ body: JSON.stringify({ version: '0.1.0-yugo.62' }) }),
+    );
+    expect(fetchImpl.mock.calls.some(([url]) => url === '/api/yugo-update/restart')).toBe(false);
+  });
 });

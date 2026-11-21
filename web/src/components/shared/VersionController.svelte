@@ -20,10 +20,15 @@
   let statusKind = $state('');
   let error = $state('');
   let dismissedUpstream = $state('');
+  let remoteFrontend = $state(false);
+  let webUpdating = $state(false);
+  let stagedVersion = $state('');
 
   const effectiveFetch = $derived(fetchImpl || window.fetch.bind(window));
   const label = $derived(versionLabel(info));
-  const hasUpdate = $derived(!!(info?.hasUpdate || info?.upstream?.hasUpdate));
+  const hasUpdate = $derived(
+    !!(info?.hasUpdate || info?.yugoRelease?.hasUpdate || info?.upstream?.hasUpdate),
+  );
   const showReminder = $derived(
     info?.trackingOnly && info?.upstream?.hasUpdate && info.upstream.latest !== dismissedUpstream,
   );
@@ -125,7 +130,76 @@
     }
   }
 
-  function awaitReconnect() {
+  async function runYuGoUpdate() {
+    if (busy || !info?.yugoRelease?.latest) return;
+    busy = true;
+    setStatus(t('version.installing'), 'info');
+    try {
+      if (!stagedVersion) {
+        const version = info.yugoRelease.latest;
+        const response = await effectiveFetch('/api/yugo-update', {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'update failed');
+        if (!result.needsRestart) {
+          setStatus(t('version.installerOpened'), 'info');
+          busy = false;
+          return;
+        }
+        stagedVersion = result.version || version;
+      }
+      const response = await effectiveFetch('/api/yugo-update/restart', {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        if (result.restage) stagedVersion = '';
+        throw new Error(result.error || 'restart failed');
+      }
+      awaitReconnect(stagedVersion);
+    } catch (err) {
+      setStatus(t('version.updateFailed', { error: err?.message || String(err) }), 'error');
+      busy = false;
+    }
+  }
+
+  async function updateWebClient() {
+    webUpdating = true;
+    error = '';
+    try {
+      const worker = await navigator.serviceWorker?.getRegistration('/');
+      if (!worker) throw new Error();
+      await worker.update();
+      const installing = worker.installing || worker.waiting;
+      if (installing && installing.state !== 'activated') {
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => finish(new Error()), 12000);
+          function finish(failure) {
+            clearTimeout(timeout);
+            installing.removeEventListener('statechange', onState);
+            if (failure) reject(failure);
+            else resolve();
+          }
+          function onState() {
+            if (installing.state === 'activated') finish();
+            else if (installing.state === 'redundant') finish(new Error());
+          }
+          installing.addEventListener('statechange', onState);
+          onState();
+        });
+      }
+      window.location.reload();
+    } catch {
+      error = t('version.couldNotCheck');
+      webUpdating = false;
+    }
+  }
+
+  function awaitReconnect(expected = '') {
     setStatus(t('version.reconnecting'), 'info');
     const startedAt = Date.now();
     const maxWaitMs = 90_000;
@@ -141,7 +215,10 @@
           headers: { Accept: 'application/json' },
           cache: 'no-store',
         });
-        if (res.ok) {
+        if (
+          res.ok &&
+          (!expected || stripVersion((await res.json()).current) === stripVersion(expected))
+        ) {
           window.location.reload();
           return;
         }
@@ -149,6 +226,10 @@
       setTimeout(tickReconnect, 1500);
     };
     setTimeout(tickReconnect, 2500);
+  }
+
+  function stripVersion(value) {
+    return String(value || '').replace(/^(?:yugo-)?v/, '');
   }
 
   function handleRowClick(e) {
@@ -159,6 +240,7 @@
   }
 
   onMount(() => {
+    remoteFrontend = Boolean(window.__PI_REMOTE_CLIENT__ && navigator.serviceWorker);
     const controller = { refresh, openModal, closeModal, applyStatus };
     const unregister = registerVersionController(controller);
     document.addEventListener('click', handleRowClick);
@@ -224,6 +306,26 @@
         >
       </div>
       <div class="version-modal-body">
+        {#if info?.yugoRelease}
+          {#if info.yugoRelease.hasUpdate}
+            <p class="version-modal-lead">
+              {t('version.yugoUpdate')} <strong>{cleanVersion(info.yugoRelease.latest)}</strong>
+            </p>
+            <p class="version-modal-notes">
+              {#if info.yugoRelease.downloadUrl && !remoteFrontend}
+                <a href={info.yugoRelease.downloadUrl} target="_blank" rel="noreferrer"
+                  >{t('version.downloadInstaller')} {@html icon(ExternalLink, { size: 12 })}</a
+                >
+              {:else}
+                <a href={info.yugoRelease.url} target="_blank" rel="noreferrer"
+                  >{t('version.yugoReleases')} {@html icon(ExternalLink, { size: 12 })}</a
+                >
+              {/if}
+            </p>
+          {:else if info.yugoRelease.error}
+            <p class="version-modal-notes">{t('version.couldNotCheck')}</p>
+          {/if}
+        {/if}
         {#if !info}
           <p>{t('version.unavailable')}</p>
         {:else if info.trackingOnly}
@@ -283,6 +385,26 @@
         {error || status}
       </div>
       <div class="version-modal-actions">
+        {#if !remoteFrontend && (stagedVersion || info?.yugoRelease?.hasUpdate)}
+          <button
+            type="button"
+            class="version-modal-btn primary"
+            disabled={busy || checking}
+            onclick={runYuGoUpdate}
+          >
+            {t(stagedVersion ? 'version.restartDownloaded' : 'version.installYuGoUpdate')}
+          </button>
+        {/if}
+        {#if remoteFrontend}
+          <button
+            type="button"
+            class="version-modal-btn ghost"
+            disabled={webUpdating || busy}
+            onclick={updateWebClient}
+          >
+            {t(webUpdating ? 'version.checking' : 'version.refreshWebClient')}
+          </button>
+        {/if}
         {#if info?.hasUpdate && !info?.isDev && !info?.trackingOnly}
           <button
             type="button"

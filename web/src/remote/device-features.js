@@ -14,6 +14,7 @@ export function deviceFeatures({
   else if (mac) os = 'Mac · macOS';
   else if (/Windows/.test(ua)) os = 'Windows';
   else if (/Linux/.test(ua)) os = 'Linux';
+  if (/\bYuGoPi-iOS\b/.test(ua)) return { os, browser: 'YuGo Pi', app: 'standalone' };
   let browser = '';
   for (const [name, pattern] of [
     ['Edge', /(?:Edg|EdgiOS|EdgA)\/([\d]+)/],

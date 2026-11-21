@@ -51,6 +51,27 @@ it('imports a private server config, saves only on explicit authentication actio
   expect(
     JSON.parse(fetch.mock.calls.find(([, options]) => options?.method === 'POST')[1].body),
   ).toEqual(profile);
-  await waitFor(() => expect(view.getByLabelText('Mac-to-relay credential').value).toBe(''));
+  await waitFor(() => expect(view.getByLabelText('Host-to-relay credential').value).toBe(''));
   expect(localStorage.length).toBe(0);
+});
+
+it('uses an explicit click to activate Tailscale and shows the required approval link', async () => {
+  const fetchImpl = vi.fn(async (_, options) =>
+    Response.json(
+      options.method === 'POST'
+        ? { consentUrl: 'https://login.tailscale.com/f/serve?node=test' }
+        : {
+            enabled: true,
+            settings: { privateSetupAvailable: true, privateNetworkDetected: true },
+          },
+    ),
+  );
+  vi.stubGlobal('fetch', fetchImpl);
+  const view = render(RemoteSettings);
+  const enable = await view.findByRole('button', { name: 'Enable Tailscale connection' });
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+  await fireEvent.click(enable);
+  const link = await view.findByRole('link', { name: 'Open Tailscale approval' });
+  expect(link).toHaveAttribute('href', 'https://login.tailscale.com/f/serve?node=test');
+  expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({ action: 'tailscale' });
 });

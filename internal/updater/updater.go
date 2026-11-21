@@ -37,6 +37,7 @@ type Info struct {
 	CheckedAt    string        `json:"checkedAt"`
 	TrackingOnly bool          `json:"trackingOnly,omitempty"`
 	Upstream     *UpstreamInfo `json:"upstream,omitempty"`
+	YuGoRelease  *YuGoRelease  `json:"yugoRelease,omitempty"`
 }
 
 // devVersionRe matches `git describe` development builds: a tag followed by a
@@ -49,6 +50,8 @@ var devVersionRe = regexp.MustCompile(`-\d+-g[0-9a-f]{7,}|-dirty$`)
 type Checker struct {
 	manual      bool
 	tracking    bool
+	checkYuGo   bool
+	yugoRelease YuGoRelease
 	upstreamAPI string
 	upstream    UpstreamInfo
 	current     string
@@ -113,6 +116,10 @@ func (c *Checker) snapshotLocked() Info {
 		upstream := c.upstream
 		info.Upstream = &upstream
 	}
+	if c.checkYuGo {
+		value := c.yugoRelease
+		info.YuGoRelease = &value
+	}
 	if !c.checkedAt.IsZero() {
 		info.CheckedAt = c.checkedAt.UTC().Format(time.RFC3339)
 	}
@@ -126,6 +133,9 @@ func (c *Checker) snapshotLocked() Info {
 // resulting snapshot. For dev builds it short-circuits and only stamps
 // checkedAt so the UI can show "checked just now".
 func (c *Checker) Check(ctx context.Context) (Info, error) {
+	if c.checkYuGo {
+		return c.checkTrackedReleases(ctx)
+	}
 	if c.tracking {
 		return c.checkUpstream(ctx)
 	}

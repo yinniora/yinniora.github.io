@@ -36,9 +36,12 @@ for name, source, ident, helper in [
     for legal_name in ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES']:
         shutil.copy2(ROOT / legal_name, resources / legal_name)
     (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
+    sources = [str(ROOT / 'macos' / source)]
+    if not helper:
+        sources.append(str(ROOT / 'macos' / 'HostRuntime.swift'))
     subprocess.run(['xcrun', 'swiftc', '-swift-version', '5', '-O',
                     '-target', f'{architecture}-apple-macos{MINIMUM_MACOS}',
-                    str(ROOT / 'macos' / source), '-o', str(executable)],
+                    *sources, '-o', str(executable)],
                    env=build_env, check=True)
     load_commands = subprocess.check_output(['xcrun', 'vtool', '-show-build', str(executable)], text=True)
     minimum = re.search(r'\bminos\s+(\S+)', load_commands)

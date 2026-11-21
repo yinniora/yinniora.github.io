@@ -1,8 +1,8 @@
 # Device-authenticated remote workspace
 
 This personal fork treats every relay, including a compromised VPS, as untrusted.
-The trusted endpoints are the Mac and the independently hosted HTTPS client.
-The client's publisher account and the Mac/browser operating systems are in the
+The trusted endpoints are the host and the independently hosted HTTPS client.
+The client's publisher account and the host/browser operating systems are in the
 trust boundary. A relay compromise can interrupt service and observe connection
 metadata. It must not grant workspace access or expose conversation/media content.
 
@@ -14,17 +14,20 @@ signaling endpoint, not an application API. Approved remote requests enter with
 an internal context marker which cannot be supplied by a header.
 
 A local authenticated administrator requests a QR code from Devices. The helper
-configured by `PI_WEB_PAIR_APPROVER` must complete macOS LocalAuthentication for
-every request. Cancellation, lock-screen unavailability or a missing helper fail
-closed. Approval creates a three-minute, single-use ticket stored only as a hash
-in memory. The QR's URL fragment carries the ticket, pinned Mac fingerprint and
+configured by `PI_WEB_PAIR_APPROVER` uses macOS LocalAuthentication, Windows Hello
+on an unlocked Windows 11 console, or uncached polkit authentication in an active,
+unlocked local Linux desktop session. Cancellation or an unavailable approval
+helper leaves pairing unavailable. Approval creates a three-minute, single-use
+ticket stored only as a hash in memory. The QR's URL fragment carries the ticket, pinned host fingerprint and
 public connection metadata. It is not transmitted to the static host. Treat the
 visible QR as a temporary credential and scan it only on your own device.
 
-New desktop clients request compact v2 QR payloads (the same 256-bit pin/ticket,
-expiry, relay capability and routes encoded without duplicate field names).
-Nonstandard routes and older desktop clients retain v1; phone clients accept
-both. No private key is encoded, and URL fragments/tickets are never persisted.
+The desktop offers one pairing code for the configured routes. Compact v2
+encodes Tailscale and VPS routes with the same 256-bit pin and ticket, expiry
+and relay capability. LAN, nonstandard routes and older clients use v1. Phone
+clients accept both formats. The pair link stays in the URL fragment until the
+phone reads it. The browser persists only the public routes after the host
+authorizes the encrypted channel.
 Camera decoding prefers a supported native QR detector, with a local jsQR
 fallback, central higher-resolution crops and periodic full-frame/inverted scans.
 
@@ -45,10 +48,10 @@ preference.
 Authentication denial is allowed to drain before DTLS closes. Mac signaling has
 bounded heartbeat/reconnect and periodic authoritative-whitelist synchronization.
 
-The Mac's persistent self-signed DTLS **leaf** key lives in
-`~/.pi/agent/remote/identity.pem`, mode 0600. It is never sent to the VPS; there is
-no custom CA or iPhone certificate profile to install. Backing up or replacing
-this identity is a Mac administration task; replacing it requires re-pairing.
+The host's persistent self-signed DTLS **leaf** key lives in
+`~/.pi/agent/remote/identity.pem`. The key and connection files use private POSIX
+permissions or an owner-only Windows DACL. The key stays on the host. Replacing
+the key requires re-pairing.
 
 The browser generates a non-extractable P-256 private CryptoKey in IndexedDB.
 The Mac stores its public key, device name, precise enrollment/connection times
@@ -67,7 +70,10 @@ successful scan, backgrounding or teardown. A copied link has the same short
 lifetime and one-use rule as the QR. Pairing tickets are removed from the URL
 fragment immediately and are never persisted with the public connection data.
 An already-approved key can recover after losing the enrollment response; a
-spent ticket cannot enroll a different key. Concurrent windows share one
+spent ticket cannot enroll a different key. Scan a new code in the same app
+after adding a route to keep the device key, name, and original enrollment time.
+The last working route configuration stays in storage until authentication
+succeeds with the new code. Concurrent windows share one
 IndexedDB identity through a serialized creation transaction. Static navigation bypasses
 the browser HTTP cache so a Home Screen relaunch receives the current program;
 only the public shell/assets have an offline cache.
@@ -98,7 +104,8 @@ Outer HTTPS certificates protect signaling availability and metadata; losing a
 VPS HTTPS key cannot impersonate the pinned inner DTLS identity.
 
 One entry named Pi offers Automatic, Tailscale and VPS preferences. Automatic
-races direct and public signaling and allows direct ICE routes; Tailscale uses
+races direct and public signaling and allows direct ICE routes. A relay must
+authorize its signaling socket before it can win the race. Tailscale uses
 the private signaling endpoint when configured, otherwise the existing public
 signaling endpoint, and requests no client TURN servers. This preference works
 without changing tailnet settings; available direct candidates remain preferred.
@@ -106,6 +113,21 @@ VPS uses
 public signaling and relay-only ICE. Switching routes keeps the same pinned
 identity and device approval. An authenticated metadata refresh can update the
 direct endpoint, but cannot change the pinned Mac identity.
+
+An approved host can also create a code using only a private WSS signaling
+endpoint. That code carries the same pinned host fingerprint and one-time
+device ticket, with no relay address or TURN credentials. The installed client
+then automatically opens the private route. The private signaling address is
+stored separately from the VPS profile, so enabling it keeps an existing relay
+available. Users on a different network can still use a configured relay.
+
+The optional native LAN route uses a dedicated TLS signaling listener on one
+private IPv4 interface and accepts connections from its local subnet. When
+enabled, the host includes that route in the same pairing code alongside any
+configured Tailscale and VPS routes. The native app verifies the TLS leaf
+against the same pin used for WebRTC. Browsers use the Tailscale or VPS route
+from the code. A LAN-only host requires the native app and a client on the
+local network.
 
 Signaling and ICE discovery run concurrently. The installed web app coalesces
 foreground and network wakeups into one probe of its existing authenticated

@@ -4,7 +4,7 @@ import { applyRemoteSettings } from './shared/settings-live.js';
 import { RemoteClient } from './remote/client.js';
 import { mount, unmount } from 'svelte';
 import RemoteConnect from './components/shared/RemoteConnect.svelte';
-import { readRemoteConfig, saveRemoteConfig, parsePairingLink } from './remote/config.js';
+import { readRemoteStartup } from './remote/config.js';
 import { remoteEventSource } from './remote/event-source.js';
 import '../../internal/ui/embedded/styles/theme.css';
 import '../../internal/ui/embedded/styles/index.css';
@@ -61,36 +61,22 @@ async function start() {
   watchSystemTheme(window, document);
   resetI18n();
   const host = document.getElementById('remote-status');
-  let config = readRemoteConfig();
-  let initialError = '';
-  if (location.hash.startsWith('#pair=')) {
-    try {
-      config = parsePairingLink(location.href);
-    } catch (error) {
-      initialError = t(`remote.${error.code || 'invalidPairing'}`);
-    }
-    history.replaceState({}, '', location.pathname + location.search);
-  }
+  const url = new URL(location.href);
+  const { config, autoConnect, error } = readRemoteStartup(url);
+  if (url.hash.startsWith('#pair='))
+    history.replaceState(history.state, '', url.pathname + url.search);
   if (config?.locale) {
     localStorage.setItem(LOCALE_KEY, config.locale);
     resetI18n();
   }
   host.replaceChildren();
-  const repairOnly = new URLSearchParams(location.search).has('pairing');
   const connectView = mount(RemoteConnect, {
     target: host,
     props: {
       initialConfig: config,
-      initialError,
-      autoConnect: !repairOnly,
+      initialError: error ? t(`remote.${error.code}`) : '',
+      autoConnect,
       onConnect: async (next, preference, reportProgress) => {
-        try {
-          saveRemoteConfig(next);
-        } catch {
-          const error = new Error(t('remote.storageUnavailable'));
-          error.code = 'storageUnavailable';
-          throw error;
-        }
         let client = new RemoteClient(next, { preference });
         client.addEventListener('phase', (event) => reportProgress?.(event.detail));
         try {
@@ -100,7 +86,8 @@ async function start() {
             // A Tailscale-only attempt has no relay route. When it times out,
             // retry once with Automatic (direct + relay) without changing the
             // saved preference, so the user is not left on an error screen.
-            if (preference !== 'tailscale' || !FALLBACK_CODES.has(error.code)) throw error;
+            if (!next.signalUrl || preference !== 'tailscale' || !FALLBACK_CODES.has(error.code))
+              throw error;
             client.peer?.close();
             client.socket?.close();
             reportProgress?.('fallback');
@@ -109,6 +96,15 @@ async function start() {
             await client.connect();
           }
           await launchWorkspace(client);
+          const workspaceURL = new URL(location.href);
+          if (
+            workspaceURL.searchParams.has('pairing') ||
+            workspaceURL.searchParams.has('nativeScan')
+          ) {
+            workspaceURL.searchParams.delete('pairing');
+            workspaceURL.searchParams.delete('nativeScan');
+            history.replaceState(history.state, '', workspaceURL);
+          }
           await unmount(connectView);
           host.remove();
         } catch (error) {

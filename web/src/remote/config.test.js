@@ -5,6 +5,7 @@ import {
   publicRemoteConfig,
   saveRemoteConfig,
   readRemoteConfig,
+  readRemoteStartup,
   CONFIG_KEY,
 } from './config.js';
 import { readQRCode } from './scan-code.js';
@@ -41,13 +42,14 @@ it('decodes a smaller v2 QR without changing the pinned identity, ticket or rout
     'signed-relay-capability',
     Math.floor(Date.now() / 1000) + 180,
     'zh',
-    '',
+    config.directUrl,
   ];
   const parsed = parsePairingLink(link(compact), { origin });
   expect(parsed.fingerprint).toBe(config.fingerprint);
   expect(parsed.ticket).toBe(config.ticket);
   expect(parsed.signalUrl).toBe('wss://relay.example/signal?room=' + 'r'.repeat(32));
   expect(parsed.iceUrl).toBe('https://relay.example/ice?room=' + 'r'.repeat(32));
+  expect(parsed.directUrl).toBe(config.directUrl);
   expect(parsed.relayTicket).toBe(compact[5]);
   const storage = { setItem: vi.fn() };
   saveRemoteConfig(parsed, storage);
@@ -55,6 +57,91 @@ it('decodes a smaller v2 QR without changing the pinned identity, ticket or rout
   expect(storage.setItem.mock.calls[0][1]).not.toContain(parsed.relayTicket);
   compact[6] = 1;
   expect(() => parsePairingLink(link(compact), { origin })).toThrow('remote.expiredPairing');
+});
+it('accepts and persists private signaling without any relay URLs', () => {
+  const direct = { ...config, signalUrl: '', iceUrl: '', relayAuth: false };
+  const parsed = parsePairingLink(link(direct), { origin });
+  expect(parsed).toMatchObject({
+    directUrl: config.directUrl,
+    fingerprint: config.fingerprint,
+    ticket: config.ticket,
+  });
+  const storage = { getItem: vi.fn(), setItem: vi.fn() };
+  saveRemoteConfig(parsed, storage);
+  const saved = storage.setItem.mock.calls[0][1];
+  expect(saved).not.toContain(config.ticket);
+  storage.getItem.mockReturnValue(saved);
+  expect(readRemoteConfig(storage)).toEqual(publicRemoteConfig(direct));
+  for (const broken of [
+    { directUrl: 'ws://mac.tail.example/remote-signal' },
+    { directUrl: 'wss://user:secret@mac.tail.example/remote-signal' },
+    { directUrl: 'wss://mac.tail.example/remote-signal#credential' },
+    { signalUrl: config.signalUrl },
+    { relayAuth: true },
+  ])
+    expect(() => parsePairingLink(link({ ...direct, ...broken }), { origin })).toThrow(
+      'remote.invalidPairing',
+    );
+});
+it('rejects a relay capability when the pairing code mixes signaling and ICE rooms', () => {
+  const relayTicket = 'signed-vps-capability';
+  const iceUrl = 'https://relay.example/ice?room=another-route';
+  expect(() => parsePairingLink(link({ ...config, iceUrl, relayTicket }), { origin })).toThrow(
+    'remote.invalidPairing',
+  );
+  expect(() =>
+    parsePairingLink(link({ ...config, signalUrl: '', iceUrl: '', relayTicket }), { origin }),
+  ).toThrow('remote.invalidPairing');
+});
+it('opens a LAN-only QR in a native app and never accepts a non-LAN endpoint', () => {
+  const lan = {
+    ...config,
+    signalUrl: '',
+    iceUrl: '',
+    directUrl: '',
+    lanUrl: 'wss://192.168.2.9:43124/remote-signal',
+  };
+  expect(parsePairingLink(link(lan), { origin, nativeLAN: true }).lanUrl).toBe(lan.lanUrl);
+  expect(() => parsePairingLink(link(lan), { origin, nativeLAN: false })).toThrow(
+    'remote.lanNeedsApp',
+  );
+  for (const nativeLAN of [false, true]) {
+    expect(
+      parsePairingLink(link({ ...config, lanUrl: lan.lanUrl }), { origin, nativeLAN }),
+    ).toMatchObject({
+      lanUrl: lan.lanUrl,
+      directUrl: config.directUrl,
+      signalUrl: config.signalUrl,
+    });
+  }
+  for (const lanUrl of [
+    'wss://127.0.0.1:43124/remote-signal',
+    'wss://100.80.2.9:43124/remote-signal',
+    'wss://192.168.2.9:43124/api/version',
+    'wss://192.168.2.9:43124/remote-signal?key=1',
+    'ws://192.168.2.9:43124/remote-signal',
+  ])
+    expect(() => parsePairingLink(link({ ...lan, lanUrl }), { origin, nativeLAN: true })).toThrow(
+      'remote.invalidPairing',
+    );
+});
+it('opens a scanned route update from the repair screen before replacing the working configuration', () => {
+  const current = publicRemoteConfig({ ...config, signalUrl: '', iceUrl: '' });
+  const storage = { getItem: vi.fn(() => JSON.stringify(current)), setItem: vi.fn() };
+  expect(readRemoteStartup(new URL(origin + '/?pairing=1'), storage)).toEqual({
+    config: current,
+    autoConnect: false,
+  });
+  const updated = new URL(link());
+  updated.searchParams.set('pairing', '1');
+  expect(readRemoteStartup(updated, storage)).toEqual({ config, autoConnect: true });
+  updated.hash = 'pair=invalid';
+  expect(readRemoteStartup(updated, storage)).toMatchObject({
+    config: current,
+    autoConnect: false,
+    error: { code: 'invalidPairing' },
+  });
+  expect(storage.setItem).not.toHaveBeenCalled();
 });
 it('persists public connection data only and does not assume browser storage exists in the Home Screen app', () => {
   const values = new Map();

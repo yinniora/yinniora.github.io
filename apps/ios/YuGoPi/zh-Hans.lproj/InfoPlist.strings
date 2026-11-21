@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "使用相机扫描 YuGo Pi 配对码，或拍摄照片作为附件。";
+"NSLocalNetworkUsageDescription" = "连接局域网中已批准的 YuGo Pi 电脑。";

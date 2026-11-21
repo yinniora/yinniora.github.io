@@ -2,7 +2,12 @@ import { t } from '../shared/i18n.js';
 import { version as clientVersion } from '../../../package.json';
 import { deviceFeatures } from './device-features.js';
 import { authenticateRelay, relayICEAuthorization } from './relay-auth.js';
-import { normalizeTransport, saveRemoteConfig, TRANSPORT_KEY } from './config.js';
+import {
+  normalizeTransport,
+  publicRemoteConfig,
+  saveRemoteConfig,
+  TRANSPORT_KEY,
+} from './config.js';
 import {
   base64ToBytes,
   bytesToBase64,
@@ -58,12 +63,12 @@ function connectionError(code) {
   return error;
 }
 
-function openSignalSocket(endpoint, signal) {
+function openSignalSocket(endpoint, signal, unavailable, createSocket) {
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(endpoint);
+    const socket = createSocket(endpoint);
     const fail = () => {
       clearTimeout(timer);
-      reject(connectionError('relayFailed'));
+      reject(connectionError(unavailable));
     };
     const timer = setTimeout(() => {
       fail();
@@ -86,10 +91,14 @@ function openSignalSocket(endpoint, signal) {
 }
 
 export class RemoteClient extends EventTarget {
-  constructor(config, { preference = 'auto' } = {}) {
+  constructor(
+    config,
+    { preference = 'auto', nativeLANSocket = window.__YUGOPI_LAN_SOCKET__ } = {},
+  ) {
     super();
-    this.config = validateRemoteConfig(config);
+    this.config = validateRemoteConfig({ ...config });
     this.preference = normalizeTransport(preference);
+    this.nativeLANSocket = typeof nativeLANSocket === 'function' ? nativeLANSocket : null;
     this.pending = new Map();
     this.connecting = null;
     this.resuming = null;
@@ -135,7 +144,7 @@ export class RemoteClient extends EventTarget {
   updateConfiguration(config) {
     if (config?.fingerprint !== this.config.fingerprint) return;
     try {
-      this.config = validateRemoteConfig({ ...this.config, ...config });
+      this.config = publicRemoteConfig({ ...this.config, ...config });
       saveRemoteConfig(this.config);
     } catch {
       /* A metadata refresh cannot replace the scanned Mac identity. */
@@ -238,43 +247,58 @@ export class RemoteClient extends EventTarget {
   }
 
   async negotiate(identity, signal) {
-    const direct = this.config.directUrl;
-    const endpoints =
-      this.preference === 'tailscale'
-        ? [direct || this.config.signalUrl]
-        : direct && this.preference === 'auto'
-          ? [direct, this.config.signalUrl]
-          : [this.config.signalUrl];
-    const attempts = endpoints.map(() => new AbortController());
+    const { lanUrl, directUrl, signalUrl, iceUrl } = this.config;
+    const relayOnly = this.preference === 'vps' && !!signalUrl;
+    const useTURN = !!iceUrl && this.preference !== 'tailscale';
+    const unavailable = signalUrl ? 'relayFailed' : 'timeout';
+    const routes = [];
+    if (lanUrl && this.nativeLANSocket && !relayOnly) routes.push({ url: lanUrl, kind: 'lan' });
+    if (directUrl && !relayOnly) routes.push({ url: directUrl, kind: 'direct' });
+    if (signalUrl && (!directUrl || this.preference !== 'tailscale'))
+      routes.push({ url: signalUrl, kind: 'relay' });
+    if (!routes.length) throw connectionError('lanNeedsApp');
+    const attempts = routes.map(() => new AbortController());
     signal.addEventListener('abort', () => attempts.forEach((attempt) => attempt.abort()), {
       once: true,
     });
     const signaling = Promise.any(
-      endpoints.map(async (endpoint, index) => {
-        const socket = await openSignalSocket(endpoint, attempts[index].signal);
+      routes.map(async (route, index) => {
+        const createSocket =
+          route.kind === 'lan'
+            ? (url) => this.nativeLANSocket(url, this.config.fingerprint)
+            : (url) => new WebSocket(url);
+        const socket = await openSignalSocket(
+          route.url,
+          attempts[index].signal,
+          unavailable,
+          createSocket,
+        );
+        if (route.kind === 'relay') {
+          try {
+            await authenticateRelay(socket, identity, this.config);
+          } catch (error) {
+            socket.close();
+            throw error;
+          }
+        }
         return { socket, index };
       }),
     ).then(({ socket, index }) => {
       attempts.forEach((attempt, other) => {
         if (other !== index) attempt.abort();
       });
-      const relayReady =
-        direct && socket.url === new URL(direct).href
-          ? Promise.resolve()
-          : authenticateRelay(socket, identity, this.config);
-      relayReady.catch(() => {});
-      return { socket, relayReady };
+      return socket;
     });
     signaling.catch(() => {});
 
     let iceServers = [];
     let iceFromCache = false;
-    const cached = this.preference !== 'tailscale' && cachedICE(this.config.iceUrl);
+    const cached = useTURN && cachedICE(iceUrl);
     if (cached) {
       iceServers = cached;
       iceFromCache = true;
       this.diagnostics.iceCached = true;
-    } else if (this.preference !== 'tailscale') {
+    } else if (useTURN) {
       this.phase('ice');
       try {
         const options = {
@@ -285,11 +309,11 @@ export class RemoteClient extends EventTarget {
         };
         if (this.config.relayAuth)
           options.headers = { Authorization: await relayICEAuthorization(identity, this.config) };
-        let response = await originalFetch(this.config.iceUrl, options);
+        let response = await originalFetch(iceUrl, options);
         this.diagnostics.iceHTTPStatus = response.status;
         if (response.status === 401 && !options.headers) {
           options.headers = { Authorization: await relayICEAuthorization(identity, this.config) };
-          response = await originalFetch(this.config.iceUrl, options);
+          response = await originalFetch(iceUrl, options);
           this.diagnostics.iceHTTPStatus = response.status;
         }
         if (!response.ok)
@@ -308,10 +332,9 @@ export class RemoteClient extends EventTarget {
           chunks.push(value);
         }
         const data = JSON.parse(await new Blob(chunks).text());
-        iceServers = validatedICEServers(data, new URL(this.config.iceUrl).hostname);
-        rememberICE(this.config.iceUrl, iceServers);
-        if (this.preference === 'vps' && !iceServers.length)
-          throw connectionError('iceUnavailable');
+        iceServers = validatedICEServers(data, new URL(iceUrl).hostname);
+        rememberICE(iceUrl, iceServers);
+        if (relayOnly && !iceServers.length) throw connectionError('iceUnavailable');
       } catch (error) {
         const knownError = typeof error.code === 'string';
         this.diagnostics.iceError = knownError
@@ -319,13 +342,13 @@ export class RemoteClient extends EventTarget {
           : error.name === 'TimeoutError'
             ? 'timeout'
             : 'network';
-        if (this.preference === 'vps') throw knownError ? error : connectionError('iceUnavailable');
+        if (relayOnly) throw knownError ? error : connectionError('iceUnavailable');
         /* Direct candidates may still connect over Tailscale or LAN. */
       }
     }
     const peer = new RTCPeerConnection({
-      iceServers: this.preference === 'tailscale' ? [] : iceServers,
-      iceTransportPolicy: this.preference === 'vps' ? 'relay' : 'all',
+      iceServers,
+      iceTransportPolicy: relayOnly ? 'relay' : 'all',
     });
     const channel = peer.createDataChannel('pi-workspace-v1', { ordered: true });
     this.peer = peer;
@@ -379,6 +402,12 @@ export class RemoteClient extends EventTarget {
           }
         } else if (message.type === 'authorized') {
           clearTimeout(approvalTimer);
+          try {
+            saveRemoteConfig(this.config);
+          } catch {
+            reject(connectionError('storageUnavailable'));
+            return;
+          }
           this.authorized = true;
           this.connection = 'connected';
           this.everConnected = true;
@@ -386,9 +415,6 @@ export class RemoteClient extends EventTarget {
           delete this.config.ticket;
           delete this.config.relayTicket;
           this.updateTransport(peer);
-          saveRemoteConfig(this.config);
-          if (location.hash.startsWith('#pair='))
-            history.replaceState({}, '', location.pathname + location.search);
           resolve();
         } else if (message.type === 'denied') {
           clearTimeout(approvalTimer);
@@ -419,12 +445,11 @@ export class RemoteClient extends EventTarget {
     approved.catch(() => {});
     try {
       this.phase('signal');
-      const chosen = await signaling;
-      socket = chosen.socket;
+      socket = await signaling;
       const answerPromise = new Promise((resolve, reject) => {
         // Start the answer budget only after sending the offer, not during ICE gathering.
         rejectAnswer = reject;
-        socket.addEventListener?.('close', () => reject(connectionError('relayFailed')), {
+        socket.addEventListener?.('close', () => reject(connectionError(unavailable)), {
           once: true,
         });
         socket.onmessage = (event) => {
@@ -461,7 +486,6 @@ export class RemoteClient extends EventTarget {
       this.diagnostics.localRelayCandidates = (
         peer.localDescription.sdp.match(/ typ relay/g) || []
       ).length;
-      await chosen.relayReady;
       this.phase('answer');
       socket.send(JSON.stringify({ type: 'offer', sdp: peer.localDescription.sdp }));
       answerTimer = setTimeout(
@@ -500,12 +524,19 @@ export class RemoteClient extends EventTarget {
       clearTimeout(approvalTimer);
       clearTimeout(gatherGrace);
       // Stale cached TURN credentials must not poison the next attempt.
-      if (iceFromCache) forgetICE(this.config.iceUrl);
+      if (iceFromCache) forgetICE(iceUrl);
       rejectApproval(error);
       peer.close();
       socket?.close();
-      if (error instanceof AggregateError)
-        throw new Error(t('remote.relayFailed'), { cause: error });
+      if (error instanceof AggregateError) {
+        const code = error.errors.some((failure) => failure?.code === 'relayDenied')
+          ? 'relayDenied'
+          : unavailable;
+        const failure = connectionError(code);
+        failure.diagnostics = error.diagnostics;
+        failure.cause = error;
+        throw failure;
+      }
       throw error;
     }
   }

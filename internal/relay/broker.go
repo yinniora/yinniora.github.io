@@ -24,6 +24,7 @@ type Broker struct {
 	Room, HostToken, TURNSecret, PublicIP, Origin string
 	ClientSecret                                  string
 	RequireClientAuth                             bool
+	SetupHandler                                  http.Handler
 	approved                                      map[string]bool
 	clientDevices                                 map[string]string
 	enrollments                                   map[string]relayEnrollment
@@ -56,6 +57,10 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !b.admit(ip) {
 		http.Error(w, "rate limited", 429)
+		return
+	}
+	if r.URL.Path == "/setup" && b.SetupHandler != nil {
+		b.SetupHandler.ServeHTTP(w, r)
 		return
 	}
 	if r.URL.Query().Get("room") != b.Room || len(b.Room) < 20 {

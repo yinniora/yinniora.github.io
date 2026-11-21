@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+  "http://www.freedesktop.org/software/polkit/policyconfig-1.dtd">
+<policyconfig>
+  <vendor>YuGo Pi</vendor>
+  <vendor_url>https://github.com/yinniora/yugo-pi</vendor_url>
+  <action id="org.yugopi.approve-pairing">
+    <description>Pair a new YuGo Pi device</description>
+    <message>Authenticate to create a YuGo Pi pairing code.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_self</allow_active>
+    </defaults>
+  </action>
+  <action id="org.yugopi.configure-remote">
+    <description>Change the YuGo Pi remote connection</description>
+    <message>Authenticate to change the YuGo Pi remote connection.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_self</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

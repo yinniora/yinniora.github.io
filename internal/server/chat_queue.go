@@ -151,7 +151,9 @@ func (s *Server) handleQueueSendNow(w http.ResponseWriter, r *http.Request, sess
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), queueSendTimeout)
 	defer cancel()
 	if err = s.sendQueued(ctx, resolved.Path, item, false); err != nil {
-		if errors.Is(err, workers.ErrPiSessionBusy) {
+		if errors.Is(err, workers.ErrRestarting) {
+			writeJSONError(w, http.StatusConflict, workers.ErrRestarting.Error())
+		} else if errors.Is(err, workers.ErrPiSessionBusy) {
 			writeJSONError(w, http.StatusConflict, workers.ErrPiSessionBusy.Error())
 		} else {
 			writeJSONError(w, http.StatusBadGateway, "Pi did not acknowledge the queued message")

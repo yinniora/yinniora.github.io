@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
+
+	"pi-web/internal/picmd"
 )
 
 // PromptOpts configures a one-shot, ephemeral prompt run.
@@ -40,10 +41,6 @@ func OneShotPrompt(ctx context.Context, opts PromptOpts) (string, error) {
 	if strings.TrimSpace(opts.Message) == "" {
 		return "", errors.New("prompt message is empty")
 	}
-	if _, err := exec.LookPath("pi"); err != nil {
-		return "", fmt.Errorf("pi executable not found: %w", err)
-	}
-
 	args := []string{"--mode", "rpc", "--no-session", "--no-tools", "--no-extensions", "--no-mcp", "--no-skills", "--no-context-files", "--thinking", "off"}
 	if strings.TrimSpace(opts.Model) != "" {
 		args = append(args, "--model", opts.Model)
@@ -52,7 +49,10 @@ func OneShotPrompt(ctx context.Context, opts PromptOpts) (string, error) {
 		args = append(args, "--system-prompt", opts.SystemPrompt)
 	}
 
-	cmd := exec.CommandContext(ctx, "pi", args...)
+	cmd := picmd.Command(ctx, args...)
+	if cmd.Err != nil {
+		return "", fmt.Errorf("pi executable not found: %w", cmd.Err)
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return "", err

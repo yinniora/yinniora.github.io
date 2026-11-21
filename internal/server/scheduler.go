@@ -11,6 +11,7 @@ import (
 	"pi-web/internal/chat"
 	"pi-web/internal/schedules"
 	"pi-web/internal/sessions"
+	"pi-web/internal/workers"
 )
 
 // scheduleTickInterval is how often the scheduler re-evaluates due schedules.
@@ -118,6 +119,11 @@ func (s *Server) fireSchedule(sc schedules.Schedule) (string, error) {
 }
 
 func (s *Server) fireScheduleContext(ctx context.Context, sc schedules.Schedule, automatic ...bool) (string, error) {
+	finish, accepted := s.beginManagedWork()
+	if !accepted {
+		return "", workers.ErrRestarting
+	}
+	defer finish()
 	s.sessionManagementMu.Lock()
 	locked := true
 	defer func() {

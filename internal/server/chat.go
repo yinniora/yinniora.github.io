@@ -73,6 +73,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusServiceUnavailable, "chat unavailable")
 		return
 	}
+	finish, accepted := s.beginManagedWork()
+	if !accepted {
+		writeJSONError(w, http.StatusConflict, workers.ErrRestarting.Error())
+		return
+	}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			finish()
+		}
+	}()
 	sessionID := resolved.Session.ID
 	sessionPath := resolved.Path
 	uploadDir, err := s.saveChatFiles(sessionID, &chatReq)
@@ -81,6 +92,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deliver := func(ctx context.Context) {
+		defer finish()
 		if err := s.chatSender.Send(ctx, sessionID, sessionPath, chatReq); err != nil && !errors.Is(err, context.Canceled) {
 			if errors.Is(err, workers.ErrPiContextCompaction) && s.chatQueue != nil && len(chatReq.Images) == 0 {
 				// Pi never received this prompt. Keep it available for a manual retry.
@@ -112,6 +124,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 		started := len(s.acceptedChatRequests) < 4096 && s.startTask(deliver)
 		if started {
+			handedOff = true
 			if s.acceptedChatRequests == nil {
 				s.acceptedChatRequests = make(map[string]time.Time)
 			}
@@ -123,6 +136,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if s.startTask(deliver) {
+		handedOff = true
 		writeJSON(w, http.StatusAccepted, ack)
 		return
 	}

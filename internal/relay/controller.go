@@ -24,6 +24,8 @@ import (
 
 const DefaultClientURL = "https://yinniora.github.io/"
 
+var errPrivateFile = errors.New("remote configuration must be a private regular file owned by the current user")
+
 type ConnectionConfig struct{ ClientURL, SignalURL, ICEURL, DirectURL, HostToken, TURNHost, TURNSecret, ClientSecret string }
 type ServerProfile struct {
 	ServerURL    string `json:"serverUrl"`
@@ -32,6 +34,10 @@ type ServerProfile struct {
 	TURNSecret   string `json:"turnSecret,omitempty"`
 	ClientSecret string `json:"clientSecret,omitempty"`
 }
+type directProfile struct {
+	DirectURL string `json:"directUrl"`
+}
+
 type Controller struct {
 	mu                  sync.Mutex
 	host                *Host
@@ -41,6 +47,7 @@ type Controller struct {
 	cancel              context.CancelFunc
 	client              *http.Client
 	trustedClientOrigin string
+	lanURL              string
 }
 
 func NewController(host *Host, filename string, baseline ConnectionConfig) (*Controller, error) {
@@ -53,14 +60,7 @@ func NewController(host *Host, filename string, baseline ConnectionConfig) (*Con
 	}
 	c := &Controller{host: host, filename: filename, config: baseline, client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	c.trustedClientOrigin = clientURL.Scheme + "://" + clientURL.Host
-	if info, err := os.Lstat(filename); err == nil {
-		if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
-			return nil, errors.New("remote configuration must be a private regular file")
-		}
-		raw, err := os.ReadFile(filename)
-		if err != nil {
-			return nil, err
-		}
+	if raw, err := readPrivateFile(filename); err == nil {
 		var profile ServerProfile
 		if json.Unmarshal(raw, &profile) != nil {
 			return nil, errors.New("invalid remote configuration")
@@ -72,8 +72,63 @@ func NewController(host *Host, filename string, baseline ConnectionConfig) (*Con
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
+	directFile := c.directProfilePath()
+	if raw, err := readPrivateFile(directFile); err == nil {
+		var profile directProfile
+		if err = json.Unmarshal(raw, &profile); err != nil {
+			return nil, errors.New("invalid direct signaling configuration")
+		}
+		c.config.DirectURL = profile.DirectURL
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if c.config.DirectURL != "" && !ValidDirectSignalingURL(c.config.DirectURL) {
+		return nil, errors.New("invalid direct signaling URL")
+	}
 	host.ICE = c.iceServers
 	return c, nil
+}
+
+func ValidDirectSignalingURL(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	return err == nil && u.Scheme == "wss" && u.Hostname() != "" && u.User == nil && u.Fragment == ""
+}
+
+func (c *Controller) directProfilePath() string {
+	return filepath.Join(filepath.Dir(c.filename), "direct.json")
+}
+
+func (c *Controller) DirectURL() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.config.DirectURL
+}
+
+// SetDirectURL changes only the private signaling route, preserving relay credentials.
+func (c *Controller) SetDirectURL(endpoint string) error {
+	if endpoint != "" && !ValidDirectSignalingURL(endpoint) {
+		return errors.New("invalid direct signaling URL")
+	}
+	raw, _ := json.Marshal(directProfile{DirectURL: endpoint})
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := writePrivateProfile(c.directProfilePath(), raw); err != nil {
+		return err
+	}
+	c.config.DirectURL = endpoint
+	return nil
+}
+
+// SetLANURL advertises an active LAN listener. It is cleared on restart until
+// the host reinstates its listener and publishes the current address.
+func (c *Controller) SetLANURL(endpoint string) error {
+	if endpoint != "" && !ValidLANSignalingURL(endpoint) {
+		return errors.New("invalid LAN signaling URL")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lanURL = endpoint
+	return nil
 }
 func (c *Controller) configuration(p ServerProfile) ConnectionConfig {
 	next := c.config
@@ -186,10 +241,24 @@ func (c *Controller) Save(ctx context.Context, p ServerProfile) error {
 	raw, _ := json.Marshal(p)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(c.filename), 0700); err != nil {
+	if err = writePrivateProfile(c.filename, raw); err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(filepath.Dir(c.filename), ".connection-*")
+	c.config = c.configuration(p)
+	c.restartLocked()
+	return nil
+}
+
+func writePrivateProfile(filename string, raw []byte) error {
+	if err := os.MkdirAll(filepath.Dir(filename), 0700); err != nil {
+		return err
+	}
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return err
+	}
+	temp := filepath.Join(filepath.Dir(filename), ".connection-"+hex.EncodeToString(nonce[:]))
+	file, err := createPrivateFile(temp)
 	if err != nil {
 		return err
 	}
@@ -205,22 +274,19 @@ func (c *Controller) Save(ctx context.Context, p ServerProfile) error {
 	if err = file.Close(); err != nil {
 		return err
 	}
-	if err = os.Rename(file.Name(), c.filename); err != nil {
-		return err
-	}
-	c.config = c.configuration(p)
-	c.restartLocked()
-	return nil
+	return os.Rename(file.Name(), filename)
 }
 func (c *Controller) Bootstrap() map[string]any {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	v := c.config
-	return map[string]any{"version": 1, "fingerprint": c.host.Fingerprint, "clientUrl": v.ClientURL, "signalUrl": v.SignalURL, "iceUrl": v.ICEURL, "directUrl": v.DirectURL, "relayAuth": v.ClientSecret != ""}
+	return map[string]any{"version": 1, "fingerprint": c.host.Fingerprint, "clientUrl": v.ClientURL, "signalUrl": v.SignalURL, "iceUrl": v.ICEURL, "directUrl": v.DirectURL, "lanUrl": c.lanURL, "relayAuth": v.ClientSecret != ""}
 }
 func (c *Controller) PublicSettings() map[string]any {
 	c.mu.Lock()
 	p := c.profile()
+	directConfigured := ValidDirectSignalingURL(c.config.DirectURL)
+	lanConfigured := c.lanURL != ""
 	c.mu.Unlock()
 	detected := false
 	if addresses, err := net.InterfaceAddrs(); err == nil {
@@ -235,7 +301,7 @@ func (c *Controller) PublicSettings() map[string]any {
 			}
 		}
 	}
-	return map[string]any{"serverUrl": p.ServerURL, "room": p.Room, "hasHostToken": p.HostToken != "", "hasTurnSecret": p.TURNSecret != "", "hasClientSecret": p.ClientSecret != "", "privateNetworkDetected": detected, "p2p": true}
+	return map[string]any{"serverUrl": p.ServerURL, "room": p.Room, "hasHostToken": p.HostToken != "", "hasTurnSecret": p.TURNSecret != "", "hasClientSecret": p.ClientSecret != "", "privateNetworkDetected": detected, "directConfigured": directConfigured, "lanConfigured": lanConfigured, "p2p": true}
 }
 func (c *Controller) Start(ctx context.Context) {
 	c.mu.Lock()
@@ -272,17 +338,20 @@ func (c *Controller) iceServers() []webrtc.ICEServer {
 	return []webrtc.ICEServer{{URLs: config["urls"].([]string), Username: config["username"].(string), Credential: config["credential"]}}
 }
 func (c *Controller) SyncDevices() { go c.host.SyncDevices() }
-func (c *Controller) EnrollmentTicket() string {
+func (c *Controller) EnrollmentTicket(signalURL, iceURL string) string {
 	c.mu.Lock()
-	secret := c.config.ClientSecret
-	u, _ := url.Parse(c.config.SignalURL)
+	config := c.config
 	c.mu.Unlock()
-	if secret == "" || u == nil {
+	if config.ClientSecret == "" || config.SignalURL != signalURL || config.ICEURL != iceURL {
+		return ""
+	}
+	u, err := url.Parse(signalURL)
+	if err != nil || u.Host == "" {
 		return ""
 	}
 	var nonce [32]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return ""
 	}
-	return relayTicket(secret, u.Query().Get("room"), hex.EncodeToString(nonce[:]), time.Now().Add(3*time.Minute))
+	return relayTicket(config.ClientSecret, u.Query().Get("room"), hex.EncodeToString(nonce[:]), time.Now().Add(3*time.Minute))
 }

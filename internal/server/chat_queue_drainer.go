@@ -169,7 +169,7 @@ func (d *queueDrainer) drainSession(sessionID string) {
 		ctx, cancel := context.WithTimeout(taskCtx, d.dispatchTimeout)
 		defer cancel()
 		if err := d.server.sendQueued(ctx, resolved.Path, item, true); err != nil &&
-			!errors.Is(err, workers.ErrPiSessionBusy) && !errors.Is(taskCtx.Err(), context.Canceled) {
+			!errors.Is(err, workers.ErrPiSessionBusy) && !errors.Is(err, workers.ErrRestarting) && !errors.Is(taskCtx.Err(), context.Canceled) {
 			fmt.Fprintf(os.Stderr,
 				"queue drainer: Send %s position %d failed: %v\n",
 				sessionID, item.Position, err)
@@ -178,6 +178,11 @@ func (d *queueDrainer) drainSession(sessionID string) {
 }
 
 func (s *Server) sendQueued(ctx context.Context, path string, item chatqueue.Item, onlyWhenIdle bool) error {
+	finish, accepted := s.beginManagedWork()
+	if !accepted {
+		return workers.ErrRestarting
+	}
+	defer finish()
 	var request chat.Request
 	var err error
 	if item.HasAttachments {
@@ -195,7 +200,7 @@ func (s *Server) sendQueued(ctx context.Context, path string, item chatqueue.Ite
 	if err == nil {
 		err = s.chatQueue.Remove(item.SessionID, item.Position)
 	}
-	if errors.Is(err, workers.ErrPiSessionBusy) {
+	if errors.Is(err, workers.ErrPiSessionBusy) || errors.Is(err, workers.ErrRestarting) {
 		if uploadDir != "" {
 			_ = os.RemoveAll(uploadDir)
 		}

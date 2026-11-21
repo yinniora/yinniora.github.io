@@ -52,12 +52,17 @@ The integrated official base is recorded in `variant.json` and
 review and merge. Checks compare official commits against this base, not YuGo's
 independent release version.
 
-The installed application and `/pi-web update` are pinned to manual maintenance.
-Official fetches and reviewed source merges never install or restart the app.
-After accepting a review, explicitly build, inspect notices, back up the current
-binary and configuration, and install the new YuGo build while workers are idle.
-Keep the previous binary for rollback. Never roll configuration back by blindly
-replacing a database that contains newer conversations or approved devices.
+The host version dialog checks our published releases separately. **Download and
+install update** checks the release artifact's size and SHA-256. Compatible
+macOS and Linux installs can stage only the backend, keep its previous binary,
+and restart after Pi is idle. Full host updates open the operating system's
+installer. The package and backend both preserve the existing workspace state.
+The release includes `yugo-backend-compatibility.json`. Increment the
+compatibility level when a backend requires updated bundled runtime or native
+helpers, and update the backend's expected level for hosts installed with that
+full package. Official upstream fetches and reviews are metadata-only and never
+apply an update. Use the preserved executable for a binary rollback while
+keeping the current database, conversations and approved devices.
 
 ## Existing personal-fork installations
 
@@ -69,17 +74,20 @@ are not a separate public update channel.
 
 A Mac app rename must move to one `YuGo Pi.app` and one `YuGo Pi Approval.app`,
 update helper paths in the existing launch configuration, and preserve every
-credential, project, conversation and approval. Do not run the fresh installer
-over an existing installation, generate replacement device keys, or retain
-multiple indexed copies of the old apps. Existing iPhone Home Screen labels may
+credential, project, conversation and approval. The legacy developer installer
+is for clean setups. The full Host package declares the existing `local.pi.chat`
+bundle relocatable, so Installer can upgrade a recognized window in its current
+location. Its first launch reuses the existing LaunchAgent. Keep the older
+standalone approval helper installed while that job references it. When moving
+an older window manually, update any helper paths in the job before archiving
+the old bundle. Existing iPhone Home Screen labels may
 need a manual display-name edit; keep the same entry URL and app ID to preserve
 paired browser storage.
 
-Windows CI covers the local service and expects the Mac-approved remote profile
-loader to fail closed: Windows FileMode does not prove POSIX private-file access.
-The remote host and native approval workflow described here target macOS.
-Do not remove private-file validation merely to make Windows tests pass; native
-Windows remote enrollment would require its own ACL and local-auth design.
+Windows hosts create remote identity and configuration files with an owner-only
+protected DACL. The loader verifies that DACL and the current owner before use.
+POSIX hosts require owner-only mode and the current owner. Keep these checks
+when migrating or restoring host credentials.
 
 The Pi CLI and optional computer-use package are independent dependencies.
 Their own update, license and permission policies are not changed by YuGo Pi.

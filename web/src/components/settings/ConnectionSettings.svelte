@@ -10,6 +10,7 @@
   let error = $state('');
   let revision = $state(0);
   const remoteClient = typeof window !== 'undefined' ? window.__PI_REMOTE_CLIENT__ : null;
+  const directOnly = remoteClient?.config?.directUrl && !remoteClient.config.signalUrl;
   const mobile =
     typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/.test(navigator.userAgent);
 
@@ -35,6 +36,7 @@
   async function load() {
     busy = true;
     try {
+      if (directOnly) return;
       const data = await getJSON('/api/connections');
       items = (Array.isArray(data.connections) ? data.connections : []).filter(
         (item) => !remoteClient || item.kind !== 'local',
@@ -88,7 +90,7 @@
 <!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icons -->
 <section class="settings-section connection-settings" data-connection-settings>
   <div class="settings-section-title">{t('hub.connections')}</div>
-  <p class="connection-hint">{t('hub.connectionHint')}</p>
+  <p class="connection-hint">{t(directOnly ? 'remote.tailscaleHint' : 'hub.connectionHint')}</p>
   {#if error}<p class="connection-error" role="alert">{error}</p>{/if}
   {#each items as item (item.id)}
     {@const key = labelKey(item)}

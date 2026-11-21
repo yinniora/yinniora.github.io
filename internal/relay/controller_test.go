@@ -43,13 +43,7 @@ func TestRemoteServerConfigurationVerifiesAndKeepsPrivateIdentity(t *testing.T) 
 		}
 	}
 	restored, err := NewController(host, file, ConnectionConfig{ClientURL: b.Origin + "/"})
-	if runtime.GOOS == "windows" {
-		// The Mac-approved remote feature fails closed where the current private
-		// file check cannot establish POSIX permissions. Do not weaken it for CI.
-		if err == nil || !strings.Contains(err.Error(), "private regular file") {
-			t.Fatal("unverifiable Windows remote credentials were not refused", err)
-		}
-	} else if err != nil || restored.Bootstrap()["signalUrl"] != public["signalUrl"] {
+	if err != nil || restored.Bootstrap()["signalUrl"] != public["signalUrl"] {
 		t.Fatal("saved configuration not restored", err)
 	}
 	old, _ := os.ReadFile(file)
@@ -68,5 +62,48 @@ func TestRemoteServerConfigurationVerifiesAndKeepsPrivateIdentity(t *testing.T) 
 	p.ServerURL = "http://127.0.0.1"
 	if c.Save(context.Background(), p) == nil {
 		t.Fatal("plaintext server accepted")
+	}
+}
+
+func TestDirectSignalingProfilePreservesBrokerAndSurvivesRestart(t *testing.T) {
+	const oldDirect = "wss://host.tail.example/old"
+	const newDirect = "wss://host.tail.example/remote-signal"
+	path := filepath.Join(t.TempDir(), "remote", "connection.json")
+	host := &Host{}
+	baseline := ConnectionConfig{
+		DirectURL: oldDirect,
+		SignalURL: "wss://broker.example/signal",
+		ICEURL:    "https://broker.example/ice",
+	}
+	c, err := NewController(host, path, baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.DirectURL() != oldDirect || c.PublicSettings()["directConfigured"] != true {
+		t.Fatal("existing direct URL not recognized")
+	}
+	if err = c.SetDirectURL(newDirect); err != nil {
+		t.Fatal(err)
+	}
+	if c.Bootstrap()["signalUrl"] != baseline.SignalURL || c.Bootstrap()["iceUrl"] != baseline.ICEURL {
+		t.Fatal("direct route replaced broker")
+	}
+	if err = c.SetDirectURL("ws://invalid.example/"); err == nil || c.DirectURL() != newDirect {
+		t.Fatal("insecure direct route was accepted")
+	}
+	restored, err := NewController(host, path, baseline)
+	if err != nil || restored.DirectURL() != newDirect {
+		t.Fatal("saved direct route did not persist across restart", err)
+	}
+	info, err := os.Stat(c.directProfilePath())
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
+		t.Fatal("direct configuration is not private", err)
+	}
+	if err = restored.SetDirectURL(""); err != nil {
+		t.Fatal(err)
+	}
+	restored, err = NewController(host, path, baseline)
+	if err != nil || restored.DirectURL() != "" || restored.PublicSettings()["directConfigured"] != false {
+		t.Fatal("persisted disable did not suppress the old environment route", err)
 	}
 }

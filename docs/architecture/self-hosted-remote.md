@@ -29,9 +29,56 @@ from the relay; a compromised relay must not be able to replace the phone code.
 
 ## Prepare a relay
 
-One broker instance serves one Mac owner. It has no Mac identity key, model key,
-workspace token, conversation data or private media. Build `make build-relay`
-for the server architecture. Generate private configuration outside a checkout:
+One broker instance serves one owner. It has no host identity key, model key,
+workspace token, conversation data or private media.
+
+### Set up a relay from YuGo Pi over SSH
+
+In the host app's remote settings, use SSH setup when the VPS already accepts
+your SSH key and its verified host key is in your OpenSSH `known_hosts`. OpenSSH
+uses its standard keys or your running local SSH agent. Enter the public relay
+address and SSH login, then approve the shown destination on the host. The app
+verifies the installer from its matching YuGo release, runs it over SSH and
+imports the one-use configuration automatically. A non-root VPS login needs
+noninteractive `sudo` for the installer. The separate VPS installer below also
+works when SSH setup cannot use these prerequisites.
+
+### Run the installer on the VPS
+
+For a dedicated Debian 12+ or Ubuntu 22.04+ VPS, download
+`yugo-pi-relay-install.py` from the [YuGo Pi release](https://github.com/yinniora/yugo-pi/releases)
+and run the matching version as root. Provide the server's public domain or IP
+when prompted.
+
+```sh
+sudo python3 yugo-pi-relay-install.py
+```
+
+The installer verifies the matching Linux release archive and installs separate
+unprivileged relay, HTTPS and Coturn services. Public DNS, if used, must point
+to the VPS. Allow TCP 80/443, UDP and TCP 3478, and UDP 49160–49220 in the
+provider firewall. A public IP is supported through a short-lived Let's Encrypt
+IP certificate with Caddy renewal. Existing services on these ports are left in
+place. For a VPS behind NAT, the installer accepts
+`--external-ip PUBLIC_IP/PRIVATE_IP`. To use your own HTTPS proxy, forward `/signal`
+(WebSocket), `/ice`, `/verify`, and `/setup` to `127.0.0.1:43120` first, then run
+the installer with `--external-proxy`.
+
+Paste the `yugopi-relay:` code into the host app's remote setup. The code can be
+used once and expires in 15 minutes. If it expires or the connection breaks
+during import, run `sudo yugo-pi-relay-setup --new-code`. The host checks the
+received profile against the relay before saving it. The separate
+`/var/lib/yugo-pi-relay/private/connection.json` file is a private import fallback.
+
+Use `sudo yugo-pi-relay-setup --check-update` to see whether a newer relay
+release is available. Run the command printed by the checker to install that
+exact version. The installer retains credentials and rolls back the program and
+service changes if the new relay fails its checks.
+
+### Manual relay setup
+
+Build `make build-relay` for the server architecture. Generate private
+configuration outside a checkout:
 
 ```sh
 python3 scripts/generate_relay_config.py \

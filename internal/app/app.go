@@ -79,7 +79,7 @@ func Main(version string) {
 		authMiddleware.AllowAnyHost()
 	}
 
-	versionChecker := updater.NewTracking(version)
+	versionChecker := updater.NewYuGoTracking(version)
 	deviceEnabled := os.Getenv("PI_WEB_DEVICE_AUTH") == "1"
 	var remoteHost *relay.Host
 	if deviceEnabled {
@@ -91,6 +91,10 @@ func Main(version string) {
 		}
 	}
 	var remoteControl *relay.Controller
+	var lan *lanSignal
+	var enableLAN func() error
+	var directListener net.Listener
+	var privateSignal func(context.Context) (string, string, error)
 	if remoteHost != nil {
 		var err error
 		remoteControl, err = relay.NewController(remoteHost, filepath.Join(agentDir, "remote", "connection.json"), relay.ConnectionConfig{
@@ -100,6 +104,23 @@ func Main(version string) {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "cannot initialize remote configuration")
 			os.Exit(1)
+		}
+		lan = &lanSignal{host: remoteHost, control: remoteControl, marker: filepath.Join(agentDir, "remote", "lan-enabled")}
+		enableLAN = lan.enable
+		directAddress := os.Getenv("PI_WEB_DIRECT_SIGNAL_ADDR")
+		if directAddress == "" {
+			directAddress = "127.0.0.1:31417"
+		}
+		directListener, err = net.Listen("tcp", directAddress)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "direct signaling listener:", err)
+		} else {
+			defer directListener.Close()
+			if directIP, ok := directListener.Addr().(*net.TCPAddr); ok && directIP.IP.Equal(net.IPv4(127, 0, 0, 1)) {
+				privateSignal = func(ctx context.Context) (string, string, error) {
+					return configureTailscaleSignal(ctx, directIP.Port)
+				}
+			}
 		}
 	}
 	bootstrapRemote := func() map[string]any {
@@ -169,6 +190,7 @@ func Main(version string) {
 			return srv.ComputerMode(sessionID)
 		}, harnessPath, checkpointPath)
 	})
+	managedUpdates := &managedUpdate{version: version, checker: versionChecker, busy: manager.Busy}
 	var srvErr error
 	srv, srvErr = server.New(server.Deps{
 		TrashProjectFiles:   trashProjectFiles,
@@ -179,6 +201,8 @@ func Main(version string) {
 		PairApprover:        approvePair,
 		RemoteBootstrap:     bootstrapRemote,
 		RemoteControl:       remoteControl,
+		PrivateSignal:       privateSignal,
+		EnableLAN:           enableLAN,
 		ChatSender:          manager,
 		Cache:               sessions.NewCache(),
 		RenderExportSession: ui.RenderExportSessionPage,
@@ -186,11 +210,12 @@ func Main(version string) {
 		Models: func(ctx context.Context) (json.RawMessage, error) {
 			return defaultModelsCache.get(ctx)
 		},
-		Updater: versionChecker,
+		Updater:        versionChecker,
+		ManagedUpdate:  managedUpdates.install,
+		ManagedRestart: managedUpdates.restart,
 		RunInstall: func(ctx context.Context) error {
 			return fmt.Errorf("this fork is updated from its maintained source repository")
 		},
-		RunRestart:            runRestart,
 		DisableBackgroundJobs: developmentMode,
 	})
 	if srvErr != nil {
@@ -319,10 +344,21 @@ func Main(version string) {
 	if remoteHost != nil {
 		// This listener exposes signaling only. Even a local reverse proxy cannot
 		// turn it into a loopback administrator for the workspace HTTP API.
-		if directAddress := os.Getenv("PI_WEB_DIRECT_SIGNAL_ADDR"); directAddress != "" {
-			directServer := &http.Server{Addr: directAddress, Handler: http.HandlerFunc(remoteHost.ServeSignal), ReadHeaderTimeout: 10 * time.Second}
+		if err := lan.restore(); err != nil {
+			fmt.Fprintln(os.Stderr, "local network signaling:", err)
+		}
+		defer lan.close()
+		if directListener != nil {
+			directMux := http.NewServeMux()
+			directMux.HandleFunc("/remote-signal", remoteHost.ServeSignal)
+			directMux.HandleFunc("/{$}", remoteHost.ServeSignal)
+			directMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				fmt.Fprint(w, directSignalHealth)
+			})
+			directServer := &http.Server{Handler: directMux, ReadHeaderTimeout: 10 * time.Second}
 			go func() {
-				if err := directServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				if err := directServer.Serve(directListener); err != nil && err != http.ErrServerClosed {
 					fmt.Fprintln(os.Stderr, "direct signaling listener:", err)
 				}
 			}()

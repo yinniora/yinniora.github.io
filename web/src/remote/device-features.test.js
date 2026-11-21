@@ -15,3 +15,14 @@ it('distinguishes iPhone browser and Home Screen without saving full fingerprint
       .app,
   ).toBe('standalone');
 });
+it('labels the native iPhone app without storing its user-agent string', () => {
+  const navigatorImpl = {
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 YuGoPi-iOS',
+  };
+  expect(deviceFeatures({ navigatorImpl, standalone: false })).toEqual({
+    os: 'iPhone · iOS',
+    browser: 'YuGo Pi',
+    app: 'standalone',
+  });
+});

@@ -246,7 +246,10 @@ func (h *Host) ServeSignal(w http.ResponseWriter, r *http.Request) {
 	defer conn.CloseNow()
 	conn.SetReadLimit(70 * 1024)
 	var signal Signal
-	if err := wsjson.Read(r.Context(), conn, &signal); err != nil || signal.Type != "offer" {
+	offerContext, cancelOffer := context.WithTimeout(r.Context(), 8*time.Second)
+	err = wsjson.Read(offerContext, conn, &signal)
+	cancelOffer()
+	if err != nil || signal.Type != "offer" {
 		return
 	}
 	var idBytes [16]byte

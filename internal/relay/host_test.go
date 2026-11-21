@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -24,6 +27,9 @@ func TestEncryptedHTTPRequiresDeviceProof(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer host.Close()
+			host.Origins = []string{"client.example"}
+			direct := httptest.NewTLSServer(http.HandlerFunc(host.ServeSignal))
+			defer direct.Close()
 			key, raw := testDevice(t)
 			var calls atomic.Int32
 			var sawDenial atomic.Bool
@@ -91,14 +97,25 @@ func TestEncryptedHTTPRequiresDeviceProof(t *testing.T) {
 			<-gather
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			answer, err := host.Answer(ctx, "test", pc.LocalDescription().SDP)
+			socket, _, err := websocket.Dial(ctx, "wss"+strings.TrimPrefix(direct.URL, "https")+"/remote-signal", &websocket.DialOptions{
+				HTTPClient: direct.Client(),
+				HTTPHeader: http.Header{"Origin": {"https://client.example"}},
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(strings.ToLower(answer), host.Fingerprint) {
+			defer socket.CloseNow()
+			if err = wsjson.Write(ctx, socket, Signal{Type: "offer", SDP: pc.LocalDescription().SDP}); err != nil {
+				t.Fatal(err)
+			}
+			var answer Signal
+			if err = wsjson.Read(ctx, socket, &answer); err != nil {
+				t.Fatal(err)
+			}
+			if answer.Type != "answer" || !strings.Contains(strings.ToLower(answer.SDP), host.Fingerprint) {
 				t.Fatal("answer missing pinned identity")
 			}
-			if err = pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer}); err != nil {
+			if err = pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer.SDP}); err != nil {
 				t.Fatal(err)
 			}
 			var status int

@@ -23,7 +23,9 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.LinearLayout;
 import android.widget.Toast;
+import android.widget.Toolbar;
 
 /**
  * YuGo Pi for Android: a WebView around the published encrypted remote client.
@@ -35,8 +37,10 @@ public class MainActivity extends Activity {
     private static final String CLIENT_HOST = "yinniora.github.io";
     private static final int REQUEST_CAMERA = 1;
     private static final int REQUEST_FILES = 2;
+    private static final int REQUEST_INSTALL_SOURCE = 3;
 
     private WebView web;
+    private ApkUpdates updates;
     private PermissionRequest pendingPermission;
     private ValueCallback<Uri[]> pendingFiles;
 
@@ -44,9 +48,21 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        updates = new ApkUpdates(this, REQUEST_INSTALL_SOURCE);
         web = new WebView(this);
         web.setBackgroundColor(Color.TRANSPARENT);
-        setContentView(web);
+        Toolbar toolbar = new Toolbar(this);
+        toolbar.setTitle(R.string.app_name);
+        toolbar.getMenu().add(R.string.update_check).setOnMenuItemClickListener(item -> {
+            updates.check();
+            return true;
+        });
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.addView(toolbar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        layout.addView(web, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        setContentView(layout);
 
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -204,6 +220,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_INSTALL_SOURCE) {
+            updates.onInstallSourceResult();
+            return;
+        }
         if (requestCode != REQUEST_FILES || pendingFiles == null) return;
         pendingFiles.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
         pendingFiles = null;
@@ -246,6 +266,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        updates.close();
         if (web != null) {
             web.setVisibility(View.GONE);
             web.destroy();

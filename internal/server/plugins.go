@@ -11,12 +11,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"pi-web/internal/picmd"
 )
 
 var npmPiSource = regexp.MustCompile(`^npm:(@[A-Za-z0-9._-]+/)?[A-Za-z0-9][A-Za-z0-9._-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?$`)
@@ -204,7 +205,7 @@ func pluginData(dir string, settings, mcp map[string]json.RawMessage) (pluginSet
 func (s *Server) runPiPackage(ctx context.Context, action, source string) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "pi", action, source, "--no-approve")
+	cmd := picmd.Command(ctx, action, source, "--no-approve")
 	cmd.Dir = s.agentDir
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")

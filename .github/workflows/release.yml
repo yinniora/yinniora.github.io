@@ -22,6 +22,7 @@ jobs:
           node-version: '24'
       - run: npm ci --ignore-scripts
       - run: make check
+      - run: python3 -m unittest discover -s scripts -p test_install_relay.py
       - name: Validate independent release version
         run: |
           test "${GITHUB_REF_NAME#yugo-v}" = "$(node -p 'require("./package.json").version')"
@@ -53,6 +54,22 @@ jobs:
           mkdir -p build
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME#yugo-v}" -o build/pi-web ./cmd/pi-web
           python3 scripts/package_release.py --binary build/pi-web --os "$GOOS" --arch "$GOARCH"
+      - name: Build authenticated Linux relay and installer
+        if: matrix.goos == 'linux'
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w" -o build/pi-relay ./cmd/pi-relay
+          python3 scripts/package_relay.py --binary build/pi-relay --arch "$GOARCH"
+      - name: Package the independently hosted web client
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: |
+          make remote-build
+          version="${GITHUB_REF_NAME#yugo-v}"
+          cd web/dist-remote
+          python3 -m zipfile -c "../../dist/yugo-pi-web-client-$version.zip" .nojekyll .well-known *
       - uses: actions/upload-artifact@v7
         with:
           name: yugo-pi-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -78,6 +95,11 @@ jobs:
           merge-multiple: true
       - name: Drop updater metadata
         run: rm -f artifacts/*.blockmap artifacts/latest*.yml
+      - uses: actions/checkout@v6
+        with:
+          path: source
+      - name: Include YuGo backend compatibility metadata
+        run: cp source/scripts/yugo-backend-compatibility.json artifacts/
       - uses: softprops/action-gh-release@v2
         with:
           name: YuGo Pi ${{ github.ref_name }}

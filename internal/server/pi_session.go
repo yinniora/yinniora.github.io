@@ -60,6 +60,12 @@ func (s *Server) handlePiSession(w http.ResponseWriter, r *http.Request) {
 	}
 	parent, timeout := r.Context(), 30*time.Second
 	if action == workers.PiSessionCompact {
+		finish, accepted := s.beginManagedWork()
+		if !accepted {
+			writeJSONError(w, http.StatusConflict, workers.ErrRestarting.Error())
+			return
+		}
+		defer finish()
 		// Let Pi finish writing the compaction entry if the phone changes views.
 		parent, timeout = context.WithoutCancel(parent), 4*time.Minute
 	}

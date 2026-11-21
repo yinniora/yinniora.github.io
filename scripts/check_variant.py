@@ -18,7 +18,7 @@ def check(root=ROOT):
     assert 'The above copyright notice and this permission notice' in license_text
     assert 'independently maintained' in (root / 'NOTICE').read_text()
     app = (root / 'internal/app/app.go').read_text()
-    assert 'updater.NewTracking(version)' in app
+    assert 'updater.NewYuGoTracking(version)' in app
     assert (root / 'internal/updater/upstream-base.txt').read_text().strip().startswith(config['baseCommit'])
     assert 'return runInstall(ctx)' not in app
     extension = (root / '.pi/extensions/pi-web.ts').read_text()

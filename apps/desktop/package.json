@@ -21,7 +21,7 @@
     "productName": "YuGo Pi Client",
     "artifactName": "yugo-pi-client-${version}-${os}-${arch}.${ext}",
     "copyright": "MIT License",
-    "files": ["main.js", "offline.html", "package.json"],
+    "files": ["main.js", "host.js", "client-update.js", "offline.html", "starting.html", "package.json", "build/icon.png"],
     "extraResources": [
       { "from": "../../LICENSE", "to": "LICENSE" },
       { "from": "../../NOTICE", "to": "NOTICE" }

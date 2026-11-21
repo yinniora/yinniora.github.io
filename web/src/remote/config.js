@@ -12,6 +12,7 @@ export function publicRemoteConfig(config) {
     'signalUrl',
     'iceUrl',
     'directUrl',
+    'lanUrl',
     'locale',
     'relayAuth',
   ])
@@ -19,7 +20,14 @@ export function publicRemoteConfig(config) {
   return validateRemoteConfig(result);
 }
 
-export function parsePairingLink(input, { origin = location.origin, now = Date.now() } = {}) {
+export function parsePairingLink(
+  input,
+  {
+    origin = location.origin,
+    now = Date.now(),
+    nativeLAN = typeof globalThis.__YUGOPI_LAN_SOCKET__ === 'function',
+  } = {},
+) {
   try {
     const text = String(input || '').trim();
     if (!text || text.length > 8192) throw new Error();
@@ -83,16 +91,27 @@ export function parsePairingLink(input, { origin = location.origin, now = Date.n
     }
     if (
       config.relayTicket &&
-      (typeof config.relayTicket !== 'string' || config.relayTicket.length > 512)
+      (typeof config.relayTicket !== 'string' ||
+        config.relayTicket.length > 512 ||
+        !config.signalUrl ||
+        !config.iceUrl ||
+        new URL(config.signalUrl).searchParams.get('room') !==
+          new URL(config.iceUrl).searchParams.get('room'))
     )
       throw new Error();
+    const publicConfig = publicRemoteConfig(config);
+    if (publicConfig.lanUrl && !publicConfig.directUrl && !publicConfig.signalUrl && !nativeLAN) {
+      const error = new Error('remote.lanNeedsApp');
+      error.code = 'lanNeedsApp';
+      throw error;
+    }
     return {
-      ...publicRemoteConfig(config),
+      ...publicConfig,
       ticket: config.ticket,
       ...(config.relayTicket ? { relayTicket: config.relayTicket } : {}),
     };
   } catch (error) {
-    if (error.code === 'expiredPairing') throw error;
+    if (error.code === 'expiredPairing' || error.code === 'lanNeedsApp') throw error;
     const invalid = new Error('remote.invalidPairing');
     invalid.code = 'invalidPairing';
     throw invalid;
@@ -105,6 +124,17 @@ export function readRemoteConfig(storage = localStorage) {
     return value ? publicRemoteConfig(value) : null;
   } catch {
     return null;
+  }
+}
+
+export function readRemoteStartup(url, storage) {
+  const config = readRemoteConfig(storage);
+  if (!url.hash.startsWith('#pair='))
+    return { config, autoConnect: !url.searchParams.has('pairing') };
+  try {
+    return { config: parsePairingLink(url.href, { origin: url.origin }), autoConnect: true };
+  } catch (error) {
+    return { config, autoConnect: false, error };
   }
 }
 

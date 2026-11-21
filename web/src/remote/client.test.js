@@ -30,9 +30,33 @@ it.each([
     'all',
     true,
   ],
+  [
+    'auto',
+    'wss://host.tail.example/remote-signal',
+    ['wss://host.tail.example/remote-signal'],
+    'all',
+    false,
+    true,
+  ],
+  [
+    'tailscale',
+    'wss://host.tail.example/remote-signal',
+    ['wss://host.tail.example/remote-signal'],
+    'all',
+    false,
+    true,
+  ],
+  [
+    'vps',
+    'wss://host.tail.example/remote-signal',
+    ['wss://host.tail.example/remote-signal'],
+    'all',
+    false,
+    true,
+  ],
 ])(
   'keeps %s routing usable without changing network settings',
-  async (preference, directUrl, expected, policy, needsIce) => {
+  async (preference, directUrl, expected, policy, needsIce, directOnly = false) => {
     const fetch = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -78,14 +102,51 @@ it.each([
       },
     );
     const { RemoteClient } = await import('./client.js');
-    await expect(
-      new RemoteClient({ ...config, directUrl }, { preference }).connect(),
-    ).rejects.toThrow();
+    const routes = directOnly
+      ? { version: config.version, fingerprint: config.fingerprint, directUrl }
+      : { ...config, directUrl };
+    await expect(new RemoteClient(routes, { preference }).connect()).rejects.toThrow();
     expect(endpoints).toEqual(expected);
     expect(peers[0].options.iceTransportPolicy).toBe(policy);
     expect(fetch.mock.calls.length > 0).toBe(needsIce);
   },
 );
+
+it('sends only the LAN signaling address and pin to the native socket factory', async () => {
+  const lanUrl = 'wss://192.168.2.9:43124/remote-signal';
+  const fetch = vi.fn();
+  const browserSocket = vi.fn();
+  const nativeLANSocket = vi.fn(() => {
+    const socket = { close: () => socket.onclose?.() };
+    queueMicrotask(() => socket.onerror());
+    return socket;
+  });
+  vi.stubGlobal('fetch', fetch);
+  vi.stubGlobal('WebSocket', browserSocket);
+  vi.stubGlobal(
+    'RTCPeerConnection',
+    class {
+      createDataChannel() {
+        this.channel = {};
+        return this.channel;
+      }
+      close() {
+        this.channel.onclose?.();
+      }
+    },
+  );
+  const { RemoteClient } = await import('./client.js');
+  const direct = { fingerprint: config.fingerprint, lanUrl };
+  await expect(new RemoteClient(direct, { nativeLANSocket }).connect()).rejects.toThrow();
+  expect(nativeLANSocket).toHaveBeenCalledExactlyOnceWith(lanUrl, config.fingerprint);
+  await expect(new RemoteClient(direct, { nativeLANSocket: null }).connect()).rejects.toMatchObject(
+    {
+      code: 'lanNeedsApp',
+    },
+  );
+  expect(browserSocket).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalled();
+});
 
 it('reports loading for finite requests without treating the event stream as permanent loading', async () => {
   const { RemoteClient } = await import('./client.js');

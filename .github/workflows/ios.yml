@@ -1,0 +1,38 @@
+name: YuGo Pi iOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/ios/**'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'apps/ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    name: iOS simulator build
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test native pairing link validation
+        run: |
+          swiftc apps/ios/YuGoPi/TrustedClient.swift apps/ios/tests/PairingLinks.swift -o "$RUNNER_TEMP/yugo-ios-pairing-tests"
+          "$RUNNER_TEMP/yugo-ios-pairing-tests"
+      - name: Test pinned LAN endpoint validation
+        run: |
+          swiftc apps/ios/YuGoPi/TrustedClient.swift apps/ios/YuGoPi/LANSignaling.swift \
+            apps/ios/tests/LANEndpoints.swift -o "$RUNNER_TEMP/yugo-ios-lan-tests"
+          "$RUNNER_TEMP/yugo-ios-lan-tests"
+      - name: Build unsigned iOS Simulator app
+        run: |
+          xcodebuild -project apps/ios/YuGoPi.xcodeproj -scheme YuGoPi \
+            -configuration Debug -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/yugo-ios" CODE_SIGNING_ALLOWED=NO build

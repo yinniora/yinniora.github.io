@@ -74,6 +74,11 @@ type ChatWorker interface {
 
 type Factory func(sessionID, sessionPath string) (ChatWorker, error)
 
+var (
+	ErrRestartBusy = errors.New("finish the running Pi task before restarting")
+	ErrRestarting  = errors.New("YuGo Pi is restarting")
+)
+
 type Manager struct {
 	modelEpoch    uint64
 	resourceEpoch uint64
@@ -83,6 +88,7 @@ type Manager struct {
 	creating      map[string]*createCall
 	factory       Factory
 	retired       map[string]bool
+	restarting    bool
 
 	// pendingSends counts Send calls that have been accepted but whose prompt
 	// has not been acked yet. Spawning a worker (process start + switch_session
@@ -176,6 +182,10 @@ func (m *Manager) reapOnce(now time.Time) {
 
 func (m *Manager) Send(ctx context.Context, sessionID, sessionPath string, chat chat.Request) error {
 	m.mu.Lock()
+	if m.restarting {
+		m.mu.Unlock()
+		return ErrRestarting
+	}
 	m.refreshIdleResourcesLocked(sessionID)
 	m.pendingSends[sessionID]++
 	m.mu.Unlock()
@@ -194,6 +204,45 @@ func (m *Manager) Send(ctx context.Context, sessionID, sessionPath string, chat 
 		return err
 	}
 	return worker.Prompt(ctx, chat)
+}
+
+func (m *Manager) Busy() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.busyLocked()
+}
+
+func (m *Manager) busyLocked() bool {
+	if len(m.pendingSends) > 0 || len(m.creating) > 0 {
+		return true
+	}
+	for _, worker := range m.workers {
+		status := worker.Status()
+		if status.State == WorkerStateRunning || status.Compacting || status.WaitingForInput {
+			return true
+		}
+	}
+	return false
+}
+
+// PrepareRestart prevents any new work from starting after confirming that
+// accepted sends and active replies have finished. Release only if restart
+// could not be committed.
+func (m *Manager) PrepareRestart() (release func(), err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.restarting {
+		return nil, ErrRestarting
+	}
+	if m.busyLocked() {
+		return nil, ErrRestartBusy
+	}
+	m.restarting = true
+	return sync.OnceFunc(func() {
+		m.mu.Lock()
+		m.restarting = false
+		m.mu.Unlock()
+	}), nil
 }
 
 // Snapshot returns a point-in-time view of every live worker, for the metrics
@@ -362,6 +411,10 @@ func (m *Manager) Close() error {
 func (m *Manager) workerFor(sessionID, sessionPath string) (ChatWorker, error) {
 	for {
 		m.mu.Lock()
+		if m.restarting {
+			m.mu.Unlock()
+			return nil, ErrRestarting
+		}
 		if m.retired[sessionID] {
 			m.mu.Unlock()
 			return nil, errors.New("session permanently deleted")
