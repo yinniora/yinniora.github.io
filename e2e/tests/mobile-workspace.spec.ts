@@ -628,6 +628,7 @@ test("installed app taps work after reload, swipes, and closing a sheet", async 
 
   await session.tap();
   await expect(composer).toBeVisible();
+  await expect(page.locator("html[data-nav-motion], #spa-root[data-route-motion]")).toHaveCount(0);
   await page.reload();
   await composer.tap();
   await expect(composer).toBeFocused();
