@@ -61,6 +61,23 @@ func TestEmptyFinalReplyContinuesOnce(t *testing.T) {
 	}
 }
 
+func TestAbortedSettlementDoesNotContinueEmptyReply(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	w := &piRPCWorker{
+		stdin:   writer,
+		pending: make(map[string]chan response),
+		status:  workers.WorkerStatus{State: workers.WorkerStateRunning},
+	}
+	w.handleRPCLine(`{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"stop","usage":{"output":0}}}`)
+	w.handleRPCLine(`{"type":"agent_end","willRetry":false}`)
+	w.handleRPCLine(`{"type":"agent_settled","aborted":true}`)
+	if got := w.Status().State; got != workers.WorkerStateIdle || w.emptyRecoveries != 0 {
+		t.Fatalf("aborted reply resumed: state=%s, recoveries=%d", got, w.emptyRecoveries)
+	}
+}
+
 func TestEmptyFinalReplyNeedsNoContentAndNoOutput(t *testing.T) {
 	for _, c := range []struct {
 		stop        string

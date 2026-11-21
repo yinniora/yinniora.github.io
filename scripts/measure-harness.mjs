@@ -12,10 +12,17 @@ const bash = {
 
 const contextHooks = [];
 const toolDefinitions = new Map();
+const executionGuidelines = [];
 let branch = [];
 const pi = {
   on(event, handler) {
     if (event === 'context_with_system') contextHooks.push(handler);
+    if (event === 'before_agent_start') {
+      handler({
+        messageType: 'user',
+        systemPromptOptions: { promptGuidelines: executionGuidelines },
+      });
+    }
   },
   registerTool(definition) {
     toolDefinitions.set(definition.name, definition);
@@ -37,7 +44,7 @@ const extraTools = [...toolDefinitions.values()].map(({ name, description, param
 const promptGuidelines = [...toolDefinitions.values()].flatMap(
   (tool) => tool.promptGuidelines ?? [],
 );
-const updatedSystemPrompt = [systemPrompt, ...promptGuidelines].join('\n');
+const updatedSystemPrompt = [systemPrompt, ...executionGuidelines, ...promptGuidelines].join('\n');
 
 function extensionContext(messages) {
   return {
@@ -93,20 +100,31 @@ async function runFixtureTool(id, name, args, history) {
   };
 }
 
-async function workflow({ verbose, localized, checkpoint, retrieve }) {
+async function workflow({ verbose, localized, wide, checkpoint, retrieve }) {
   branch = [];
   const history = [{ role: 'user', content: [{ type: 'text', text: 'Repair the worker.' }] }];
   const requests = [history.slice()];
   for (let step = 1; step <= toolSteps; step++) {
     const isBuild = verbose && step % 8 === 0;
+    const isWideSearch = wide && step === 8;
     const failed = isBuild && step === 16;
     const toolCallId = `call-${step}`;
+    const command = isWideSearch
+      ? 'rg --max-count 1 release-marker dist'
+      : isBuild
+        ? 'make check'
+        : 'git status --short';
+    const text = isWideSearch
+      ? `dist/main.js:${'符号😀'.repeat(1700)}release-marker${'合并😀'.repeat(1700)}`
+      : isBuild
+        ? buildOutput(step, failed, localized)
+        : ' M worker.go';
     const content = [
       {
         type: 'toolCall',
         id: toolCallId,
         name: 'bash',
-        arguments: { command: isBuild ? 'make check' : 'git status --short' },
+        arguments: { command },
       },
     ];
     const results = [
@@ -115,9 +133,7 @@ async function workflow({ verbose, localized, checkpoint, retrieve }) {
         toolName: 'bash',
         toolCallId,
         isError: failed,
-        content: [
-          { type: 'text', text: isBuild ? buildOutput(step, failed, localized) : ' M worker.go' },
-        ],
+        content: [{ type: 'text', text }],
       },
     ];
     if (checkpoint && (step === 1 || step === 17)) {
@@ -141,13 +157,16 @@ async function workflow({ verbose, localized, checkpoint, retrieve }) {
       const omitted = await runFixtureTool(
         'read-first-build',
         'pi_web_read_shell_output',
-        {
-          toolCallId,
-          startLine: 160,
-          lineCount: 24,
-        },
+        isWideSearch
+          ? { toolCallId, startLine: 1, findText: 'release-marker' }
+          : {
+              toolCallId,
+              startLine: 160,
+              lineCount: 24,
+            },
         history,
       );
+      if (isWideSearch) assert.match(omitted.result.content[0].text, /release-marker/);
       history.push({ role: 'assistant', content: [omitted.call] }, omitted.result);
       requests.push(history.slice());
     }
@@ -207,6 +226,7 @@ for (const [name, options] of [
   ['sparse', {}],
   ['verbose', { verbose: true }],
   ['verbose CJK', { verbose: true, localized: true }],
+  ['wide CJK search result', { wide: true }],
 ]) {
   const requests = await workflow(options);
   const original = measure(
@@ -219,7 +239,7 @@ for (const [name, options] of [
   const updated = measure(requests, project, [bash, ...extraTools], updatedSystemPrompt);
   assert.equal(JSON.stringify(requests.at(-1)), snapshot, 'Source transcript must remain intact');
   assert.equal(updated.prefixStable, true, 'Appending a tool result must preserve the prefix');
-  if (options.verbose) {
+  if (options.verbose || options.wide) {
     assert(updated.totalBytes < original.totalBytes, 'Projection must reduce a long log workload');
   } else {
     assert.equal(
@@ -239,6 +259,13 @@ for (const [name, options] of [
       'Tool reads and checkpoint updates preserve prior prefixes',
     );
     record(name, 'two checkpoint updates + one retrieval', measured, original);
+  }
+  if (options.wide) {
+    const withLookup = await workflow({ ...options, retrieve: true });
+    const measured = measure(withLookup, project, [bash, ...extraTools], updatedSystemPrompt);
+    assert.equal(measured.prefixStable, true, 'Looking up omitted text must preserve the prefix');
+    assert(measured.totalBytes < original.totalBytes, 'A targeted lookup must still save input');
+    record(name, 'one exact lookup', measured, original);
   }
 }
 console.table(rows);

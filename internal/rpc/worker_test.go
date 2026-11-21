@@ -199,6 +199,10 @@ func TestWorkerKeepsRetryingTransientNetworkErrors(t *testing.T) {
 	if sent.Len() != 0 {
 		t.Fatalf("transient network error retry was cancelled: %q", sent.String())
 	}
+	w.handleRPCLine(`{"type":"auto_retry_start","attempt":1,"maxAttempts":1,"errorMessage":"Anthropic stream ended before message_stop"}`)
+	if sent.Len() != 0 {
+		t.Fatalf("prematurely closed provider stream retry was cancelled: %q", sent.String())
+	}
 	w.handleRPCLine(`{"type":"auto_retry_start","attempt":1,"errorMessage":"503 {\"error\":{\"type\":\"model_not_found\"}}"}`)
 	if sent.String() != "{\"type\":\"abort_retry\"}\n" {
 		t.Fatalf("provider rejection retry was not cancelled: %q", sent.String())
@@ -222,6 +226,9 @@ func TestWorkerRetriesTimeoutsAndOverloadButNotBillingOrUserAbort(t *testing.T) 
 		"429 rate limited",
 		"500 internal error",
 		"Connection error.: Client network socket disconnected before secure TLS connection was established (ECONNRESET)",
+		"OpenAI Responses stream ended before a terminal response event",
+		"stream disconnected before completion",
+		"upstream_stream_read_error",
 	} {
 		if !isAutoRetryAllowed(message) {
 			t.Errorf("%q should be retried", message)
@@ -235,6 +242,8 @@ func TestWorkerRetriesTimeoutsAndOverloadButNotBillingOrUserAbort(t *testing.T) 
 		"invalid api key",
 		`503 {"error":{"type":"model_not_found"}}`,
 		"Request aborted by user",
+		"Request aborted by user: stream disconnected before completion",
+		"Insufficient credit: upstream_stream_read_error",
 		"",
 	} {
 		if isAutoRetryAllowed(message) {

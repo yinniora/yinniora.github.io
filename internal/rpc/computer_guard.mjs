@@ -7,6 +7,8 @@ const computerTools = new Set([
 ]);
 const defaultShellTimeoutSeconds = 300;
 const approvalTimeoutMs = 120000;
+const computerGuidance =
+  'Use the registered computer tools when needed. Each action follows the current session approval policy. An earlier denial applies to that attempt only.';
 const deniedGuidance = 'Do not retry or use another tool for the blocked action. Continue unrelated work.';
 const approvalReasons = {
   cancelled: 'This computer action was cancelled.',
@@ -21,9 +23,10 @@ function orderedArguments(_key, value) {
 }
 
 export default function guardComputerTools(pi) {
-  pi.on('before_agent_start', ({ systemPrompt }) => ({
-    systemPrompt: systemPrompt + '\n\nUse the registered computer tools when needed. Each action follows the current session approval policy. An earlier denial applies to that attempt only.',
-  }));
+  pi.on('before_agent_start', ({ systemPromptOptions }) => {
+    const guidelines = systemPromptOptions?.promptGuidelines;
+    if (guidelines && !guidelines.includes(computerGuidance)) guidelines.push(computerGuidance);
+  });
   pi.registerCommand('yugo-computer-guard-ready', {
     description: 'YuGo Pi computer approval is active',
     handler: async () => {},

@@ -620,6 +620,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 		Reason       string          `json:"reason"`
 		ErrorMessage string          `json:"errorMessage"`
 		WillRetry    *bool           `json:"willRetry"`
+		Aborted      bool            `json:"aborted"`
 		Message      json.RawMessage `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(line), &meta); err != nil {
@@ -745,7 +746,7 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 			return
 		}
 		w.mu.Lock()
-		if !w.questionUnanswered && w.emptyReply && w.emptyRecoveries < maxEmptyReplyRecoveries {
+		if !meta.Aborted && !w.questionUnanswered && w.emptyReply && w.emptyRecoveries < maxEmptyReplyRecoveries {
 			w.emptyReply = false
 			w.emptyRecoveries++
 			w.recovering = true
@@ -809,9 +810,9 @@ func (w *piRPCWorker) continueAfterEmptyReply() {
 // request never got an HTTP answer, so a retry is likely to succeed.
 var transientTransportPattern = regexp.MustCompile(`(?i)\b(ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|ENETUNREACH|EHOSTUNREACH|EAI_AGAIN|UND_ERR_[A-Z_]+)\b|socket hang up|socket disconnected|secure TLS connection|network socket|fetch failed|other side closed`)
 
-// retryableErrorPattern covers everything worth another attempt: transport
-// drops, timeouts, an overloaded or rate-limited provider, and 5xx answers.
-var retryableErrorPattern = regexp.MustCompile(`(?i)request timed out|timed out|timeout|overloaded|rate.?limit|too many requests|\b(429|500|502|503|504)\b`)
+// retryableErrorPattern covers timeouts, temporary service failures, and
+// streams that ended without the provider's expected terminal event.
+var retryableErrorPattern = regexp.MustCompile(`(?i)request timed out|timed out|timeout|overloaded|rate.?limit|too many requests|\b(429|500|502|503|504)\b|stream ended before (?:message_stop|a terminal response event)|stream disconnected before completion|upstream_stream_read_error`)
 
 // terminalErrorPattern covers failures a retry cannot fix, plus the two cases
 // the user asked us to keep: no credit and an explicit interrupt.

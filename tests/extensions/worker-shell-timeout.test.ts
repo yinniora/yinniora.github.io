@@ -33,8 +33,14 @@ describe('RPC worker computer approval', () => {
     });
     const input = vi.fn().mockResolvedValueOnce('declined').mockResolvedValueOnce('approved');
     const ctx = { ui: { input } };
-    const result = await handlers.before_agent_start({ systemPrompt: 'Original system prompt' }, ctx);
-    expect(result.systemPrompt).toContain('current session approval policy');
+    const promptGuidelines = ['Keep existing tool guidance.'];
+    const event = { systemPromptOptions: { promptGuidelines } };
+    expect(handlers.before_agent_start(event, ctx)).toBeUndefined();
+    handlers.before_agent_start(event, ctx);
+    expect(promptGuidelines).toEqual([
+      'Keep existing tool guidance.',
+      expect.stringContaining('current session approval policy'),
+    ]);
     expect(input).not.toHaveBeenCalled();
     const blocked = await handlers.tool_call({ toolName: 'find_roots' }, ctx);
     expect(blocked.block).toBe(true);

@@ -9,6 +9,7 @@ type Entry = {
   firstKeptEntryId?: string;
   timestamp?: string;
   text?: string;
+  message?: { role: string; [key: string]: unknown };
 };
 
 function install(branch: Entry[] = []) {
@@ -32,6 +33,27 @@ function install(branch: Entry[] = []) {
     run: async (input = {}, signal?: AbortSignal) =>
       (await tool.execute('tool-1', input, signal, undefined, ctx)).content[0].text as string,
     project: (messages: unknown[]) => hooks.get('context_with_system')!({ messages }, ctx),
+    begin: (messageType = 'user') => hooks.get('before_agent_start')!({ messageType }, ctx),
+    guide: () => hooks.get('message_start')!({ message: { role: 'user' } }, ctx),
+    settle: () => hooks.get('agent_settled')!({}, ctx),
+    boundary: ({
+      outcome = 'completed',
+      stopReason = 'stop',
+      pending = false,
+      entries = [] as unknown[],
+      text = 'Finished this step.',
+    } = {}) =>
+      hooks.get('agent_before_settle')!(
+        {
+          outcome,
+          entries,
+          context: {
+            pendingMessages: pending ? [{ role: 'user' }] : [],
+            contextMessages: [{ role: 'assistant', stopReason, content: [{ type: 'text', text }] }],
+          },
+        },
+        ctx,
+      ),
   };
 }
 
@@ -177,5 +199,93 @@ describe('YuGo task checkpoint', () => {
     stopped.abort();
     await expect(checkpoint.run({ goal: 'Do not persist' }, stopped.signal)).rejects.toThrow();
     expect(branch).toHaveLength(1);
+  });
+
+  it('continues current open work once and preserves other extension drafts', async () => {
+    const branch: Entry[] = [{ id: 'u', type: 'message', message: { role: 'user' } }];
+    const checkpoint = install(branch);
+    checkpoint.begin();
+    await checkpoint.run({
+      goal: 'Release the fix',
+      tasks: [{ id: 'test', text: 'Verify the release', state: 'working' }],
+    });
+    expect(checkpoint.boundary({ pending: true })).toBeUndefined();
+    const draft = { type: 'custom', customType: 'other-extension' };
+    expect(checkpoint.boundary({ entries: [draft] })).toEqual({
+      continue: true,
+      entries: [
+        draft,
+        {
+          type: 'custom_message',
+          customType: 'yugo-task-continuation',
+          display: false,
+          content: expect.stringContaining('test: Verify the release'),
+        },
+      ],
+    });
+    await checkpoint.run({ tasks: [{ id: 'test', note: 'Checks still running' }] });
+    expect(checkpoint.boundary()).toBeUndefined();
+    checkpoint.settle();
+    checkpoint.begin();
+    await checkpoint.run({ tasks: [{ id: 'test', note: 'Checks still running' }] });
+    expect(checkpoint.boundary()).toBeUndefined();
+  });
+
+  it('settles completed, blocked, errored, cancelled and user-dependent work', async () => {
+    const branch: Entry[] = [{ id: 'u', type: 'message', message: { role: 'user' } }];
+    const checkpoint = install(branch);
+    checkpoint.begin();
+    await checkpoint.run({ goal: 'Deliver fix', tasks: [{ id: 'test', text: 'Verify' }] });
+    expect(checkpoint.boundary({ outcome: 'error', stopReason: 'error' })).toBeUndefined();
+    expect(checkpoint.boundary({ outcome: 'aborted' })).toBeUndefined();
+    expect(checkpoint.boundary({ stopReason: 'length' })).toBeUndefined();
+    expect(checkpoint.boundary({ text: ' ' })).toBeUndefined();
+    branch.push({
+      id: 'ask',
+      type: 'message',
+      message: {
+        role: 'toolResult',
+        toolName: 'pi_web_ask_user_question',
+        details: { awaitingChatReply: true },
+      },
+    });
+    expect(checkpoint.boundary()).toBeUndefined();
+    branch.pop();
+    branch.push({
+      id: 'denied',
+      type: 'message',
+      message: {
+        role: 'toolResult',
+        toolName: 'act_ui',
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: 'This computer action was declined. Do not retry or use another tool for the blocked action. Continue unrelated work.',
+          },
+        ],
+      },
+    });
+    expect(checkpoint.boundary()).toBeUndefined();
+    branch.pop();
+    await expect(checkpoint.run({ tasks: [{ id: 'test', state: 'blocked' }] })).rejects.toThrow(
+      'blocks',
+    );
+    await checkpoint.run({
+      tasks: [{ id: 'test', state: 'blocked', note: 'Awaiting target access' }],
+    });
+    expect(checkpoint.boundary()).toBeUndefined();
+    await checkpoint.run({ tasks: [{ id: 'test', state: 'done', note: 'All checks passed' }] });
+    expect(checkpoint.boundary()).toBeUndefined();
+  });
+
+  it('lets guidance supersede a checkpoint until the guided work is recorded', async () => {
+    const checkpoint = install([{ id: 'u', type: 'message', message: { role: 'user' } }]);
+    checkpoint.begin();
+    await checkpoint.run({ goal: 'Ship changes', tasks: [{ id: 'ship', text: 'Publish' }] });
+    checkpoint.guide();
+    expect(checkpoint.boundary()).toBeUndefined();
+    await checkpoint.run({ tasks: [{ id: 'ship', text: 'Verify the build without publishing' }] });
+    expect(checkpoint.boundary()).toMatchObject({ continue: true });
   });
 });

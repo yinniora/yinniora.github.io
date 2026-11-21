@@ -86,6 +86,7 @@ describe('YuGo harness model context', () => {
     handlers.get('before_agent_start')!(event);
     handlers.get('before_agent_start')!(event);
     expect(event.systemPromptOptions.promptGuidelines).toHaveLength(2);
+    expect(event.systemPromptOptions.promptGuidelines[1]).toContain('Batch independent reads');
   });
 
   it('keeps build diagnostics and stable, recoverable line numbers in less than half the bytes', async () => {
@@ -122,6 +123,67 @@ describe('YuGo harness model context', () => {
     );
   });
 
+  it('bounds wide lines and restores their exact Unicode code-point columns in chunks', async () => {
+    const system = { role: 'system', toolsAdded: [{ name: shellReader }] };
+    const findText = '🔑隐藏匹配[abc].';
+    const longLine = `Beginning ${'🧪中'.repeat(1800)} ${findText} ${'🐦'.repeat(100)} warning nearby ${'🚲'.repeat(1800)} end`;
+    const original = `Command matches:\n${longLine}\nNext ${findText}`;
+    const bash = shellResult('wide', original);
+    const { project, read } = shellHarness([bash]);
+    const projected = project([system, bash]).messages;
+    const excerpt = projected[1].content[0].text;
+    expect(excerpt).toContain('omitted lines or columns');
+    expect(excerpt).toContain('2 | [1–128] Beginning');
+    expect(excerpt).toContain('warning nearby');
+    expect(excerpt).toContain(' end');
+    expect(excerpt.split('\n').find((line: string) => line.startsWith('2 | '))).not.toContain(
+      findText,
+    );
+    expect(Buffer.byteLength(excerpt)).toBeLessThan(Buffer.byteLength(original) / 8);
+    expect(bash.content[0].text).toBe(original);
+    expect(project([system, bash, shellResult('next', 'ok')]).messages.slice(0, 2)).toEqual(
+      projected,
+    );
+
+    const characters = Array.from(longLine);
+    const beforeMatch = longLine.slice(0, longLine.indexOf(findText));
+    const matchColumn = Array.from(beforeMatch).length + 1;
+    const readMatch = await read({ toolCallId: 'wide', startLine: 2, startColumn: matchColumn });
+    expect(readMatch.content[0].text.split('\n')[1]).toMatch(/^2 \| 🔑隐藏匹配\[abc\]\./);
+    const firstMatch = await read({ toolCallId: 'wide', startLine: 1, findText });
+    expect(firstMatch.content[0].text).toContain(`match at line 2, column ${matchColumn} `);
+    expect(firstMatch.content[0].text).toContain(findText);
+    expect(Buffer.byteLength(firstMatch.content[0].text)).toBeLessThan(512);
+    const nextMatch = await read({
+      toolCallId: 'wide',
+      startLine: 2,
+      startColumn: matchColumn + 1,
+      findText,
+    });
+    expect(nextMatch.content[0].text).toContain('match at line 3, column 6');
+    const noMatch = await read({ toolCallId: 'wide', startLine: 1, findText: '隐藏匹配abc' });
+    expect(noMatch.content[0].text).toContain('No exact match');
+    await expect(read({ toolCallId: 'other-branch', startLine: 1, findText })).rejects.toThrow(
+      'active model context',
+    );
+
+    const restored = [];
+    let startColumn: number | undefined;
+    do {
+      const chunk = await read({ toolCallId: 'wide', startLine: 2, startColumn });
+      const result = chunk.content[0].text;
+      expect(Buffer.byteLength(result)).toBeLessThanOrEqual(8192);
+      restored.push(result.split('\n')[1].slice('2 | '.length));
+      const next = result.match(/Continue with startColumn (\d+)/);
+      startColumn = next ? Number(next[1]) : undefined;
+    } while (startColumn);
+    expect(restored.length).toBeGreaterThan(1);
+    expect(restored.join('')).toBe(longLine);
+    await expect(
+      read({ toolCallId: 'wide', startLine: 2, startColumn: characters.length + 1 }),
+    ).rejects.toThrow('Choose a column');
+  });
+
   it('leaves errors, machine-readable data and results without accessible recovery intact', () => {
     const system = { role: 'system', toolsAdded: [{ name: shellReader }] };
     const removed = { role: 'system', toolsRemoved: [{ name: shellReader }] };
@@ -136,6 +198,9 @@ describe('YuGo harness model context', () => {
         { ...bash, structuredContent: { result: 'keep this' } },
         { ...bash, content: [...bash.content, { type: 'image', data: 'image' }] },
         shellResult('json', JSON.stringify(logLines, null, 2)),
+        shellResult('json-wide', JSON.stringify({ result: 'A'.repeat(10000) })),
+        shellResult('json-lines-wide', `${JSON.stringify({ result: 'A'.repeat(10000) })}\n{}`),
+        shellResult('escape-wide', `\x1b[31m${'A'.repeat(10000)}`),
         shellResult('too-many-errors', logLines.map((line) => `ERROR: ${line}`).join('\n')),
       ]),
     ).toBeUndefined();

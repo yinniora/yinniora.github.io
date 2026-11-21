@@ -6,12 +6,14 @@ const readOnlyTools = new Set(['read', 'grep', 'find', 'ls']);
 const minimumRepeatedOutput = 4096;
 const shellReader = 'pi_web_read_shell_output';
 const shellOutputThreshold = 3072;
+const wideShellLineBytes = 3072;
 const shellExcerptBudget = 4096;
 const shellReadBudget = 8192;
 const shellDiagnostic =
   /\b(?:error|fatal|panic|traceback|exception|warning|warn|fail|failed|failure|denied|not ok|exit(?:ed)? (?:code|status))\b|npm\s+ERR!|错误|失败|警告|异常/i;
+const shellDiagnosticMatches = new RegExp(shellDiagnostic.source, 'gi');
 const focusedToolOutput =
-  'Use targeted searches, file ranges, and bounded command output. Repeat a read only when necessary to verify the current state.';
+  'Batch independent reads. Use narrow file ranges and size-bounded source searches. Reread only to verify changes.';
 
 function plainToolText(message) {
   if (
@@ -59,6 +61,19 @@ export function deduplicateToolOutput(messages) {
   return updated;
 }
 
+function isJSON(text) {
+  const first = text.trimStart()[0];
+  if (first === '[' || first === '{') {
+    try {
+      JSON.parse(text);
+      return true;
+    } catch {
+      // Bracket-prefixed log lines are common in plain shell output.
+    }
+  }
+  return false;
+}
+
 function largeShellOutput(message) {
   if (message.toolName !== 'bash') return;
   const text = plainToolText(message);
@@ -66,22 +81,43 @@ function largeShellOutput(message) {
   const bytes = Buffer.byteLength(text);
   if (bytes < shellOutputThreshold) return;
   const lines = text.split('\n');
-  if (lines.length < 48 || lines.some((line) => Buffer.byteLength(line) > 3072)) return;
-  const first = text.trimStart()[0];
-  if (first === '[' || first === '{') {
-    try {
-      JSON.parse(text);
-      return;
-    } catch {
-      // Bracket-prefixed log lines are common in plain shell output.
-    }
-  }
-  return { lines, bytes };
+  const hasWideLines = lines.some((line) => Buffer.byteLength(line) > wideShellLineBytes);
+  if ((lines.length < 48 && !hasWideLines) || isJSON(text)) return;
+  return { lines, bytes, hasWideLines };
 }
 
-function shellExcerpt({ lines, bytes }, toolCallId) {
+function wideShellExcerpt(line) {
+  if (Buffer.byteLength(line) <= 768) return line;
+  // Leave the entire result intact when a retained line contains JSON or terminal controls.
+  if (line !== stripVTControlCharacters(line) || isJSON(line)) return undefined;
+
+  const columns = Array.from(line);
+  const windows = [[0, Math.min(128, columns.length)]];
+  let offset = 0;
+  let column = 0;
+  for (const match of line.matchAll(shellDiagnosticMatches)) {
+    column += Array.from(line.slice(offset, match.index)).length;
+    offset = match.index;
+    windows.push([Math.max(0, column - 24), Math.min(columns.length, column + match[0].length + 36)]);
+  }
+  windows.push([Math.max(0, columns.length - 96), columns.length]);
+  windows.sort(([a], [b]) => a - b);
+
+  const merged = [];
+  for (const [start, end] of windows) {
+    const previous = merged.at(-1);
+    if (previous && start <= previous[1]) previous[1] = Math.max(end, previous[1]);
+    else merged.push([start, end]);
+  }
+  if (merged.length === 1) return line;
+  return merged
+    .map(([start, end]) => `[${start + 1}–${end}] ${columns.slice(start, end).join('')}`)
+    .join(' … ');
+}
+
+function shellExcerpt({ lines, bytes, hasWideLines }, toolCallId) {
   const output = [
-    `[Bash output excerpt. Use ${shellReader} with toolCallId ${JSON.stringify(toolCallId)} for omitted lines.]`,
+    `[Bash output excerpt. Use ${shellReader} with toolCallId ${JSON.stringify(toolCallId)} for omitted lines${hasWideLines ? ' or columns' : ''}.]`,
   ];
   const keep = new Set();
   for (let index = 0; index < lines.length; index++) {
@@ -96,7 +132,9 @@ function shellExcerpt({ lines, bytes }, toolCallId) {
   let previous = -1;
   for (const index of [...keep].sort((a, b) => a - b)) {
     if (index > previous + 1) output.push(`[Lines ${previous + 2}–${index} omitted]`);
-    output.push(`${index + 1} | ${lines[index]}`);
+    const line = hasWideLines ? wideShellExcerpt(lines[index]) : lines[index];
+    if (line === undefined) return;
+    output.push(`${index + 1} | ${line}`);
     previous = index;
   }
   const excerpt = output.join('\n');
@@ -127,7 +165,53 @@ function declaresShellReader(messages) {
   return available;
 }
 
-function readShellOutput({ toolCallId, startLine, lineCount = 24 }, sessionManager) {
+function readShellColumns(line, lineNumber, startColumn) {
+  const columns = Array.from(line);
+  if (!Number.isInteger(startColumn) || startColumn < 1 || startColumn > columns.length) {
+    throw new Error(`Choose a column from 1 to ${columns.length} on line ${lineNumber}.`);
+  }
+
+  let remaining = shellReadBudget - 160;
+  let end = startColumn - 1;
+  for (; end < columns.length; end++) {
+    remaining -= Buffer.byteLength(columns[end]);
+    if (remaining < 0) break;
+  }
+  const text = [
+    `Bash output line ${lineNumber}, columns ${startColumn}–${end} of ${columns.length}.`,
+    `${lineNumber} | ${columns.slice(startColumn - 1, end).join('')}`,
+  ];
+  if (end < columns.length) text.push(`Continue with startColumn ${end + 1}.`);
+  return text.join('\n');
+}
+
+function findShellText(lines, findText, startLine, startColumn = 1) {
+  const literal = typeof findText === 'string' ? Array.from(findText) : [];
+  if (!literal.length || literal.length > 256 || /[\r\n\uD800-\uDFFF]/u.test(findText)) {
+    throw new Error('Choose one line of literal search text (1–256 Unicode code points).');
+  }
+  const firstLine = Array.from(lines[startLine - 1]);
+  if (!Number.isInteger(startColumn) || startColumn < 1 || startColumn > firstLine.length + 1) {
+    throw new Error(`Choose a column from 1 to ${firstLine.length + 1} on line ${startLine}.`);
+  }
+
+  let offset = firstLine.slice(0, startColumn - 1).join('').length;
+  for (let index = startLine - 1; index < lines.length; index++, offset = 0) {
+    const match = lines[index].indexOf(findText, offset);
+    if (match === -1) continue;
+    const column = Array.from(lines[index].slice(0, match)).length;
+    const columns = Array.from(lines[index]);
+    const start = Math.max(0, column - 48);
+    const end = Math.min(columns.length, column + literal.length + 48);
+    return `Bash output match at line ${index + 1}, column ${column + 1} (showing columns ${start + 1}–${end}).\n${index + 1} | ${columns.slice(start, end).join('')}`;
+  }
+  return `No exact match found from line ${startLine}, column ${startColumn}.`;
+}
+
+function readShellOutput(
+  { toolCallId, startLine, lineCount = 24, startColumn, findText },
+  sessionManager,
+) {
   // Native projection limits retrieval to the current branch and respects context edits.
   const result = sessionManager
     ?.buildSessionProjection?.()
@@ -139,8 +223,12 @@ function readShellOutput({ toolCallId, startLine, lineCount = 24 }, sessionManag
   if (!Number.isInteger(startLine) || startLine < 1 || startLine > lines.length) {
     throw new Error(`Choose a start line from 1 to ${lines.length}.`);
   }
+  if (findText !== undefined) return findShellText(lines, findText, startLine, startColumn);
   if (!Number.isInteger(lineCount) || lineCount < 1 || lineCount > 64) {
     throw new Error('Choose a line count from 1 to 64.');
+  }
+  if (startColumn !== undefined) {
+    return readShellColumns(lines[startLine - 1], startLine, startColumn);
   }
 
   let remaining = shellReadBudget - 80;
@@ -149,12 +237,14 @@ function readShellOutput({ toolCallId, startLine, lineCount = 24 }, sessionManag
   for (; index < Math.min(lines.length, startLine + lineCount - 1); index++) {
     const line = `${index + 1} | ${lines[index]}`;
     remaining -= Buffer.byteLength(line) + 1;
-    if (remaining < 0) break;
+    if (remaining < 0) {
+      if (output.length === 0) return readShellColumns(lines[index], startLine, 1);
+      break;
+    }
     output.push(line);
   }
   const heading = `Bash output lines ${startLine}–${index} of ${lines.length}.`;
-  const text = [heading, ...output].join('\n');
-  return { content: [{ type: 'text', text }], details: undefined };
+  return [heading, ...output].join('\n');
 }
 
 export default function setupHarness(pi) {
@@ -162,16 +252,19 @@ export default function setupHarness(pi) {
     name: shellReader,
     label: 'Read Bash output',
     description:
-      'Read omitted lines from recorded Bash output in this conversation by tool call ID.',
+      'Read recorded Bash output or findText literally. Columns are 1-based Unicode code points.',
     exposure: 'model-only',
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     parameters: Type.Object({
       toolCallId: Type.String(),
       startLine: Type.Integer({ minimum: 1 }),
       lineCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 64 })),
+      startColumn: Type.Optional(Type.Integer({ minimum: 1 })),
+      findText: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      return readShellOutput(params, ctx.sessionManager);
+      const text = readShellOutput(params, ctx.sessionManager);
+      return { content: [{ type: 'text', text }], details: undefined };
     },
   });
 

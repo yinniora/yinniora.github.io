@@ -402,12 +402,13 @@ cache reads and cache writes, plus the current context estimate when available.
 The embedded worker harness uses Pi's `context_with_system` hook to replace
 large, byte-identical repeated results from read-only tools with references to
 earlier results. Tool calls, first results and saved transcripts retain their
-full content. Plain-text Bash results of at least 3 KiB and 48 lines can use a
-numbered excerpt with their boundaries and diagnostics when it saves at least
-30% of the original bytes. The model can request omitted ranges from
-the active session context without running the command again. The projection
-is append-stable so new results can reuse an existing prompt prefix. Pi's native
-provider caching remains active. Automatic
+full content. Plain-text Bash results of at least 3 KiB and either 48 lines or a
+line over 3 KiB can use a numbered excerpt with their boundaries and diagnostics
+when it saves at least 30% of the original bytes. The model can read exact lines
+and columns or search for a literal in the active session context without
+running the command again. The execution guidance favors bounded searches and
+batched independent reads. The projection is append-stable so new results can
+reuse an existing prompt prefix. Pi's native provider caching remains active. Automatic
 cache-warming requests stop for credentials managed by YuGo because token-based
 pricing estimates cannot account for flat per-request fees.
 
@@ -415,8 +416,12 @@ The worker's task checkpoint tool merges goals, constraints and work items into
 Pi custom entries on the active branch. It requires evidence or a reason when
 closing an item. Compaction carries the latest checkpoint at the time of
 compaction in the outgoing model context. Keeping that snapshot fixed lets later
-task updates append while preserving the cached prefix. Checkpoint saves share
-the active tool loop.
+task updates append while preserving the cached prefix. Batch checkpoint saves
+with useful tool calls. When a prompted run updates its checkpoint and then
+stops normally with actionable work, Pi's native settlement hook can add one
+short continuation. It uses the checkpoint locally, without an evaluator model
+or a duplicate user turn. Pending messages, blockers, approval and question
+waits, provider errors and cancellations take precedence over this check.
 
 Run `node scripts/measure-harness.mjs` for a repeatable synthetic comparison of
 request sizes with checkpoint overhead and optional Bash output retrieval. Use
