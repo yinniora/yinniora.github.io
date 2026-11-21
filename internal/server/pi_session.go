@@ -102,14 +102,7 @@ func (s *Server) handlePiSession(w http.ResponseWriter, r *http.Request) {
 		s.broadcast(id, "reload")
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	case workers.PiSessionStats:
-		var stats struct {
-			TotalMessages int `json:"totalMessages"`
-			ToolCalls     int `json:"toolCalls"`
-			Tokens        struct {
-				Total     int `json:"total"`
-				CacheRead int `json:"cacheRead"`
-			} `json:"tokens"`
-		}
+		var stats workers.PiSessionStatistics
 		if json.Unmarshal(data, &stats) != nil {
 			writeJSONError(w, 502, "Pi returned invalid session statistics")
 			return

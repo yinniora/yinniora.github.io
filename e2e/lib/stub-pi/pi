@@ -243,7 +243,11 @@ function handle(cmd) {
         : COMMANDS });
       break;
     case "get_session_stats":
-      respond(cmd.id, "get_session_stats", { totalMessages: 12, toolCalls: 4, tokens: { total: 1000, cacheRead: 250 } });
+      respond(cmd.id, "get_session_stats", {
+        totalMessages: 12, toolCalls: 4,
+        tokens: { total: 1000, input: 450, output: 200, cacheRead: 250, cacheWrite: 100 },
+        contextUsage: { tokens: 900, contextWindow: 128000 },
+      });
       break;
     case "compact":
       respond(cmd.id, "compact", { tokensBefore: 1000 });

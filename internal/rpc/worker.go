@@ -230,7 +230,7 @@ func (w *piRPCWorker) Prompt(ctx context.Context, chat chat.Request) error {
 	w.mu.Unlock()
 	if checkContext {
 		var compactErr error
-		if needsCompaction(w.sessionPath, limits, chat) {
+		if w.shouldCompactContext(ctx, limits, chat) {
 			compactErr = w.compactContext(ctx)
 		}
 		w.mu.Lock()

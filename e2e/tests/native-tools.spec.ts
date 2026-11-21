@@ -13,6 +13,12 @@ test("native session tools and interactive extension commands work in one conver
   const session = page.getByRole("dialog", { name: "Session tools" });
   await expect(session.locator("dl")).toContainText("12");
   await expect(session.locator("dl")).toContainText("250");
+  const usage = await page.evaluate(async (sessionId) => {
+    const response = await fetch("/api/pi-session?id=" + encodeURIComponent(sessionId));
+    return response.json();
+  }, id);
+  expect(usage.tokens).toMatchObject({ input: 450, output: 200, cacheRead: 250, cacheWrite: 100 });
+  expect(usage.contextUsage).toMatchObject({ tokens: 900, contextWindow: 128000 });
   const download = page.waitForEvent("download");
   await session.getByRole("button", { name: "Download HTML" }).click();
   const file = await download;

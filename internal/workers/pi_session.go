@@ -14,6 +14,22 @@ const (
 	PiSessionExport  PiSessionAction = "export_html"
 )
 
+type PiSessionStatistics struct {
+	TotalMessages int `json:"totalMessages"`
+	ToolCalls     int `json:"toolCalls"`
+	Tokens        struct {
+		Total      int  `json:"total"`
+		CacheRead  int  `json:"cacheRead"`
+		Input      *int `json:"input,omitempty"`
+		Output     *int `json:"output,omitempty"`
+		CacheWrite *int `json:"cacheWrite,omitempty"`
+	} `json:"tokens"`
+	ContextUsage *struct {
+		Tokens        *int `json:"tokens"`
+		ContextWindow int  `json:"contextWindow"`
+	} `json:"contextUsage,omitempty"`
+}
+
 var ErrPiSessionBusy = errors.New("session is busy")
 var ErrPiContextCompaction = errors.New("context compaction failed")
 

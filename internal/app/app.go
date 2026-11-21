@@ -150,6 +150,10 @@ func Main(version string) {
 	if harnessErr != nil {
 		fmt.Fprintf(os.Stderr, "cannot load YuGo harness extension: %v\n", harnessErr)
 	}
+	checkpointPath, checkpointErr := rpc.InstallTaskCheckpoint(agentdir.WebDir(agentDir))
+	if checkpointErr != nil {
+		fmt.Fprintf(os.Stderr, "cannot load YuGo task checkpoint extension: %v\n", checkpointErr)
+	}
 	manager := workers.NewManager(func(sessionID, sessionPath string) (workers.ChatWorker, error) {
 		if guardErr != nil {
 			return nil, fmt.Errorf("cannot load computer guard: %w", guardErr)
@@ -163,7 +167,7 @@ func Main(version string) {
 				return "ask"
 			}
 			return srv.ComputerMode(sessionID)
-		}, harnessPath)
+		}, harnessPath, checkpointPath)
 	})
 	var srvErr error
 	srv, srvErr = server.New(server.Deps{

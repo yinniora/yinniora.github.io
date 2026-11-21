@@ -9,12 +9,14 @@ import (
 )
 
 func (w *piRPCWorker) PiSessionAction(ctx context.Context, action workers.PiSessionAction, outputPath string) (json.RawMessage, error) {
-	cmd := map[string]any{"id": w.nextID(), "type": string(action)}
+	id := w.nextID()
+	cmd := map[string]any{"id": id, "type": string(action)}
 	switch action {
 	case workers.PiSessionStats:
 	case workers.PiSessionExport:
 		cmd["outputPath"] = outputPath
 	case workers.PiSessionCompact:
+		cmd = compactCommand(id)
 		w.modelMu.Lock()
 		w.mu.Lock()
 		if w.status.State == workers.WorkerStateRunning || w.compacting {

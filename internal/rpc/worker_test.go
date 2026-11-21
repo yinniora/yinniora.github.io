@@ -36,7 +36,7 @@ func waitForPending(t *testing.T, w *piRPCWorker, id string) {
 	t.Fatalf("pending request %q never registered", id)
 }
 
-func TestPromptCompactsAfterMeasuredLengthStopEvenWhenPiArchivedIt(t *testing.T) {
+func TestPromptCompactionUsesNativeContextThenArchiveFallback(t *testing.T) {
 	path := t.TempDir() + "/session.jsonl"
 	fixture := `{"type":"session","version":3}
 {"type":"message","id":"user","parentId":null,"message":{"role":"user","content":"task"}}
@@ -47,34 +47,60 @@ func TestPromptCompactsAfterMeasuredLengthStopEvenWhenPiArchivedIt(t *testing.T)
 	if err := os.WriteFile(path, []byte(fixture), 0600); err != nil {
 		t.Fatal(err)
 	}
-	reader, writer := io.Pipe()
-	defer reader.Close()
-	defer writer.Close()
 	limits := model{ID: "opus", Provider: "local", ContextWindow: 128000, MaxTokens: 32000}
-	w := &piRPCWorker{stdin: writer, sessionPath: path, modelLimits: limits, autoCompaction: true, pending: make(map[string]chan response)}
-	result := make(chan error, 1)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	go func() {
-		defer writer.Close()
-		result <- w.Prompt(ctx, chat.Request{Message: "Resume this task"})
-	}()
-	scan := bufio.NewScanner(reader)
-	for _, command := range []string{"compact", "prompt"} {
-		if !scan.Scan() {
-			t.Fatalf("expected %s: %v", command, scan.Err())
-		}
-		var sent map[string]any
-		if err := json.Unmarshal(scan.Bytes(), &sent); err != nil || sent["type"] != command {
-			t.Fatalf("expected %s, got %s", command, scan.Text())
-		}
-		if (command == "compact") != w.Status().Compacting {
-			t.Fatalf("unexpected compaction state at %s: %+v", command, w.Status())
-		}
-		w.handleRPCLine(`{"type":"response","id":` + strconv.Quote(sent["id"].(string)) + `,"success":true}`)
-	}
-	if err := <-result; err != nil {
-		t.Fatal(err)
+	for _, test := range []struct {
+		name    string
+		stats   string
+		compact bool
+	}{
+		{name: "legacy worker uses last measured length stop", stats: `{}`, compact: true},
+		{name: "native null can fall back to archived length stop", stats: `{"contextUsage":{"tokens":null}}`, compact: true},
+		{name: "native zero can fall back to archived length stop", stats: `{"contextUsage":{"tokens":0}}`, compact: true},
+		{name: "small native projection avoids a redundant compaction", stats: `{"contextUsage":{"tokens":34000,"contextWindow":128000}}`},
+		{name: "fresh native usage still protects output space", stats: `{"contextUsage":{"tokens":120000,"contextWindow":128000}}`, compact: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reader, writer := io.Pipe()
+			defer reader.Close()
+			defer writer.Close()
+			w := &piRPCWorker{stdin: writer, sessionPath: path, modelLimits: limits, autoCompaction: true, pending: make(map[string]chan response)}
+			result := make(chan error, 1)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			go func() {
+				defer writer.Close()
+				result <- w.Prompt(ctx, chat.Request{Message: "Resume this task"})
+			}()
+			commands := []string{"get_session_stats"}
+			if test.compact {
+				commands = append(commands, "compact")
+			}
+			commands = append(commands, "prompt")
+			scan := bufio.NewScanner(reader)
+			for _, command := range commands {
+				if !scan.Scan() {
+					t.Fatalf("expected %s: %v", command, scan.Err())
+				}
+				var sent map[string]any
+				if err := json.Unmarshal(scan.Bytes(), &sent); err != nil || sent["type"] != command {
+					t.Fatalf("expected %s, got %s", command, scan.Text())
+				}
+				if (command != "prompt") != w.Status().Compacting {
+					t.Fatalf("unexpected compaction state at %s: %+v", command, w.Status())
+				}
+				if command == "compact" && sent["customInstructions"] != compactInstructions {
+					t.Fatalf("compaction instructions missing: %v", sent)
+				}
+				data := `{}`
+				if command == "get_session_stats" {
+					data = test.stats
+				}
+				w.handleRPCLine(`{"type":"response","id":` + strconv.Quote(sent["id"].(string)) + `,"success":true,"data":` + data + `}`)
+			}
+			if err := <-result; err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 	if err := os.WriteFile(path, []byte(fixture+`{"type":"compaction","id":"new","parentId":"omit"}`+"\n"), 0600); err != nil {
 		t.Fatal(err)
