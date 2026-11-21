@@ -19,7 +19,12 @@ test("streamed thinking stays in the same activity panel when saved", async ({ p
   ]);
   await page.addInitScript(() => {
     const events = new Map<string, EventSource>();
+    const statusSnapshots = new WeakSet<EventSource>();
     const native = window.EventSource;
+    (window as any).fixtureEventsReady = (id: string) => {
+      const statusSource = events.get("__all__");
+      return statusSource && statusSnapshots.has(statusSource) && events.get(id)?.readyState === native.OPEN;
+    };
     (window as any).sendFixtureEvent = (id: string, type: string, data: unknown) =>
       events.get(id)?.dispatchEvent(new MessageEvent(type, { data: JSON.stringify(data) }));
     window.EventSource = class extends native {
@@ -27,12 +32,17 @@ test("streamed thinking stays in the same activity panel when saved", async ({ p
         super(url, options);
         const id = new URL(url, location.href).searchParams.get("id");
         if (id) events.set(id, this);
+        if (id === "__all__") {
+          this.addEventListener("status-snapshot", () => statusSnapshots.add(this), { once: true });
+        }
       }
     };
   });
   await collapseScratchpad(page);
   await page.goto(`/session?id=${encodeURIComponent(id)}`);
   await expect(page.locator("#messages")).toContainText("Continue the task.");
+  // The real initial snapshot reports idle and can overwrite the fake running delta.
+  await page.waitForFunction((id) => (window as any).fixtureEventsReady(id), id);
   const thought = page.locator("#messages-list .activity-thinking-text").filter({ hasText: "Fixture thought" });
   const preview = { content: "", thinking: "Fixture thought", messageTimestamp: timestamp + 1, thinkingIndex: 0 };
   await page.evaluate(({ id, preview }) => {

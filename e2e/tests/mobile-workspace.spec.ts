@@ -298,10 +298,10 @@ test("model settings refresh labeled keys and explicitly apply and remove multip
     const group = page.getByRole("region", { name: label, exact: true });
     await expect(group).toHaveCount(0);
     await page
-      .getByRole("checkbox", { name: "yugo-chat-one", exact: true })
+      .getByRole("checkbox", { name: /^yugo-chat-one(?:\s|$)/ })
       .check();
     await page
-      .getByRole("checkbox", { name: "yugo-chat-two", exact: true })
+      .getByRole("checkbox", { name: /^yugo-chat-two(?:\s|$)/ })
       .check();
     await page
       .getByRole("button", { name: "Apply 2 selected models", exact: true })
@@ -764,14 +764,17 @@ test("mobile Settings keeps a focused key field visible through keyboard pan and
     };
     (window as any).__settingsViewport = viewport;
     document.addEventListener("animationstart", (event) => {
-      if (event.animationName.startsWith("pi-route-"))
-        document.documentElement.dataset.routeAnimation = event.animationName;
+      const name = event.animationName;
+      if (name === "pi-route-forward" || name === "pi-nav-push-in")
+        document.documentElement.dataset.routeAnimation = "forward";
+      if (name === "pi-route-back" || name === "pi-nav-pop-out")
+        document.documentElement.dataset.routeAnimation = "back";
     });
   }, page.viewportSize()!.height);
   await page.goto("/settings");
   test.skip(!(await isMobileLayout(page)), "mobile layout");
   await page.locator('[data-settings-nav="models"]').tap();
-  await expect(page.locator("html")).toHaveAttribute("data-route-animation", "pi-route-forward");
+  await expect(page.locator("html")).toHaveAttribute("data-route-animation", "forward");
   await page.getByRole("button", { name: "Add key", exact: true }).tap();
   const key = page.getByLabel("API key", { exact: true });
   await key.fill("fixture-only");
@@ -798,7 +801,7 @@ test("mobile Settings keeps a focused key field visible through keyboard pan and
     viewport.dispatchEvent(new Event("resize"));
   }, page.viewportSize()!.height);
   await page.locator(".session-header-back").tap();
-  await expect(page.locator("html")).toHaveAttribute("data-route-animation", "pi-route-back");
+  await expect(page.locator("html")).toHaveAttribute("data-route-animation", "back");
   await expect(page.locator('[data-settings-nav="models"]')).toBeVisible();
 });
 
@@ -852,8 +855,11 @@ test("a failed turn has a single expandable error and can copy or retry its prom
   await expect(failed.locator(".reply-error-detail")).toContainText("No available channel 1");
   await failed.getByRole("button", { name: "Models", exact: true }).click();
   await page.getByRole("button", { name: "Working model", exact: true }).click();
-  await expect(page.locator("#pi-chat-model-label")).toContainText("Working model");
+  await expect(page.locator("#pi-chat-model-label")).toHaveAccessibleName("Working model @ fixture");
   await expect(page.locator("html")).toHaveAttribute("data-selected-model", "replacement");
+  const picker = page.getByRole("dialog", { name: "Switch model", exact: true });
+  await picker.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(picker).toBeHidden();
   const input = page.locator("#pi-chat-message");
   await input.fill("An unsent draft");
   await failed.getByRole("button", { name: "Retry", exact: true }).click();
@@ -1094,13 +1100,12 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
   );
   await collapseScratchpad(page);
   await page.goto("/session?id=" + encodeURIComponent(id));
-  await expect(
-    page.locator(".output-gallery img.output-inline-preview"),
-  ).toBeVisible();
   const mediaReply = page.locator(`#entry-${reply.id}`);
+  const gallery = mediaReply.getByRole("region", { name: "Outputs", exact: true });
+  await expect(gallery.locator("img.output-inline-preview")).toBeVisible();
   await expect(mediaReply.locator(".assistant-text + .output-gallery + .reply-footer")).toBeVisible();
-  await expect(mediaReply.locator(".output-card")).toHaveCount(2);
-  await expect(page.locator(".output-gallery")).toHaveCount(1);
+  await expect(gallery.locator(".output-card")).toHaveCount(2);
+  await expect(page.locator(".assistant-message .output-gallery")).toHaveCount(1);
   await expect(page.locator(`#entry-${nextReply.id} .reply-footer`)).toBeVisible();
   await expect(mediaReply.locator(".reply-model")).toHaveText(model);
   if (await isMobileLayout(page)) {
@@ -1114,8 +1119,8 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
     });
     expect(layout).toEqual({ copyAndModelShareRow: true, modelStaysInside: true });
   }
-  await expect(page.locator(".output-gallery iframe")).toHaveCount(0);
-  await page
+  await expect(gallery.locator("iframe")).toHaveCount(0);
+  await gallery
     .getByRole("button", { name: "Enlarge diagram.svg", exact: true })
     .click();
   await expect(page.locator("#image-modal")).toBeVisible();
@@ -1156,7 +1161,7 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
   });
   await page.locator(".image-viewport").click({ position: { x: 10, y: 10 } });
   await expect(page.locator("#image-modal")).toBeHidden();
-  await page
+  await gallery
     .getByRole("button", { name: "Enlarge diagram.svg", exact: true })
     .click();
   await expect(page.locator("#image-modal")).toBeVisible();
@@ -1164,7 +1169,7 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
     .locator("#image-modal")
     .getByRole("button", { name: "Close", exact: true })
     .click();
-  const video = page.locator(".output-video").first();
+  const video = gallery.locator("video.output-video");
   await expect(video).toBeVisible();
   const src = await video.getAttribute("src");
   const range = await page.request.get(src!, {
@@ -1187,7 +1192,7 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
       video.evaluate((element) => (element as HTMLVideoElement).videoWidth),
     )
     .toBe(64);
-  const card = page.locator(".output-card").filter({ has: video });
+  const card = gallery.locator(".output-card").filter({ has: page.locator("video.output-video") });
   await card.getByRole("button", { name: "Open", exact: true }).click();
   await expect(page.locator(".output-full-video")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -1213,7 +1218,8 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
     await page.goBack();
     await expect(page.locator(".mobile-home")).toBeVisible();
     await page.locator(`a[data-session-id="${id}"]`).tap();
-    await expect(page.locator(".output-inline-preview")).toBeVisible();
+    await expect(gallery.locator("img.output-inline-preview")).toBeVisible();
+    await expect(gallery.locator("video.output-video")).toBeVisible();
     await expect(page.locator(".session-header-back")).toBeVisible();
   }
 });
