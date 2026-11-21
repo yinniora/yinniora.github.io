@@ -83,6 +83,70 @@ describe('SessionContent', () => {
     expect(afterRender.mock.calls[0][0].id).toBe('messages-list');
   });
 
+  it.each([
+    ['final reply', { stopReason: 'stop', content: 'Here is the file.' }, '.reply-footer'],
+    ['failed reply', { stopReason: 'error', errorMessage: 'HTTP 402' }, '.reply-error-actions'],
+  ])('places the collapsed outputs before the %s and its controls', (_, message, controls) => {
+    const path = [
+      ...entries.slice(0, 3),
+      {
+        id: 'work',
+        parentId: 'leaf',
+        type: 'message',
+        message: {
+          role: 'assistant',
+          stopReason: 'toolUse',
+          content: [
+            { type: 'toolCall', id: 'write', name: 'write', arguments: { path: 'out.txt' } },
+          ],
+        },
+      },
+      {
+        id: 'final',
+        parentId: 'work',
+        type: 'message',
+        message: { role: 'assistant', ...message },
+      },
+    ];
+    const model = new SessionDataModel({ entries: path, header: {}, leafId: 'final' });
+    const { container } = render(SessionContent, {
+      props: { model, live: true, chatAvailable: true, outputs: [{ id: 'file', entryId: 'work' }] },
+    });
+    const cards = container.querySelectorAll('.outputs-card');
+    expect(cards).toHaveLength(1);
+    expect(cards[0].open).toBe(false);
+    expect(cards[0].previousElementSibling).toHaveClass('activity-group');
+    expect(cards[0].nextElementSibling).toHaveAttribute('id', 'entry-final');
+    expect(cards[0].nextElementSibling.querySelector(controls)).toBeInTheDocument();
+    expect(container.querySelector('#entry-mid').nextElementSibling.id).toBe('entry-leaf');
+  });
+
+  it('waits for output discovery before showing an empty-reply warning', async () => {
+    const blank = {
+      id: 'blank',
+      parentId: 'root',
+      type: 'message',
+      message: { role: 'assistant', stopReason: 'stop', content: [] },
+    };
+    const model = new SessionDataModel({
+      entries: [entries[0], blank],
+      header: {},
+      leafId: 'blank',
+    });
+    const { container, rerender } = render(SessionContent, {
+      props: { model, live: true, chatAvailable: true, outputsReady: false },
+    });
+    expect(container.querySelector('.reply-interrupted')).toBeNull();
+
+    await rerender({ outputsReady: true, outputs: [{ id: 'file', entryId: 'blank' }] });
+    expect(container.querySelector('.reply-interrupted')).toBeNull();
+
+    await rerender({ outputs: [] });
+    const reply = container.querySelector('#entry-blank');
+    expect(reply.querySelector('.reply-interrupted')).toBeInTheDocument();
+    expect(reply.querySelector('.reply-error-actions')).toBeInTheDocument();
+  });
+
   it('offers one continuation for a terminal timeout after saved tool activity', () => {
     const path = [
       entries[0],

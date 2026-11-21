@@ -29,7 +29,12 @@
   import { getSessionRuntime } from '../../session/session-runtime-context.js';
   import { setSessionTitle } from '../../session/session-title.svelte.js';
 
-  let { sessionId, thinkingPreviews = $bindable([]) } = $props();
+  let {
+    sessionId,
+    thinkingPreviews = $bindable([]),
+    onRefreshReady = () => {},
+    onTranscriptReconciled = () => {},
+  } = $props();
 
   onMount(() => {
     const scope = new AbortController();
@@ -284,7 +289,8 @@
     let reloadInFlight;
     let reloadRequested = false;
     async function reloadOnce() {
-      await handleSessionReload({
+      let running;
+      const result = await handleSessionReload({
         sessionId,
         fetchImpl,
         signal: scope.signal,
@@ -301,6 +307,8 @@
         onReloaded: (data) => {
           persistedAssistantTimestamps = assistantTimestamps(data.entries);
           reconcileEntries(data.entries);
+          running = data.running;
+          onTranscriptReconciled(data);
           windowImpl.dispatchEvent(
             new CustomEvent('pi-session-entries-reconciled', { detail: { sessionId } }),
           );
@@ -315,21 +323,25 @@
       }).catch((err) => {
         if (!scope.signal.aborted) console.error('Live update failed:', err);
       });
+      return result ? { running } : null;
     }
     function triggerReload() {
       reloadRequested = true;
       if (!reloadInFlight) {
         reloadInFlight = (async () => {
+          let result;
           do {
             reloadRequested = false;
-            await reloadOnce();
+            result = await reloadOnce();
           } while (reloadRequested && !scope.signal.aborted);
+          return result;
         })().finally(() => {
           reloadInFlight = null;
         });
       }
       return reloadInFlight;
     }
+    onRefreshReady(triggerReload);
 
     on(windowImpl, 'pi-worker-done', () => {
       // If the final filesystem reload is missed/delayed, don't leave the

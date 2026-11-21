@@ -47,6 +47,7 @@
   let chatAvailable = $state(true);
   let chatDisabledReason = $state('');
   let modelLabel = $state('');
+  let initialSessionRunning = $state(null);
   let dataEl = $state(null);
   let visible = $state(false);
 
@@ -99,6 +100,7 @@
         chatAvailable = state.chatAvailable;
         chatDisabledReason = state.chatDisabledReason;
         modelLabel = state.modelLabel;
+        initialSessionRunning = state.running;
         hydrateSessionModel({
           sessionModel,
           payloadBase64,
@@ -176,6 +178,7 @@
     {chatAvailable}
     {chatDisabledReason}
     {modelLabel}
+    {initialSessionRunning}
     bind:dataEl
   />
 {/if}

@@ -131,7 +131,7 @@ function retriedErrors(entries, running) {
 
 export function entriesWithReplyDetails(entries, { running = false } = {}) {
   const autoContinued = autoContinuedEntries(entries);
-  const retried = retriedErrors(entries, running);
+  const retried = retriedErrors(entries, running !== false);
   const latestMessage = entries.findLast(
     ({ type, message }) =>
       type === 'message' && (message?.role === 'user' || message?.role === 'assistant'),

@@ -87,7 +87,9 @@ copy control, the recorded model name (provider id and reply time in its
 tooltip) and the actions menu on one line. The footer follows the output cards associated
 with that reply. Older replies can use a preceding model change from the
 displayed path. The copy action writes the reply's Markdown text and skips
-internal thinking and tool blocks.
+internal thinking and tool blocks. The collapsed session outputs sit after
+the latest turn's activity and before its final reply or error. If the turn
+has no final reply, the card sits at the end of the displayed path.
 User messages have their send time, a copy control and the actions menu below
 the bubble. Pi's image resize notes (`[Image: original …]`) are for the model
 and are hidden from the bubble and the copied text. The activity group that
@@ -105,8 +107,9 @@ now dispatches the same draft immediately. The card closes at dispatch. The
 client tracks delivery through the saved user message or native handling
 acknowledgement, including after reconnecting or returning to the page. Under
 Settings → Conversation, the running-send preference controls whether the
-composer's single send button steers or queues while Pi is running. Errors show a
-collapsed detail card. Consecutive rejections for the same model in a turn
+composer's single send button steers or queues while Pi is running. Turn errors
+and interruptions share a status card with recovery actions and collapsible
+details when available. Consecutive rejections for the same model in a turn
 share one visible card. Pi web workers cancel automatic retry backoff for
 provider rejections, but let Pi retry transport drops such as a reset TLS
 handshake (ECONNRESET, timeouts, fetch failures), which usually succeed again.
@@ -138,6 +141,10 @@ The index route listens to `/events?id=__all__` for `new-session`, `status-snaps
 Leaving a session stops its worker-status poll and aborts pending transcript
 reloads. A session load has a deadline and keeps a way back to the index.
 If it fails, retry remounts only that session at the current URL.
+The initial transcript includes its current running status. On reconnect,
+the view reconciles saved entries before showing that a previously running
+turn stopped. The latest empty reply is checked against the output list
+before it shows recovery actions.
 Within the session a composer progress strip stays visible while Pi is working,
 even before any text arrives. Streaming thought blocks can be expanded
 independently. Consecutive tool-only entries use tighter rows and move message

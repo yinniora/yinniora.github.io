@@ -51,6 +51,7 @@
     chatAvailable = true,
     chatDisabledReason = '',
     modelLabel = '',
+    initialSessionRunning = null,
     dataEl = $bindable(null),
   } = $props();
 
@@ -139,6 +140,39 @@
   const runtime = getSessionRuntime();
   const runningSessionIds = new SvelteSet();
   const runningSessionProjects = new SvelteMap();
+  let currentSessionRunning = $state(undefined);
+  const sessionRunning = $derived(
+    currentSessionRunning === undefined ? initialSessionRunning : currentSessionRunning,
+  );
+  let refreshTranscript;
+  let idleReload = null;
+
+  function applyCurrentSessionStatus(running) {
+    if (
+      !running &&
+      (sessionRunning === true || currentSessionRunning === null) &&
+      refreshTranscript
+    ) {
+      // The status stream can announce idle before the saved reply reaches the
+      // transcript. Keep its active state until those entries reconcile.
+      const reload = refreshTranscript();
+      idleReload = reload;
+      reload.then((data) => {
+        if (idleReload !== reload) return;
+        idleReload = null;
+        currentSessionRunning = data ? (data.running ?? false) : null;
+      });
+      return;
+    }
+    idleReload = null;
+    currentSessionRunning = running;
+  }
+
+  function onTranscriptReconciled({ running }) {
+    if (currentSessionRunning === null && !idleReload) {
+      currentSessionRunning = running ?? false;
+    }
+  }
 
   // Annotation config, supplied as props to <AnnotationLayer> (via <RightSidebar>)
   // instead of the former imperative init() up-call. The DOM anchors are resolved
@@ -177,6 +211,7 @@
   onMount(() => {
     const statusEvents = createStatusEvents({
       onSnapshot: ({ ids, statuses }) => {
+        applyCurrentSessionStatus(ids.includes(sessionId));
         runningSessionIds.clear();
         runningSessionProjects.clear();
         for (const id of ids) {
@@ -186,6 +221,7 @@
         }
       },
       onDelta: ({ id, running, project }) => {
+        if (id === sessionId) applyCurrentSessionStatus(running);
         if (running) {
           runningSessionIds.add(id);
           if (project) runningSessionProjects.set(id, project);
@@ -196,7 +232,10 @@
       },
     });
     statusEvents.connect();
-    return () => statusEvents.cleanup();
+    return () => {
+      idleReload = null;
+      statusEvents.cleanup();
+    };
   });
 
   onMount(() => {
@@ -246,7 +285,12 @@
 
 <!-- Live reload (SSE) mounts before <ChatComposer> so its optimistic
      "message sent" listener is attached before the user can send. -->
-<LiveReload {sessionId} bind:thinkingPreviews />
+<LiveReload
+  {sessionId}
+  bind:thinkingPreviews
+  onRefreshReady={(refresh) => (refreshTranscript = refresh)}
+  {onTranscriptReconciled}
+/>
 
 <div id="sidebar-overlay"></div>
 <div id="app">
@@ -258,16 +302,17 @@
       <div id="messages">
         <ActivityControls />
         <OutputGallery model={sessionModel} {sessionId} {cwd}>
-          {#snippet children(outputs, renderOutputs)}
+          {#snippet children(outputs, renderOutputs, outputsReady)}
             <SessionContent
               model={sessionModel}
               afterRender={contentRuntime.afterRender}
               {outputs}
               {renderOutputs}
+              {outputsReady}
               {chatAvailable}
               {thinkingPreviews}
               onCompact={() => openPiTools('session')}
-              sessionRunning={runningSessionIds.has(sessionId)}
+              {sessionRunning}
               live
             />
           {/snippet}
@@ -280,7 +325,7 @@
       {chatDisabledReason}
       {cwd}
       {modelLabel}
-      sessionRunning={runningSessionIds.has(sessionId)}
+      {sessionRunning}
     />
   </div>
   <RightSidebar {scratchpad} projectPath={cwd} {annotationConfig} />

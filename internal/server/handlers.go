@@ -268,7 +268,7 @@ func (s *Server) handleApiSession(w http.ResponseWriter, r *http.Request) {
 		entries, total, from = paginatedEntries(resolved.Session.Entries)
 	}
 
-	writeJSON(w, 0, sessionResponseMap(resolved.Session, entries, total, from))
+	writeJSON(w, 0, s.sessionResponseMap(resolved.Session, entries, total, from))
 }
 
 // paginatedEntries returns the tail window embedded on the initial session load
@@ -289,8 +289,8 @@ func paginatedEntries(entries []map[string]any) (out []map[string]any, total, fr
 
 // sessionResponseMap is the JSON shape the SPA consumes for a session, shared by
 // the /api/session endpoint and the bootstrap embedded in the page shell.
-func sessionResponseMap(session sessions.Session, entries []map[string]any, total, from int) map[string]any {
-	return map[string]any{
+func (s *Server) sessionResponseMap(session sessions.Session, entries []map[string]any, total, from int) map[string]any {
+	data := map[string]any{
 		"sessionId":          session.ID,
 		"header":             session.Header,
 		"entries":            entries,
@@ -302,6 +302,10 @@ func sessionResponseMap(session sessions.Session, entries []map[string]any, tota
 		"model":              session.Model,
 		"modelProvider":      session.ModelProvider,
 	}
+	if running, known := s.knownRunningStatus(session.ID); known {
+		data["running"] = running
+	}
+	return data
 }
 
 // sessionBootstrap builds the base64 payload embedded in the session page shell
@@ -317,7 +321,7 @@ func (s *Server) sessionBootstrap(id string) string {
 		return ""
 	}
 	entries, total, from := paginatedEntries(resolved.Session.Entries)
-	data := sessionResponseMap(resolved.Session, entries, total, from)
+	data := s.sessionResponseMap(resolved.Session, entries, total, from)
 
 	scratchpad := ""
 	if cwd, _ := resolved.Session.Header["cwd"].(string); cwd != "" {

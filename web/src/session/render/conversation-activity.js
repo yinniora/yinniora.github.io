@@ -112,7 +112,6 @@ export function groupConversationActivity(
 
   const sections = [];
   let activity = null;
-  let latestActivity = null;
   let turnStartedAt = 0;
   function addActivity(item, thoughts, tools) {
     if (!activity) {
@@ -132,7 +131,6 @@ export function groupConversationActivity(
         endedAt: 0,
       };
       sections.push(activity);
-      latestActivity = activity;
     }
     activity.items.push(item);
     appendTimeline(activity.timeline, item, results);
@@ -191,7 +189,6 @@ export function groupConversationActivity(
         else if (!activity.needsResponse) activity.unfinished = true;
       }
       activity = null;
-      latestActivity = null;
       turnStartedAt = entryTime(entry);
     }
     if (message?.role === 'assistant' && !item.repeatedError) {
@@ -225,6 +222,12 @@ export function groupConversationActivity(
       // The turn ends with this reply; count its time in the activity duration.
       if (activity) activity.endedAt = Math.max(activity.endedAt, entryTime(entry));
       activity = null;
+      sections.push({
+        key: entry.id,
+        item,
+        final: Boolean(final || message.stopReason === 'stop'),
+      });
+      continue;
     }
     sections.push({ key: entry.id, item });
   }
@@ -255,11 +258,10 @@ export function groupConversationActivity(
   for (const section of sections) {
     if (section.items) section.durationMs = Math.max(0, section.endedAt - section.startedAt);
   }
-  if (latestActivity && running) latestActivity.running = true;
   if (activity) {
     activity.running = running;
     // Not running and still no reply: the turn ended without finishing.
-    if (!running && !activity.needsResponse) activity.unfinished = true;
+    if (running === false && !activity.needsResponse) activity.unfinished = true;
   }
   // A question the user has not answered yet keeps its group open even after
   // the turn's closing reply, until the next user message. Otherwise a reload

@@ -63,6 +63,7 @@
     sessionRunning = false,
     thinkingPreviews = [],
     outputs = [],
+    outputsReady = true,
     renderOutputs = null,
     onCompact = null,
   } = $props();
@@ -88,6 +89,10 @@
     }
     return 0;
   });
+  const showOutputsCard = $derived(!sessionRunning && outputs.length > 0);
+  const outputsBefore = $derived(
+    showOutputsCard ? sections.findLastIndex((section, i) => i >= latestFrom && section.final) : -1,
+  );
   function continueTask() {
     document
       .getElementById('pi-chat-composer')
@@ -136,7 +141,8 @@
       {retryContent}
       {canResumeNetworkFailure}
       {emptyReply}
-      {latestTurn}
+      showEmptyReplyWarning={!latestTurn || (sessionRunning === false && outputsReady)}
+      latestTurn={latestTurn && sessionRunning === false}
       {skipActivity}
       outputs={inActivity ? undefined : groups?.byEntry.get(entry.id)}
       {renderOutputs}
@@ -146,6 +152,17 @@
 {/snippet}
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: sanitized session markdown -->
+{#snippet outputsCard()}
+  <details class="outputs-card" data-output-count={outputs.length}>
+    <summary>
+      <span class="outputs-card-chevron" aria-hidden="true"
+        >{@html icon(ChevronRight, { size: 14 })}</span
+      >{t('outputs.title')} · {outputs.length}
+    </summary>
+    <div class="outputs-card-body">{@render renderOutputs?.(outputs)}</div>
+  </details>
+{/snippet}
+
 <div id="messages-list" class="messages-list" bind:this={containerEl}>
   {#each sections as section, sectionIndex (section.key)}
     {#if section.items}
@@ -185,30 +202,19 @@
           {/if}
         {/each}
       </ActivityDisclosure>
-      {#if section.unfinished && chatAvailable && !sessionRunning && sectionIndex >= latestFrom}
+      {#if section.unfinished && chatAvailable && sessionRunning === false && sectionIndex >= latestFrom}
         <ReplyError actionsOnly onContinue={continueTask} onChooseModel={chooseModel} />
       {/if}
       {#if section.outputs.length}
         {@render renderOutputs?.(section.outputs)}
       {/if}
     {:else}
-      {@render renderEntry(section.item, false, !sessionRunning && sectionIndex >= latestFrom)}
+      {#if sectionIndex === outputsBefore}{@render outputsCard()}{/if}
+      {@render renderEntry(section.item, false, sectionIndex >= latestFrom)}
     {/if}
   {/each}
   {#if groups?.unassigned.length && sessionRunning}
     {@render renderOutputs?.(groups.unassigned)}
   {/if}
-  <!-- After the turn ends, every file the session produced is also collected
-       into one collapsible card at the end; the inline cards above stay where
-       they were produced and scroll with the conversation. -->
-  {#if !sessionRunning && outputs.length > 0}
-    <details class="outputs-card" data-output-count={outputs.length}>
-      <summary>
-        <span class="outputs-card-chevron" aria-hidden="true"
-          >{@html icon(ChevronRight, { size: 14 })}</span
-        >{t('session.outputsSummary', { count: outputs.length })}
-      </summary>
-      <div class="outputs-card-body">{@render renderOutputs?.(outputs)}</div>
-    </details>
-  {/if}
+  {#if showOutputsCard && outputsBefore === -1}{@render outputsCard()}{/if}
 </div>

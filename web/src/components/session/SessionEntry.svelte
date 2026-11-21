@@ -33,6 +33,7 @@
     retryContent = null,
     canResumeNetworkFailure = false,
     emptyReply = false,
+    showEmptyReplyWarning = true,
     latestTurn = false,
     skipActivity = false,
     outputs,
@@ -188,7 +189,7 @@
       {:else}
         <div class="error-text">{t('activity.truncated')}</div>
       {/if}
-    {:else if emptyReply && !outputs?.length}
+    {:else if emptyReply && showEmptyReplyWarning && !outputs?.length}
       <ReplyError
         interrupted
         labelKey="activity.emptyReply"

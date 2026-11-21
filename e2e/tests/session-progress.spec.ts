@@ -1,5 +1,7 @@
+import { rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { test, expect, collapseScratchpad } from "../lib/test";
-import { buildSession, realWorkingDir, uniqueSessionName, writeSession } from "../lib/sessions";
+import { appendEntry, assistantTextEntry, buildSession, realWorkingDir, uniqueSessionName, writeSession } from "../lib/sessions";
 import { remoteEventSource } from "../../web/src/remote/event-source.js";
 
 test("thinking and two reply chunks are visible before completion", async ({ page, sessionsDir }, info) => {
@@ -117,6 +119,87 @@ test("returning to a running session restores its thinking and progress before t
   await expect(timedOut.locator(".tool-output")).toContainText("Captured output.");
 });
 
+test("reopening a running session does not briefly show a stopped turn", async ({ page, sessionsDir }, info) => {
+  const { entries, lastId } = buildSession({ cwd: realWorkingDir() });
+  const timestamp = new Date().toISOString();
+  const id = writeSession(sessionsDir, uniqueSessionName(info, "reopen-running"), [
+    ...entries,
+    { type: "message", id: "task", parentId: lastId, timestamp,
+      message: { role: "user", content: "Continue with the tool." } },
+    { type: "message", id: "work", parentId: "task", timestamp,
+      message: { role: "assistant", stopReason: "toolUse",
+        content: [{ type: "toolCall", id: "call", name: "read", arguments: { path: "notes.txt" } }] } },
+    { type: "message", id: "result", parentId: "work", timestamp,
+      message: { role: "toolResult", toolCallId: "call", toolName: "read",
+        content: [{ type: "text", text: "Tool result." }] } },
+  ]);
+  const statusFile = join(dirname(sessionsDir), "session-status", id);
+  const markRunning = () => writeFileSync(statusFile, JSON.stringify({ state: "running", updatedAt: new Date().toISOString() }));
+  const url = "/session?id=" + encodeURIComponent(id);
+  let releaseStatus!: () => void;
+  const waitingForStatus = new Promise<void>((resolve) => { releaseStatus = resolve; });
+  await page.route((url) => url.pathname === "/events" && url.searchParams.get("id") === "__all__", async (route) => {
+    await waitingForStatus;
+    await route.continue();
+  });
+
+  try {
+    await collapseScratchpad(page);
+    markRunning();
+    await page.goto(url);
+    const activity = page.locator('[data-collapse-key="activity:work"]');
+    const assertNoStoppedWarning = async () => {
+      await expect(activity).not.toHaveAttribute("data-unfinished", "true");
+      await expect(page.locator(".reply-error-actions")).toHaveCount(0);
+    };
+    await expect(activity).toHaveAttribute("data-running", "true");
+    await assertNoStoppedWarning();
+
+    // A newer phone page may reconnect before the Mac server is upgraded.
+    // The old bootstrap has no running flag, so wait for the status stream.
+    await page.route((request) => request.pathname === "/session" && request.searchParams.get("id") === id, async (route) => {
+      const response = await route.fetch();
+      const html = (await response.text()).replace(/(<script[^>]+id="pi-session-bootstrap"[^>]*>)([^<]+)(<\/script>)/, (_, prefix, encoded, suffix) => {
+        const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+        delete payload.data.running;
+        return prefix + Buffer.from(JSON.stringify(payload)).toString("base64") + suffix;
+      });
+      await route.fulfill({ response, body: html });
+    });
+    await page.reload();
+    await expect(activity).toBeVisible();
+    await expect(activity).not.toHaveAttribute("data-running", "true");
+    await assertNoStoppedWarning();
+
+    markRunning();
+    releaseStatus();
+    await expect(activity).toHaveAttribute("data-running", "true");
+
+    let releaseTranscript!: () => void;
+    const waitingForTranscript = new Promise<void>((resolve) => { releaseTranscript = resolve; });
+    let noteTranscriptFetch!: () => void;
+    const transcriptFetchStarted = new Promise<void>((resolve) => { noteTranscriptFetch = resolve; });
+    await page.route((url) => url.pathname === "/api/session" && url.searchParams.get("id") === id, async (route) => {
+      noteTranscriptFetch();
+      await waitingForTranscript;
+      await route.continue();
+    });
+    try {
+      rmSync(statusFile);
+      await transcriptFetchStarted;
+      await assertNoStoppedWarning();
+      appendEntry(sessionsDir, id, assistantTextEntry("result", "Saved final reply.").entry);
+    } finally {
+      releaseTranscript();
+    }
+    await expect(page.getByText("Saved final reply.", { exact: true })).toBeVisible();
+    await assertNoStoppedWarning();
+  } finally {
+    releaseStatus();
+    rmSync(statusFile, { force: true });
+  }
+});
+
 test("stopping an empty reply keeps its status, model, time and retry action on reopen", async ({ page, sessionsDir }, info) => {
   const id = writeSession(sessionsDir, uniqueSessionName(info, "stopped"), buildSession({ cwd: realWorkingDir() }).entries);
   const url = "/session?id=" + encodeURIComponent(id);
@@ -143,11 +226,11 @@ test("stopping an empty reply keeps its status, model, time and retry action on 
   await page.locator("#pi-chat-cancel").click();
 
   const stopped = page.locator(".assistant-message").last();
-  await expect(stopped.locator(".reply-interrupted")).toHaveText("回复已中止");
+  await expect(stopped.locator(".reply-interrupted").getByText("回复已中止", { exact: true })).toBeVisible();
   await expect(page.locator(".session-progress")).toHaveCount(0);
   await page.reload();
   const footer = stopped.locator(".reply-footer");
-  await expect(stopped.locator(".reply-interrupted")).toHaveText("回复已中止");
+  await expect(stopped.locator(".reply-interrupted").getByText("回复已中止", { exact: true })).toBeVisible();
   await expect(footer.locator(".reply-model")).not.toBeEmpty();
   await expect(footer.locator(".reply-copy")).toHaveCount(0);
   await stopped.getByRole("button", { name: "重试", exact: true }).click();

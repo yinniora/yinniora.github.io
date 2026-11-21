@@ -2494,7 +2494,7 @@ body .pi-btw-input {
   display: none !important;
 }
 
-/* Turn state at a glance: running groups pulse, unfinished ones warn. */
+/* Turn state at a glance: running groups pulse, stopped groups stay quiet. */
 #spa-root .activity-group[data-running='true'] > summary .activity-label {
   color: var(--text);
 }
@@ -2507,13 +2507,20 @@ body .pi-btw-input {
   }
 }
 #spa-root .activity-group[data-unfinished='true'] > summary .activity-label {
-  color: var(--warning);
+  color: var(--text);
 }
 #spa-root .activity-group:not([open]) > summary .activity-status.stopped {
   display: inline-flex;
 }
 #spa-root .activity-status.stopped {
-  color: var(--warning);
+  color: var(--text-soft);
+}
+#spa-root .reply-error:not(.reply-interrupted) .reply-error-mark {
+  color: var(--danger-fg);
+}
+#spa-root .activity-group[data-unfinished='true'] > summary .activity-status.stopped {
+  gap: 0;
+  font-size: 0;
 }
 
 /* Codex-style activity: steps in reading order, each tool run one line. */
@@ -2691,10 +2698,6 @@ body .pi-btw-input {
     background-position: -150% 0;
   }
 }
-#spa-root .activity-group[data-unfinished='true'] > summary .activity-label {
-  color: color-mix(in srgb, var(--warning) 85%, var(--text));
-}
-
 #spa-root #pi-chat-composer {
   --composer-control-size: 44px;
   --composer-control-radius: 12px;

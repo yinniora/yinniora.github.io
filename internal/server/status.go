@@ -18,16 +18,26 @@ import (
 //  2. in-process chat worker status
 //  3. recent jsonl mtime within recentSessionActivityWindow
 func (s *Server) computeRunningStatus(sessionID string) bool {
+	if running, known := s.knownRunningStatus(sessionID); known {
+		return running
+	}
+	return s.hasRecentSessionActivity(sessionID)
+}
+
+// knownRunningStatus reports a verified terminal or web worker state. A recent
+// transcript write is useful for list activity, but cannot establish that a
+// persisted turn is still executing.
+func (s *Server) knownRunningStatus(sessionID string) (running, known bool) {
 	if sessionID == "" {
-		return false
+		return false, true
 	}
 	if status := s.readSessionStatus(sessionID); status != nil && status.State == workers.WorkerStateRunning {
-		return true
+		return true, true
 	}
 	if s.chatSender != nil {
 		workerStatus := s.chatSender.Status(sessionID)
 		if workerStatus.State == workers.WorkerStateRunning {
-			return true
+			return true, true
 		}
 		// Authoritative: if we have an in-process chat worker for this
 		// session (Model set ⇒ EnsureWorker has resolved it) and it
@@ -37,10 +47,10 @@ func (s *Server) computeRunningStatus(sessionID string) bool {
 		// to recentSessionActivityWindow, making the Cancel button
 		// linger after the response is clearly done.
 		if workerStatus.Model != "" {
-			return false
+			return false, true
 		}
 	}
-	return s.hasRecentSessionActivity(sessionID)
+	return false, false
 }
 
 func (s *Server) runningStatusPayload(sessionID string, running bool) map[string]any {

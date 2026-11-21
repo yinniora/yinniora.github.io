@@ -99,6 +99,7 @@ export function buildSessionPageState({
     chatAvailable,
     chatDisabledReason,
     modelLabel: model && provider ? `${model} @ ${provider}` : model,
+    running: typeof data?.running === 'boolean' ? data.running : null,
     payloadBase64: encodePayload(
       {
         header,

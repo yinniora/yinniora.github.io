@@ -60,6 +60,8 @@ describe('conversation activity duration', () => {
     const [, activity] = groupConversationActivity(entries, new Map());
     expect(activity.toolCount).toBe(1);
     expect(activity.durationMs).toBe(72000);
+    const [, finishedWhileStatusUpdates] = groupConversationActivity(entries, new Map(), true);
+    expect(finishedWhileStatusUpdates.running).toBeFalsy();
   });
 
   it('treats a message steered into a running turn as a continuation', () => {
@@ -110,6 +112,7 @@ describe('conversation activity duration', () => {
 
     expect(groups(turn, true)[0]).toMatchObject({ running: true });
     expect(groups(turn, true)[0].unfinished).toBeFalsy();
+    expect(groups(turn, null)[0].unfinished).toBeFalsy();
     expect(groups(turn, false)[0].unfinished).toBe(true);
     const [, activity, truncated] = groupConversationActivity([...turn, cut], new Map());
     expect(activity.toolCount).toBe(1);

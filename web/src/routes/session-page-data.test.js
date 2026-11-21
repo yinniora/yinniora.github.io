@@ -44,6 +44,7 @@ describe('session-page-data', () => {
         total: 5,
         from: 3,
         chatAvailable: false,
+        running: false,
         model: 'sonnet',
         modelProvider: 'anthropic',
       },
@@ -54,6 +55,7 @@ describe('session-page-data', () => {
     expect(state.cwd).toBe('/tmp/project');
     expect(state.scratchpad).toBe('notes');
     expect(state.chatAvailable).toBe(false);
+    expect(state.running).toBe(false);
     expect(state.chatDisabledReason).toContain('chat is disabled');
     expect(state.modelLabel).toBe('sonnet @ anthropic');
     expect(decodePayload(state.payloadBase64)).toMatchObject({
@@ -101,6 +103,7 @@ describe('session-page-data', () => {
           model: 'haiku',
           modelProvider: 'anthropic',
           chatAvailable: true,
+          running: true,
         },
         scratchpad: 'notes',
       }),
@@ -126,6 +129,7 @@ describe('session-page-data', () => {
     expect(state.title).toBe('Embedded');
     expect(state.scratchpad).toBe('notes');
     expect(state.modelLabel).toBe('haiku @ anthropic');
+    expect(state.running).toBe(true);
     const reopened = await loadSessionPageState({
       locationSearch: '?id=s.jsonl',
       fetchImpl,
@@ -133,6 +137,7 @@ describe('session-page-data', () => {
       documentImpl,
     });
     expect(reopened.title).toBe('Fresh transcript');
+    expect(reopened.running).toBeNull();
   });
 
   it('reuses a prefetched /api/session payload instead of fetching again', async () => {

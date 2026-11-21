@@ -492,7 +492,6 @@ export default {
   'session.toggleScratchpad': 'Toggle scratchpad',
   'session.actions': 'Session actions',
   'session.loading': 'Loading session…',
-  'session.outputsSummary': 'Outputs · {count}',
   'session.notFound': 'Session not found',
   'session.loadFailed': 'Failed to load session',
   'session.missingId': 'Missing session id',

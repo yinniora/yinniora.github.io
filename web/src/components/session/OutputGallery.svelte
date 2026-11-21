@@ -15,6 +15,8 @@
 
   let { model, sessionId = '', cwd = '', fetchImpl = null, children = null } = $props();
   let assets = $state([]);
+  let assetsReady = $state(false);
+  let assetRequest;
   let selected = $state(null);
   let previewOpen = $state(false);
   let previewText = $state('');
@@ -26,21 +28,34 @@
 
   async function refresh() {
     if (!sessionId) return;
+    assetRequest?.abort();
+    const request = new AbortController();
+    assetRequest = request;
     try {
       const response = await (fetchImpl || fetch)(
         `/api/assets?id=${encodeURIComponent(sessionId)}&scope=session`,
+        { signal: request.signal },
       );
       if (!response.ok) return;
       const data = await response.json();
-      const next = Array.isArray(data.assets) ? data.assets : [];
+      if (request.signal.aborted) return;
+      const previousByPath = new Map(assets.map((asset) => [asset.path, asset]));
+      assets = (Array.isArray(data.assets) ? data.assets : []).map((asset) => {
+        const previous = previousByPath.get(asset.path);
+        if (previous?.content && asset.modified && previous.modified === asset.modified)
+          return { ...asset, content: previous.content };
+        return asset;
+      });
+      assetsReady = true;
       await Promise.all(
-        next
-          .filter((asset) => asset.kind === 'svg' && asset.size < 512 * 1024)
+        assets
+          .filter((asset) => asset.kind === 'svg' && !asset.content && asset.size < 512 * 1024)
           .slice(0, 20)
           .map(async (asset) => {
             try {
               const response = await (fetchImpl || fetch)(
                 `/api/asset?id=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(asset.path)}`,
+                { signal: request.signal },
               );
               if (
                 response.ok &&
@@ -52,9 +67,10 @@
             }
           }),
       );
-      assets = next;
     } catch {
       // Transcript-backed previews remain available while reconnecting.
+    } finally {
+      if (!request.signal.aborted) assetsReady = true;
     }
   }
 
@@ -111,15 +127,17 @@
 
   onMount(() => {
     let timer;
-    const reload = () => {
+    const reload = ({ detail }) => {
+      if (detail?.sessionId !== sessionId) return;
       clearTimeout(timer);
       timer = setTimeout(refresh, 150);
     };
     refresh();
-    window.addEventListener('pi-session-reload', reload);
+    window.addEventListener('pi-session-entries-reconciled', reload);
     return () => {
+      assetRequest?.abort();
       clearTimeout(timer);
-      window.removeEventListener('pi-session-reload', reload);
+      window.removeEventListener('pi-session-entries-reconciled', reload);
     };
   });
 </script>
@@ -200,7 +218,7 @@
 {/snippet}
 
 {#if children}
-  {@render children(outputs, gallery)}
+  {@render children(outputs, gallery, assetsReady || !sessionId)}
 {:else if outputs.length}
   {@render gallery(outputs)}
 {/if}
