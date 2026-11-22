@@ -1,6 +1,5 @@
 <script>
   import { onMount } from 'svelte';
-  import { ChevronRight, icon } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { backState, handleNavClick } from '../../shared/navigation.js';
   let {
@@ -57,10 +56,6 @@
         handleNavClick(event, href, { state: { ...backState(), fromHomeStatus: true } })}
     >
       {@render status()}
-      <span class="connection-chevron" aria-hidden="true">
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted Lucide icon -->
-        {@html icon(ChevronRight, { size: 13 })}
-      </span>
     </a>
   {:else}
     {@render status()}
@@ -83,35 +78,21 @@
   .connection-status-link {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
     min-width: 0;
     min-height: 32px;
-    padding-inline: 9px 6px;
-    border: 1px solid var(--dim);
-    border-radius: 999px;
-    background: var(--surface-2);
-    color: var(--text-soft);
     text-decoration: none;
-    transition:
-      background-color 150ms ease,
-      border-color 150ms ease;
   }
-  .connection-status-link:hover {
-    background: var(--hover);
-    border-color: var(--workspace-edge);
+  @media (hover: hover) {
+    .connection-status-link:hover .connection-status {
+      color: var(--text);
+    }
   }
   .connection-status-link .connection-status {
     min-width: 0;
-    font-size: 12px;
-    font-weight: 550;
   }
   .connection-status-link .status-label {
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .connection-chevron {
-    display: flex;
-    flex: none;
   }
   @media (max-width: 900px) {
     .connection-status-link {
@@ -154,9 +135,6 @@
   @media (prefers-reduced-motion: reduce) {
     i {
       animation: none !important;
-    }
-    .connection-status-link {
-      transition: none;
     }
   }
 </style>
