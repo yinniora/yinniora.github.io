@@ -1729,14 +1729,20 @@
   }
   #spa-root .mobile-home-brand {
     display: flex;
+    min-width: 0;
     align-items: center;
     gap: 12px;
     font-size: 23px;
     font-weight: 650;
     letter-spacing: -0.8px;
   }
+  #spa-root .mobile-home-brand > span {
+    flex: none;
+    white-space: nowrap;
+  }
   #spa-root .mobile-home-tools {
     display: flex;
+    flex: none;
     gap: 2px;
   }
   #spa-root .home-icon-button,

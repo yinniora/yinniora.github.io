@@ -45,6 +45,7 @@ import {
   ListPlus,
   ListTree,
   Loader,
+  LogOut,
   KeyboardOff,
   Maximize,
   Maximize2,
@@ -63,6 +64,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Server,
   Send,
   Settings,
   Share2,
@@ -79,6 +81,7 @@ import {
   Trash2,
   Wrench,
   X,
+  Zap,
 } from 'lucide';
 
 // Lucide's default SVG presentation attributes (24x24 grid, 2px round strokes).
@@ -205,6 +208,7 @@ export {
   ListPlus,
   ListTree,
   Loader,
+  LogOut,
   KeyboardOff,
   Maximize,
   Maximize2,
@@ -223,6 +227,7 @@ export {
   Plus,
   RotateCcw,
   Search,
+  Server,
   Send,
   Settings,
   Share2,
@@ -239,4 +244,5 @@ export {
   Trash2,
   Wrench,
   X,
+  Zap,
 };

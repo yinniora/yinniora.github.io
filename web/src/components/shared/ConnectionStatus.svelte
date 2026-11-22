@@ -1,14 +1,22 @@
 <script>
   import { onMount } from 'svelte';
+  import { ChevronRight, icon } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
+  import { backState, handleNavClick } from '../../shared/navigation.js';
   let {
     client = typeof window !== 'undefined' ? window.__PI_REMOTE_CLIENT__ : null,
     fallback = '',
+    href = '',
   } = $props();
   let current = $state('disconnected');
   let transport = $state('');
   let timer;
   const state = $derived(client ? current : fallback);
+  const label = $derived(
+    transport && ['connected', 'syncing', 'loading'].includes(state)
+      ? `${t(`connection.${state}`)} · ${t(`connection.${transport}`)}`
+      : t(`connection.${state}`),
+  );
   onMount(() => {
     if (!client) return;
     current = client.status;
@@ -27,7 +35,7 @@
   });
 </script>
 
-{#if state}
+{#snippet status()}
   <span
     class="connection-status"
     data-state={state}
@@ -35,13 +43,28 @@
     aria-live="polite"
     title={t(`connection.${state}`)}
   >
-    <i aria-hidden="true"></i><span
-      >{t(
-        `connection.${state}`,
-      )}{#if transport && ['connected', 'syncing', 'loading'].includes(state)}
-        · {t(`connection.${transport}`)}{/if}</span
-    >
+    <i aria-hidden="true"></i><span class="status-label">{label}</span>
   </span>
+{/snippet}
+
+{#if state}
+  {#if href}
+    <a
+      {href}
+      class="connection-status-link"
+      aria-label={`${label} · ${t('hub.connections')}`}
+      onclick={(event) =>
+        handleNavClick(event, href, { state: { ...backState(), fromHomeStatus: true } })}
+    >
+      {@render status()}
+      <span class="connection-chevron" aria-hidden="true">
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted Lucide icon -->
+        {@html icon(ChevronRight, { size: 13 })}
+      </span>
+    </a>
+  {:else}
+    {@render status()}
+  {/if}
 {/if}
 
 <style>
@@ -56,6 +79,44 @@
     white-space: nowrap;
     letter-spacing: 0;
     vertical-align: middle;
+  }
+  .connection-status-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    min-height: 32px;
+    padding-inline: 9px 6px;
+    border: 1px solid var(--dim);
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text-soft);
+    text-decoration: none;
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease;
+  }
+  .connection-status-link:hover {
+    background: var(--hover);
+    border-color: var(--workspace-edge);
+  }
+  .connection-status-link .connection-status {
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 550;
+  }
+  .connection-status-link .status-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .connection-chevron {
+    display: flex;
+    flex: none;
+  }
+  @media (max-width: 900px) {
+    .connection-status-link {
+      min-height: 44px;
+    }
   }
   i {
     width: 6px;
@@ -93,6 +154,9 @@
   @media (prefers-reduced-motion: reduce) {
     i {
       animation: none !important;
+    }
+    .connection-status-link {
+      transition: none;
     }
   }
 </style>

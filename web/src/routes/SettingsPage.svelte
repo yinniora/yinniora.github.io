@@ -47,6 +47,7 @@
   let isMobile = $state(false);
   let mobileShowingPane = $state(false);
   let cameFromApp = $state(false);
+  let cameFromHomeStatus = $state(false);
   let settingsPage = $state(null);
 
   const activeLabel = $derived(
@@ -73,6 +74,7 @@
 
   function selectSection(id) {
     const show = () => {
+      cameFromHomeStatus = false;
       activeSection = id;
       if (isMobile) mobileShowingPane = true;
       syncSectionUrl(window, id);
@@ -127,6 +129,9 @@
 
     const back = window.history.state?.back;
     cameFromApp = typeof back === 'string' && (!standaloneModels || back !== '/');
+    const initialSection = sectionFromUrl(window);
+    cameFromHomeStatus =
+      initialSection === 'connections' && window.history.state?.fromHomeStatus === true;
 
     const mq = window.matchMedia?.('(max-width: 760px)');
     const updateMobile = () => {
@@ -138,7 +143,7 @@
     const stopSwipe = setupSwipeBack(settingsPage, {
       enabled: () => isMobile,
       startOnControl: '[data-settings-nav]',
-      onBack: () => (mobileShowingPane ? backToList() : leaveSettings()),
+      onBack: () => (mobileShowingPane && !cameFromHomeStatus ? backToList() : leaveSettings()),
     });
     if (standaloneModels) {
       return () => {
@@ -148,7 +153,6 @@
       };
     }
 
-    const initialSection = sectionFromUrl(window);
     if (initialSection) {
       activeSection = initialSection;
       if (isMobile) mobileShowingPane = true;
@@ -185,7 +189,7 @@
 
 <div class="session-header-bar">
   <div class="session-header-left">
-    {#if isMobile && mobileShowingPane}
+    {#if isMobile && mobileShowingPane && !cameFromHomeStatus}
       <button type="button" class="session-header-back" onclick={backToList}>
         <span>←</span>
         {t('settings.title')}
@@ -193,7 +197,7 @@
     {:else}
       <a class="session-header-back" href="/" onclick={onHomeBack}>
         <span>←</span>
-        {cameFromApp ? t('common.back') : t('session.back')}
+        {cameFromHomeStatus ? t('mobile.home') : cameFromApp ? t('common.back') : t('session.back')}
       </a>
     {/if}
   </div>

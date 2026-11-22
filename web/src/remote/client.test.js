@@ -214,6 +214,26 @@ it('shares a single channel check across concurrent resume events', async () => 
   expect(client.fetch).toHaveBeenCalledTimes(2);
 });
 
+it('switches preferences after an in-flight connection has settled', async () => {
+  const { RemoteClient } = await import('./client.js');
+  const client = new RemoteClient(config);
+  const pending = Promise.withResolvers();
+  client.connecting = pending.promise.finally(() => {
+    client.connecting = null;
+  });
+  client.peer = { close: vi.fn() };
+  client.connect = vi.fn();
+
+  const switchMode = client.reconnect('vps');
+  expect(client.preference).toBe('auto');
+  expect(client.peer.close).not.toHaveBeenCalled();
+  pending.reject(new Error('The previous route failed'));
+  await switchMode;
+  expect(client.preference).toBe('vps');
+  expect(client.peer.close).toHaveBeenCalledOnce();
+  expect(client.connect).toHaveBeenCalledOnce();
+});
+
 it('reports P2P or relay from the selected candidate pair instead of the chosen preference', async () => {
   const { RemoteClient } = await import('./client.js');
   const client = new RemoteClient(config, { preference: 'vps' });

@@ -470,7 +470,10 @@
       />
     {:else}
       <section class="personal-welcome">
-        <div class="personal-eyebrow">{t('app.name')} <ConnectionStatus /></div>
+        <div class="personal-eyebrow">
+          {t('app.name')}
+          <ConnectionStatus href="/settings?section=connections" />
+        </div>
         <h1>{t('home.headline')}</h1>
         <form
           class="personal-start-box"

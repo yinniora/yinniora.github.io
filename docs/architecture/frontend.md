@@ -16,8 +16,10 @@ popover and a mobile bottom sheet. Both direct and Trash permanent deletion
 require an explicit second action in the UI. The client never reads the access
 token: changing origins uses an authenticated API and a single-use pairing URL.
 
-The home menu links to Settings › Models; connection switching lives in
-Settings › Connections (`ConnectionSettings.svelte`). `navigate()` wraps route
+The home menu links to Settings › Models. The remote connection badge on the
+home screen opens Settings › Connections (`ConnectionSettings.svelte`) and
+returns directly to Home. The panel reads available remote routes from the
+authenticated client. `navigate()` wraps route
 changes in `withPageTransition()`, which uses `document.startViewTransition`
 with `html[data-nav-motion=forward|back]` for push/pop page motion. It falls
 back to an instant swap without View Transitions, with reduced motion, or while

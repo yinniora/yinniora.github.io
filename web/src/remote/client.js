@@ -146,6 +146,7 @@ export class RemoteClient extends EventTarget {
     try {
       this.config = publicRemoteConfig({ ...this.config, ...config });
       saveRemoteConfig(this.config);
+      this.dispatchEvent(new Event('configuration'));
     } catch {
       /* A metadata refresh cannot replace the scanned Mac identity. */
     }
@@ -669,7 +670,8 @@ export class RemoteClient extends EventTarget {
     }
   }
 
-  reconnect(preference = 'all') {
+  async reconnect(preference = 'all') {
+    if (this.connecting) await this.connecting.catch(() => {});
     this.preference = normalizeTransport(preference);
     try {
       localStorage.setItem(TRANSPORT_KEY, this.preference);

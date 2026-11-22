@@ -563,3 +563,75 @@ test.describe("home menu models entry", () => {
     await expect(page.locator("[data-connection-settings]")).toBeVisible();
   });
 });
+
+test("opens Connection settings from the home badge and returns home", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    if (/iPhone|iPad/.test(navigator.userAgent)) {
+      Object.defineProperty(navigator, "standalone", { value: true });
+    }
+    Object.assign(window, {
+      __PI_REMOTE_CLIENT__: Object.assign(new EventTarget(), {
+        status: "connected",
+        transport: "p2p",
+        preference: "auto",
+        config: { signalUrl: "wss://relay.example.test/signal" },
+        async reconnect(preference: string) {
+          this.preference = preference;
+        },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  const badge = page.getByRole("link", { name: /Connected.*P2P.*Connections/ });
+  await expect(badge).toBeVisible();
+  await badge.click();
+  await expect(page).toHaveURL(/\/settings\?section=connections$/);
+  const panel = page.locator("[data-connection-settings]");
+  await expect(panel.getByRole("button", { name: /Automatic/ })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  const p2p = panel.getByRole("button", { name: /^Prefer P2P/ });
+  await p2p.click();
+  await expect(p2p).toHaveAttribute("aria-current", "true");
+
+  await page.evaluate(() => {
+    const client = (window as any).__PI_REMOTE_CLIENT__;
+    client.config = { lanUrl: "wss://192.168.1.5:31418/remote-signal" };
+    client.nativeLANSocket = () => {};
+    client.dispatchEvent(new Event("configuration"));
+  });
+  await expect(
+    panel.getByRole("button", { name: /Connect on the same network/ }),
+  ).toHaveAttribute("aria-current", "true");
+  await expect(p2p).toHaveCount(0);
+  await page.locator(".session-header-back").click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(badge).toBeVisible();
+
+  if (await page.evaluate(() => matchMedia("(max-width: 760px)").matches)) {
+    await badge.click();
+    await expect(panel).toBeVisible();
+    await panel.evaluate((element) => {
+      const touch = { identifier: 1, clientX: 24, clientY: 136 };
+      const end = { ...touch, clientX: 155 };
+      for (const [type, touches, changedTouches] of [
+        ["touchstart", [touch], []],
+        ["touchmove", [end], []],
+        ["touchend", [], [end]],
+      ] as const) {
+        const event = new Event(type, { bubbles: true });
+        Object.defineProperties(event, {
+          touches: { value: touches },
+          changedTouches: { value: changedTouches },
+        });
+        element.dispatchEvent(event);
+      }
+    });
+    await expect(page).toHaveURL(/\/$/);
+    await expect(badge).toBeVisible();
+  }
+});
