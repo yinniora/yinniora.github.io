@@ -16,6 +16,7 @@ var bundledModelEffortsJSON []byte
 type officialEffort struct {
 	Levels   map[string]string `json:"levels"`
 	Adaptive bool              `json:"adaptive"`
+	Image    bool              `json:"image"`
 }
 
 var bundledModelEfforts = func() map[string]officialEffort {
@@ -26,7 +27,7 @@ var bundledModelEfforts = func() map[string]officialEffort {
 	return models
 }()
 
-var modelDateSnapshot = regexp.MustCompile(`-[0-9]{8}$`)
+var modelDateSnapshot = regexp.MustCompile(`-(?:[0-9]{8}|[0-9]{4}-[0-9]{2}-[0-9]{2})$`)
 
 var piThinkingLevels = [...]string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 
@@ -63,6 +64,9 @@ func applyOfficialEffort(model map[string]any, id, api string) bool {
 	}
 	model["reasoning"] = true
 	model["thinkingLevelMap"] = levelMap
+	if effort.Image && model["input"] == nil {
+		model["input"] = []string{"text", "image"}
+	}
 	compat, _ := model["compat"].(map[string]any)
 	if compat == nil {
 		compat = map[string]any{}

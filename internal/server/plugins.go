@@ -205,10 +205,12 @@ func pluginData(dir string, settings, mcp map[string]json.RawMessage) (pluginSet
 func (s *Server) runPiPackage(ctx context.Context, action, source string) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	cmd := picmd.Command(ctx, action, source, "--no-approve")
-	cmd.Dir = s.agentDir
-	for _, entry := range os.Environ() {
+	cmd := picmd.Command(ctx, s.agentDir, action, source, "--no-approve")
+	env := cmd.Environ()
+	cmd.Env = cmd.Env[:0]
+	for _, entry := range env {
 		key, _, _ := strings.Cut(entry, "=")
+		key = strings.ToUpper(key)
 		if key == "PI_CODING_AGENT_DIR" || strings.HasPrefix(key, "PI_WEB_") {
 			continue
 		}

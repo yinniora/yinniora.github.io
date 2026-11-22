@@ -84,6 +84,8 @@
   "gpt-6-sol": {"levels":{"off":"none","low":"low","medium":"medium","high":"high","xhigh":"xhigh","max":"max"}},
   "gpt-6.1-sol": {"levels":{"low":"low","medium":"medium","high":"high","xhigh":"xhigh","max":"max"}},
   "gpt-6.1-terra": {"levels":{"off":"none","low":"low","medium":"medium","high":"high","xhigh":"xhigh","max":"max"}},
+  "gpt-6.2-astra": {"levels":{"low":"low","medium":"medium","high":"high","xhigh":"xhigh","max":"max"},"image":true},
+  "gpt-6.2-sol": {"levels":{"low":"low","medium":"medium","high":"high","xhigh":"xhigh","max":"max"},"image":true},
   "gpt-daybreak-blue-latest": {"levels":{"off":"none","low":"low","medium":"medium","high":"high","xhigh":"xhigh","max":"max"}},
   "gpt-daybreak-red-latest": {"levels":{"off":"none","low":"low","medium":"medium","high":"high","xhigh":"xhigh","max":"max"}},
   "grok-4.3": {"levels":{"off":"none","low":"low","medium":"medium","high":"high","xhigh":"xhigh"}},

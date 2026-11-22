@@ -82,7 +82,7 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hostConnected := b.host != nil
 		approvedDevices := len(b.approved)
 		b.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(map[string]any{"protocol": "pi-relay-v2", "turnHost": b.PublicIP, "clientOrigin": b.Origin, "proof": RelayProof(b.TURNSecret, "turn:"+challenge), "clientProof": RelayProof(b.ClientSecret, "client:"+challenge), "requiresClientAuth": b.RequireClientAuth, "hostConnected": hostConnected, "approvedDevices": approvedDevices})
+		_ = json.NewEncoder(w).Encode(map[string]any{"protocol": "pi-relay-v2", "turnHost": b.PublicIP, "clientOrigin": b.Origin, "proof": RelayProof(b.TURNSecret, "turn:"+challenge), "clientProof": RelayProof(b.ClientSecret, "client:"+challenge), "requiresClientAuth": b.requiresClientAuth(), "hostConnected": hostConnected, "approvedDevices": approvedDevices})
 		return
 	}
 	if r.URL.Path == "/ice" {
@@ -202,7 +202,7 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	b.mu.Unlock()
 	defer func() { b.mu.Lock(); b.pending--; b.mu.Unlock() }()
 	var deviceID string
-	if b.RequireClientAuth || b.ClientSecret != "" {
+	if b.requiresClientAuth() {
 		var nonce [32]byte
 		_, _ = rand.Read(nonce[:])
 		challenge := hex.EncodeToString(nonce[:])

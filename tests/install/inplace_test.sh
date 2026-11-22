@@ -11,7 +11,7 @@ INSTALL_SH="$REPO_ROOT/install.sh"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # Run install.sh in a sandboxed HOME with all external commands shimmed.
-# $1: "inplace" or "normal".
+# $1: "inplace", "normal", "tampered", or "unexpected-member".
 # $2: optional npm package version. When set, install.sh should download the
 #     matching release tag instead of querying the latest release.
 run_case() {
@@ -24,33 +24,50 @@ run_case() {
   bindir="$workdir/bin"
   shimdir="$workdir/shim"
   calllog="$workdir/calls.log"
-  mkdir -p "$bindir" "$shimdir"
+  mkdir -p "$bindir" "$shimdir" "$workdir/fixture"
 
-  # curl shim: serve the GitHub "latest release" JSON and a fake binary download.
-  # The fake binary echoes the release tag from its download URL so tests can
-  # assert whether install.sh chose latest or the npm package's pinned version.
+  printf '#!/bin/sh\necho %s\n' "$expected_tag" > "$workdir/fixture/pi-web"
+  local notice
+  for notice in LICENSE NOTICE THIRD_PARTY_NOTICES; do
+    printf '%s\n' "$notice" > "$workdir/fixture/$notice"
+  done
+  local members=(pi-web LICENSE NOTICE THIRD_PARTY_NOTICES)
+  if [[ "$mode" == "unexpected-member" ]]; then
+    printf 'unexpected\n' > "$workdir/fixture/extra"
+    members+=(extra)
+  fi
+  python3 - "$workdir" "$expected_tag" "${members[@]}" <<'PY'
+from pathlib import Path
+import hashlib, json, platform, sys, tarfile
+directory = Path(sys.argv[1])
+with tarfile.open(directory / 'asset.tar.gz', 'w:gz') as archive:
+    for member in sys.argv[3:]:
+        archive.add(directory / 'fixture' / member, arcname=member, recursive=False)
+asset = (directory / 'asset.tar.gz').read_bytes()
+architecture = 'amd64' if platform.machine() == 'x86_64' else 'arm64'
+release = {'tag_name': sys.argv[2], 'draft': False, 'prerelease': True, 'assets': [
+    {'name': f'yugo-pi-{platform.system().lower()}-{architecture}.tar.gz',
+     'size': len(asset), 'digest': 'sha256:' + hashlib.sha256(asset).hexdigest(), 'state': 'uploaded'}
+]}
+(directory / 'release.json').write_text(json.dumps(release), encoding='utf-8')
+PY
+  if [[ "$mode" == "tampered" ]]; then
+    printf '!' | dd of="$workdir/asset.tar.gz" bs=1 count=1 conv=notrunc 2>/dev/null
+  fi
+
+  # Serve the published release metadata and a local archive through the curl shim.
   cat > "$shimdir/curl" <<'SHIM'
 #!/usr/bin/env bash
-out="" url=""
-args=("$@")
-for ((i = 0; i < ${#args[@]}; i++)); do
-  case "${args[i]}" in
-    -o) out="${args[i+1]}" ;;
-    http*) url="${args[i]}" ;;
-  esac
-done
-if [[ "$url" == *api.github.com* ]]; then
-  echo '{"tag_name": "yugo-v9.9.9"}'
-elif [[ "$url" == *releases/download* ]]; then
-  tag="${url#*/releases/download/}"
-  tag="${tag%%/*}"
-  archive_dir="$(mktemp -d)"
-  printf '#!/bin/sh\necho %s\n' "$tag" > "$archive_dir/pi-web"
-  for notice in LICENSE NOTICE THIRD_PARTY_NOTICES; do printf '%s\n' "$notice" > "$archive_dir/$notice"; done
-  tar -czf "$out" -C "$archive_dir" pi-web LICENSE NOTICE THIRD_PARTY_NOTICES
-  rm -rf "$archive_dir"
-fi
-exit 0
+set -eu
+for arg; do case "$arg" in https://*) url="$arg" ;; esac; done
+case "$url" in
+  *api.github.com*/releases/tags/"$EXPECTED_TAG") cat "$HOME/release.json" ;;
+  *api.github.com*/releases\?*) printf '[ '; cat "$HOME/release.json"; printf ', {"tag_name":"yugo-v99.1.0","draft":true} ]' ;;
+  *github.com*/releases/download/"$EXPECTED_TAG"/*) cat "$HOME/asset.tar.gz" ;;
+  *raw.githubusercontent.com*/"$EXPECTED_TAG"/init/com.pi-web.plist) cat "$TEMPLATES/com.pi-web.plist" ;;
+  *raw.githubusercontent.com*/"$EXPECTED_TAG"/init/pi-web.service) cat "$TEMPLATES/pi-web.service" ;;
+  *) echo 'Unexpected release URL' >&2; exit 1 ;;
+esac
 SHIM
 
   # Service managers / pkill / sudo: log the call so we can assert on it.
@@ -74,14 +91,24 @@ SHIM
     "HOME=$workdir"
     "PI_WEB_INSTALL_DIR=$bindir"
     "PATH=$shimdir:/usr/bin:/bin"
+    "EXPECTED_TAG=$expected_tag"
+    "TEMPLATES=$REPO_ROOT/init"
   )
   [[ "$mode" == "inplace" ]] && env_vars+=("PI_WEB_INPLACE_UPDATE=1")
   if [[ -n "$package_version" ]]; then
     env_vars+=("npm_package_name=@yinniora/yugo-pi" "npm_package_version=$package_version")
   fi
 
-  env -i "${env_vars[@]}" bash "$INSTALL_SH" </dev/null > "$workdir/out.log" 2>&1 \
-    || fail "[$mode] install.sh exited non-zero:"$'\n'"$(cat "$workdir/out.log")"
+  local result=0
+  env -i "${env_vars[@]}" bash "$INSTALL_SH" </dev/null > "$workdir/out.log" 2>&1 || result=$?
+  if [[ "$mode" == "tampered" || "$mode" == "unexpected-member" ]]; then
+    [[ "$result" -ne 0 ]] || fail "[$mode] malformed download was accepted"
+    [[ "$("$bindir/pi-web")" == v0.0.0 && ! -s "$calllog" ]] || fail "[$mode] failed verification changed the running installation"
+    echo "ok: $mode"
+    rm -rf "$workdir"
+    return
+  fi
+  [[ "$result" -eq 0 ]] || fail "[$mode] install.sh exited non-zero:"$'\n'"$(cat "$workdir/out.log")"
 
   [[ -x "$bindir/pi-web" ]] || fail "[$mode] binary missing after install"
   grep -q "$expected_tag" "$bindir/pi-web" \
@@ -93,6 +120,18 @@ SHIM
   else
     grep -Eq 'systemctl|launchctl|pkill' "$calllog" \
       || fail "[normal] expected the running instance to be stopped, but nothing was called"
+    python3 - "$workdir" <<'PY'
+import pathlib, plistlib, stat, sys
+root = pathlib.Path(sys.argv[1])
+env = root / '.config/pi-web/env'
+token = dict(line.split('=', 1) for line in env.read_text().splitlines())['PI_WEB_TOKEN']
+assert len(token) == 64 and token not in (root / 'out.log').read_text()
+assert stat.S_IMODE(env.stat().st_mode) == 0o600
+plist = root / 'Library/LaunchAgents/com.pi-web.plist'
+if plist.exists():
+    assert stat.S_IMODE(plist.stat().st_mode) == 0o600
+    assert str(root / '.local/state/yugo-pi/logs') in plistlib.loads(plist.read_bytes())['StandardOutPath']
+PY
   fi
 
   echo "ok: $mode"
@@ -102,4 +141,6 @@ SHIM
 run_case inplace
 run_case normal
 run_case normal 1.2.3-beta.4
+run_case tampered
+run_case unexpected-member
 echo "PASS: install.sh in-place self-update"

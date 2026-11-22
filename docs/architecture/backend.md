@@ -415,9 +415,9 @@ when it saves at least 30% of the original bytes. The model can read exact lines
 and columns or search for a literal in the active session context without
 running the command again. The execution guidance favors bounded searches and
 batched independent reads. The projection is append-stable so new results can
-reuse an existing prompt prefix. Pi's native provider caching remains active. Automatic
-cache-warming requests stop for credentials managed by YuGo because token-based
-pricing estimates cannot account for flat per-request fees.
+reuse an existing prompt prefix. Pi's native provider caching remains active
+during a turn. The worker stops idle cache-warming requests before they reach
+the provider, including for direct and imported model profiles.
 
 The worker's task checkpoint tool merges a goal, an acceptance check, constraints
 and work items into Pi custom entries on the active branch. Simple work can

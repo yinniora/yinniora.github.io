@@ -321,17 +321,18 @@ func allowsBrowserOrigin(r *http.Request) bool {
 	return originPort == requestPort
 }
 
-// cleanURL returns r.URL.Path with query string intact except for "token" and
-// "error" parameters, which are stripped.
+// cleanURL produces a same-origin path. Preserve escaped path segments and
+// strip credentials and login flags from the query.
 func cleanURL(r *http.Request) string {
+	path := "/" + strings.TrimLeft(r.URL.EscapedPath(), "/")
 	q := r.URL.Query()
 	q.Del("token")
 	q.Del("pair")
 	q.Del("error")
 	if len(q) == 0 {
-		return r.URL.Path
+		return path
 	}
-	return r.URL.Path + "?" + q.Encode()
+	return path + "?" + q.Encode()
 }
 
 // ExtractToken returns the candidate token and whether it came from the query

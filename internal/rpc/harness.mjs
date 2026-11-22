@@ -247,7 +247,33 @@ function readShellOutput(
   return [heading, ...output].join('\n');
 }
 
+export function protectProviderRedirects(fetchImpl) {
+  return async (input, init) => {
+    const method = (init?.method ?? input?.method ?? 'GET').toUpperCase();
+    const target = input?.url ?? input;
+    if (method !== 'POST' || !URL.canParse(target)) return fetchImpl(input, init);
+    const url = new URL(target);
+    const inferencePath = /\/(?:responses|chat\/completions|messages(?:\/count_tokens)?|[^/]+:(?:streamGenerateContent|generateContent))\/?$/;
+    if (!inferencePath.test(url.pathname)) {
+      return fetchImpl(input, init);
+    }
+    const headers = new Headers(init?.headers ?? input?.headers);
+    const authHeaders = ['authorization', 'x-api-key', 'api-key', 'x-goog-api-key', 'cf-aig-authorization'];
+    if (!authHeaders.some((name) => headers.has(name)) && !url.searchParams.has('key')) {
+      return fetchImpl(input, init);
+    }
+    const response = await fetchImpl(input, { ...init, redirect: 'manual' });
+    if (response.status < 300 || response.status >= 400) return response;
+    await response.body?.cancel();
+    return Response.json(
+      { error: { message: 'The model service redirected the request. Use its final API address.' } },
+      { status: 400 },
+    );
+  };
+}
+
 export default function setupHarness(pi) {
+  globalThis.fetch = protectProviderRedirects(globalThis.fetch);
   pi.registerTool({
     name: shellReader,
     label: 'Read Bash output',
@@ -283,9 +309,6 @@ export default function setupHarness(pi) {
     if (excerpted || deduplicated) return { messages: excerpted || deduplicated };
   });
 
-  pi.on('cache_warming_decision', (_event, ctx) => {
-    // Custom credentials can be billed per request. Pi's token-based warm cost
-    // estimates cannot represent these plans. Native prompt caching still runs.
-    if (ctx.model?.provider?.startsWith('yugo-')) return { action: 'stop' };
-  });
+  // Preserve native prompt caching during a real turn without buying idle requests.
+  pi.on('cache_warming_decision', () => ({ action: 'stop' }));
 }

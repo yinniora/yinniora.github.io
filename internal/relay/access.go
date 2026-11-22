@@ -22,6 +22,10 @@ type relayAccessProof struct {
 	Nonce     string          `json:"nonce,omitempty"`
 }
 
+func (b *Broker) requiresClientAuth() bool {
+	return b.RequireClientAuth || b.ClientSecret != ""
+}
+
 func verifyRelaySignature(proof relayAccessProof, message string) (string, error) {
 	key, id, err := ParsePublicKey(proof.PublicKey)
 	if err != nil {
@@ -89,7 +93,7 @@ func (b *Broker) allowDevice(id, ticket string) bool {
 }
 func (b *Broker) verifyICE(header string) bool {
 	if header == "" {
-		return !b.RequireClientAuth
+		return !b.requiresClientAuth()
 	}
 	if !strings.HasPrefix(header, "PiRelay ") || len(header) > 4096 {
 		return false

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import installHarness, { deduplicateToolOutput } from '../../internal/rpc/harness.mjs';
+import { describe, expect, it, vi } from 'vitest';
+import installHarness, { deduplicateToolOutput, protectProviderRedirects } from '../../internal/rpc/harness.mjs';
 
 const output = 'same sample code line\n'.repeat(1024);
 const readResult = (id: string) => ({
@@ -73,11 +73,11 @@ describe('YuGo harness model context', () => {
     expect(deduplicateToolOutput([first, ...altered])).toBeUndefined();
   });
 
-  it('uses native warming for direct providers and omits artificial refresh requests for YuGo keys', () => {
+  it('does not send idle warm requests for direct or YuGo-configured models', () => {
     const { handlers } = shellHarness([]);
     expect(
       handlers.get('cache_warming_decision')!({}, { model: { provider: 'anthropic' } }),
-    ).toBeUndefined();
+    ).toEqual({ action: 'stop' });
     expect(
       handlers.get('cache_warming_decision')!({}, { model: { provider: 'yugo-custom' } }),
     ).toEqual({ action: 'stop' });
@@ -87,6 +87,20 @@ describe('YuGo harness model context', () => {
     handlers.get('before_agent_start')!(event);
     expect(event.systemPromptOptions.promptGuidelines).toHaveLength(2);
     expect(event.systemPromptOptions.promptGuidelines[1]).toContain('Batch independent reads');
+  });
+
+  it('does not send model prompts or credentials to a redirect target', async () => {
+    const fixture = vi.fn(async () => new Response(null, {
+      status: 307,
+      headers: { location: 'https://unexpected.invalid/upload' },
+    }));
+    const guardedFetch = protectProviderRedirects(fixture);
+    const request = { method: 'POST', headers: { 'x-api-key': 'fixture-key' }, body: '{}' };
+    const source = 'https://provider.invalid/v1/messages';
+    const response = await guardedFetch(source, request);
+    expect(fixture).toHaveBeenCalledExactlyOnceWith(source, { ...request, redirect: 'manual' });
+    expect(response.status).toBe(400);
+    expect(await response.text()).not.toContain('unexpected.invalid');
   });
 
   it('keeps build diagnostics and stable, recoverable line numbers in less than half the bytes', async () => {

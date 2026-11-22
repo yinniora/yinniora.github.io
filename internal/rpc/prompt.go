@@ -49,7 +49,7 @@ func OneShotPrompt(ctx context.Context, opts PromptOpts) (string, error) {
 		args = append(args, "--system-prompt", opts.SystemPrompt)
 	}
 
-	cmd := picmd.Command(ctx, args...)
+	cmd := picmd.Command(ctx, "", args...)
 	if cmd.Err != nil {
 		return "", fmt.Errorf("pi executable not found: %w", cmd.Err)
 	}

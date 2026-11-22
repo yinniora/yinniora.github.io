@@ -5,6 +5,8 @@ The trusted endpoints are the host and the independently hosted HTTPS client.
 The client's publisher account and the host/browser operating systems are in the
 trust boundary. A relay compromise can interrupt service and observe connection
 metadata. It must not grant workspace access or expose conversation/media content.
+See [Credentials and request privacy](credential-privacy.md) for the host's
+model traffic, local data and software update boundaries.
 
 ## Enrollment and credentials
 

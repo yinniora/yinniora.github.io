@@ -30,6 +30,17 @@ func signRelay(t *testing.T, key *ecdsa.PrivateKey, message string) string {
 func securedBroker() *Broker {
 	return &Broker{Room: strings.Repeat("r", 32), HostToken: strings.Repeat("h", 64), TURNSecret: strings.Repeat("t", 64), ClientSecret: strings.Repeat("c", 64), PublicIP: "127.0.0.1", Origin: "https://client.example", RequireClientAuth: true}
 }
+
+func TestICEAuthenticationUsesConfiguredClientSecret(t *testing.T) {
+	b := securedBroker()
+	b.RequireClientAuth = false
+	r := httptest.NewRequest(http.MethodGet, "/ice?room="+b.Room, nil)
+	w := httptest.NewRecorder()
+	b.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated TURN credential request returned %d", w.Code)
+	}
+}
 func TestRelayAccessCannotUseIPRoomOrReplayAlone(t *testing.T) {
 	b := securedBroker()
 	key, pub := testDevice(t)

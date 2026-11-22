@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,11 @@ type Signal struct {
 	ID      string   `json:"id,omitempty"`
 	SDP     string   `json:"sdp,omitempty"`
 	Devices []string `json:"devices,omitempty"`
+}
+
+type signalPeer struct {
+	broker *websocket.Conn
+	id     string
 }
 
 type Host struct {
@@ -58,7 +64,7 @@ func keepInterface(name string) bool {
 }
 
 func keepCandidateIP(ip net.IP) bool {
-	return !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsUnspecified()
+	return ip.IsGlobalUnicast()
 }
 
 // newHostAPI trims host candidates so answers are smaller and connectivity
@@ -67,6 +73,7 @@ func newHostAPI() *webrtc.API {
 	settings := webrtc.SettingEngine{}
 	settings.SetInterfaceFilter(keepInterface)
 	settings.SetIPFilter(keepCandidateIP)
+	settings.SetRemoteIPFilter(keepCandidateIP)
 	return webrtc.NewAPI(webrtc.WithSettingEngine(settings))
 }
 
@@ -79,8 +86,18 @@ func NewHost(identityFile string) (*Host, error) {
 }
 
 func (h *Host) Answer(ctx context.Context, id, offer string) (string, error) {
+	return h.answer(ctx, signalPeer{id: id}, offer)
+}
+
+func (h *Host) answer(ctx context.Context, peer signalPeer, offer string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if len(offer) > 64*1024 || !strings.Contains(offer, "a=fingerprint:sha-256 ") {
 		return "", errors.New("invalid WebRTC offer")
+	}
+	if _, exists := h.peers.Load(peer); exists {
+		return "", errors.New("peer already has an offer")
 	}
 	select {
 	case h.slots <- struct{}{}:
@@ -100,10 +117,21 @@ func (h *Host) Answer(ctx context.Context, id, offer string) (string, error) {
 		<-h.slots
 		return "", err
 	}
-	h.peers.Store(id, pc)
+	authenticated := atomic.Bool{}
+	rejected := atomic.Bool{}
+	channelClaimed := atomic.Bool{}
+	timeout := time.AfterFunc(40*time.Second, func() {
+		if !authenticated.Load() {
+			_ = pc.Close()
+		}
+	})
 	var closed sync.Once
 	cleanup := func() {
-		closed.Do(func() { h.peers.Delete(id); <-h.slots })
+		closed.Do(func() {
+			timeout.Stop()
+			h.peers.CompareAndDelete(peer, pc)
+			<-h.slots
+		})
 	}
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		if state == webrtc.PeerConnectionStateFailed {
@@ -111,14 +139,6 @@ func (h *Host) Answer(ctx context.Context, id, offer string) (string, error) {
 		}
 		if state == webrtc.PeerConnectionStateClosed {
 			cleanup()
-		}
-	})
-	authenticated := atomic.Bool{}
-	rejected := atomic.Bool{}
-	channelClaimed := atomic.Bool{}
-	timeout := time.AfterFunc(40*time.Second, func() {
-		if !authenticated.Load() {
-			_ = pc.Close()
 		}
 	})
 	pc.OnDataChannel(func(channel *webrtc.DataChannel) {
@@ -184,6 +204,11 @@ func (h *Host) Answer(ctx context.Context, id, offer string) (string, error) {
 			_ = writer.send(map[string]string{"type": "authorized", "deviceId": deviceID})
 		})
 	})
+	if _, exists := h.peers.LoadOrStore(peer, pc); exists {
+		_ = pc.Close()
+		cleanup()
+		return "", errors.New("peer already has an offer")
+	}
 	if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offer}); err != nil {
 		_ = pc.Close()
 		return "", err
@@ -229,6 +254,10 @@ func (h *Host) Answer(ctx context.Context, id, offer string) (string, error) {
 }
 
 func (h *Host) ClosePeer(id string) {
+	h.closePeer(signalPeer{id: id})
+}
+
+func (h *Host) closePeer(id signalPeer) {
 	if peer, ok := h.peers.Load(id); ok {
 		_ = peer.(*webrtc.PeerConnection).Close()
 	}
@@ -273,11 +302,20 @@ func (h *Host) ServeSignal(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+var brokerDialClient = &http.Client{
+	Timeout:       10 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+func dialBroker(ctx context.Context, endpoint, token string) (*websocket.Conn, error) {
+	header := http.Header{"Authorization": {"Bearer " + token}}
+	conn, _, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{HTTPClient: brokerDialClient, HTTPHeader: header})
+	return conn, err
+}
+
 func (h *Host) ConnectBroker(ctx context.Context, endpoint, token string) {
 	for ctx.Err() == nil {
-		header := http.Header{}
-		header.Set("Authorization", "Bearer "+token)
-		conn, _, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{HTTPHeader: header})
+		conn, err := dialBroker(ctx, endpoint, token)
 		if err == nil {
 			conn.SetReadLimit(70 * 1024)
 			h.brokerMu.Lock()
@@ -286,22 +324,37 @@ func (h *Host) ConnectBroker(ctx context.Context, endpoint, token string) {
 			h.SyncDevices()
 			keepCtx, stopKeepAlive := context.WithCancel(ctx)
 			go h.keepBrokerAlive(keepCtx, conn, 20*time.Second, 8*time.Second)
+			pendingOffers := make(chan struct{}, cap(h.slots))
 			for {
 				var signal Signal
 				if err := wsjson.Read(ctx, conn, &signal); err != nil {
 					break
 				}
-				if signal.Type == "closed" {
-					h.ClosePeer(signal.ID)
-				} else if signal.Type == "offer" && len(signal.ID) <= 64 {
-					go func(signal Signal) {
-						offerCtx, cancel := context.WithTimeout(ctx, 18*time.Second)
+				if len(signal.ID) != 32 {
+					continue
+				}
+				if _, err := hex.DecodeString(signal.ID); err != nil {
+					continue
+				}
+				peer := signalPeer{broker: conn, id: signal.ID}
+				switch signal.Type {
+				case "closed":
+					h.closePeer(peer)
+				case "offer":
+					select {
+					case pendingOffers <- struct{}{}:
+					default:
+						continue
+					}
+					go func() {
+						defer func() { <-pendingOffers }()
+						offerCtx, cancel := context.WithTimeout(keepCtx, 18*time.Second)
 						defer cancel()
-						answer, err := h.Answer(offerCtx, signal.ID, signal.SDP)
-						if err == nil {
-							_ = wsjson.Write(ctx, conn, Signal{Type: "answer", ID: signal.ID, SDP: answer})
+						answer, err := h.answer(offerCtx, peer, signal.SDP)
+						if err == nil && wsjson.Write(offerCtx, conn, Signal{Type: "answer", ID: signal.ID, SDP: answer}) != nil {
+							h.closePeer(peer)
 						}
-					}(signal)
+					}()
 				}
 			}
 			stopKeepAlive()

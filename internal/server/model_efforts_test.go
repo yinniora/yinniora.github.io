@@ -1,6 +1,54 @@
 package server
 
-import "testing"
+import (
+	"net/url"
+	"testing"
+)
+
+func TestOpenAIReasoningFromIDOnlyCatalogAndSavedModels(t *testing.T) {
+	saved := []any{}
+	for _, id := range []string{"gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.2-astra-2026-11-03"} {
+		model := map[string]any{"id": id}
+		describeCatalogModel(model, nil, id, apiResponses, "https://api.openai.com/v1")
+		assertGPT62Efforts(t, model)
+		saved = append(saved, map[string]any{"id": id, "api": apiResponses, "reasoning": false})
+	}
+	if !upgradeOfficialEfforts(map[string]any{"openai": map[string]any{"api": apiChat, "models": saved}}) {
+		t.Fatal("previously applied models were not upgraded")
+	}
+	for _, model := range saved {
+		assertGPT62Efforts(t, model.(map[string]any))
+	}
+	unknown := map[string]any{"id": "gpt-image-test"}
+	describeCatalogModel(unknown, nil, "gpt-image-test", apiResponses, "https://api.openai.com/v1")
+	if unknown["reasoning"] == true {
+		t.Fatal("an unknown model gained reasoning controls")
+	}
+}
+
+func assertGPT62Efforts(t *testing.T, model map[string]any) {
+	t.Helper()
+	levels, _ := model["thinkingLevelMap"].(map[string]any)
+	if model["api"] != apiResponses || model["reasoning"] != true || levels["off"] != nil || levels["minimal"] != nil ||
+		levels["low"] != "low" || levels["medium"] != "medium" || levels["high"] != "high" || levels["xhigh"] != "xhigh" || levels["max"] != "max" {
+		t.Fatalf("incorrect GPT-6.2 capability: %+v", model)
+	}
+}
+
+func TestOfficialOpenAIRequiresItsHTTPSHost(t *testing.T) {
+	for _, input := range []string{"https://api.openai.com", "https://API.OPENAI.COM:443/v1"} {
+		u, _ := url.Parse(input)
+		if !isOfficialOpenAI(u) {
+			t.Fatalf("did not recognize %s", input)
+		}
+	}
+	for _, input := range []string{"https://api.openai.com.example.org/v1", "https://api.openai.com:444/v1", "http://api.openai.com/v1"} {
+		u, _ := url.Parse(input)
+		if isOfficialOpenAI(u) {
+			t.Fatalf("treated %s as official", input)
+		}
+	}
+}
 
 func TestOfficialEffortsFollowTheModelNotTheRelay(t *testing.T) {
 	providers := map[string]any{

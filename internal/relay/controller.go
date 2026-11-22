@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v4"
+	"golang.org/x/net/idna"
 )
 
 const DefaultClientURL = "https://yinniora.github.io/"
@@ -47,6 +49,7 @@ type Controller struct {
 	cancel              context.CancelFunc
 	client              *http.Client
 	trustedClientOrigin string
+	trustedClientHost   string
 	lanURL              string
 }
 
@@ -55,11 +58,16 @@ func NewController(host *Host, filename string, baseline ConnectionConfig) (*Con
 		baseline.ClientURL = DefaultClientURL
 	}
 	clientURL, err := url.Parse(baseline.ClientURL)
-	if err != nil || clientURL.Scheme != "https" || clientURL.Host == "" || clientURL.User != nil || (clientURL.Path != "" && clientURL.Path != "/") || clientURL.RawQuery != "" || clientURL.Fragment != "" {
+	if err != nil || clientURL.Scheme != "https" || clientURL.User != nil || (clientURL.EscapedPath() != "" && clientURL.EscapedPath() != "/") || clientURL.ForceQuery || clientURL.RawQuery != "" || clientURL.Fragment != "" {
+		return nil, errors.New("trusted client must use an independent HTTPS origin")
+	}
+	clientHost := comparableHostname(clientURL.Hostname())
+	if clientHost == "" {
 		return nil, errors.New("trusted client must use an independent HTTPS origin")
 	}
 	c := &Controller{host: host, filename: filename, config: baseline, client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	c.trustedClientOrigin = clientURL.Scheme + "://" + clientURL.Host
+	c.trustedClientHost = clientHost
 	if raw, err := readPrivateFile(filename); err == nil {
 		var profile ServerProfile
 		if json.Unmarshal(raw, &profile) != nil {
@@ -71,6 +79,22 @@ func NewController(host *Host, filename string, baseline ConnectionConfig) (*Con
 		c.config = c.configuration(profile)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
+	}
+	for _, endpoint := range []struct{ address, scheme string }{{c.config.SignalURL, "wss"}, {c.config.ICEURL, "https"}} {
+		if endpoint.address == "" {
+			continue
+		}
+		u, err := url.Parse(endpoint.address)
+		if err != nil || u.Scheme != endpoint.scheme || u.User != nil || u.Fragment != "" {
+			return nil, errors.New("invalid relay endpoint")
+		}
+		host := comparableHostname(u.Hostname())
+		if host == "" {
+			return nil, errors.New("invalid relay endpoint")
+		}
+		if host == c.trustedClientHost {
+			return nil, errors.New("the trusted client must not be hosted by the relay")
+		}
 	}
 	directFile := c.directProfilePath()
 	if raw, err := readPrivateFile(directFile); err == nil {
@@ -87,6 +111,20 @@ func NewController(host *Host, filename string, baseline ConnectionConfig) (*Con
 	}
 	host.ICE = c.iceServers
 	return c, nil
+}
+
+func comparableHostname(host string) string {
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if ip.Zone() != "" {
+			return ""
+		}
+		return ip.Unmap().String()
+	}
+	ascii, err := idna.Lookup.ToASCII(host)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSuffix(strings.ToLower(ascii), ".")
 }
 
 func ValidDirectSignalingURL(endpoint string) bool {
@@ -158,13 +196,17 @@ func (c *Controller) profile() ServerProfile {
 }
 func (c *Controller) validate(p ServerProfile) error {
 	u, err := url.Parse(p.ServerURL)
-	if err != nil || len(p.ServerURL) > 300 || u.Scheme != "https" || u.Hostname() == "" || len(u.Hostname()) > 253 || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || len(p.ServerURL) > 300 || u.Scheme != "https" || len(u.Hostname()) > 253 || u.User != nil || (u.EscapedPath() != "" && u.EscapedPath() != "/") || u.ForceQuery || u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("enter an HTTPS server origin without a path or credentials")
+	}
+	serverHost := comparableHostname(u.Hostname())
+	if serverHost == "" {
 		return errors.New("enter an HTTPS server origin without a path or credentials")
 	}
 	if len(p.Room) < 20 || len(p.Room) > 128 || strings.ContainsAny(p.Room, " \r\n\t") {
 		return errors.New("routing ID must contain 20–128 characters")
 	}
-	if strings.EqualFold(u.Scheme+"://"+u.Host, c.trustedClientOrigin) {
+	if serverHost == c.trustedClientHost {
 		return errors.New("the trusted client must not be hosted by the relay")
 	}
 	for _, secret := range []string{p.HostToken, p.TURNSecret, p.ClientSecret} {

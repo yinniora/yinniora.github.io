@@ -144,11 +144,10 @@ func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink, guard
 			args = append(args, "-e", extension)
 		}
 	}
-	cmd := picmd.Command(context.Background(), args...)
+	cmd := picmd.Command(context.Background(), workerDir(sessionPath), args...)
 	if cmd.Err != nil {
 		return nil, fmt.Errorf("pi executable not found: %w", cmd.Err)
 	}
-	cmd.Dir = workerDir(sessionPath)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

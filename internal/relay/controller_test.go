@@ -107,3 +107,35 @@ func TestDirectSignalingProfilePreservesBrokerAndSurvivesRestart(t *testing.T) {
 		t.Fatal("persisted disable did not suppress the old environment route", err)
 	}
 }
+
+func TestRelayAndTrustedClientMustUseSeparateHostnames(t *testing.T) {
+	for _, tc := range []struct{ client, relay string }{
+		{"https://client.example:443/", "https://CLIENT.example"},
+		{"https://client.example/", "https://client.example.:8443"},
+		{"https://bücher.example/", "https://xn--bcher-kva.example"},
+		{"https://[::ffff:192.168.0.5]/", "https://192.168.0.5"},
+	} {
+		c, err := NewController(&Host{}, filepath.Join(t.TempDir(), "connection.json"), ConnectionConfig{ClientURL: tc.client})
+		if err != nil {
+			t.Fatalf("client %s failed to initialize: %v", tc.client, err)
+		}
+		profile := ServerProfile{ServerURL: tc.relay, Room: strings.Repeat("r", 32), HostToken: strings.Repeat("h", 32), TURNSecret: strings.Repeat("t", 32), ClientSecret: strings.Repeat("c", 32)}
+		if err := c.Validate(profile); err == nil || !strings.Contains(err.Error(), "must not be hosted by the relay") {
+			t.Errorf("client %s accepted relay %s: %v", tc.client, tc.relay, err)
+		}
+	}
+}
+
+func TestBaselineRejectsInsecureOrSharedRelayEndpoint(t *testing.T) {
+	for _, cfg := range []ConnectionConfig{
+		{SignalURL: "ws://relay.example/signal"},
+		{ICEURL: "http://relay.example/ice"},
+		{SignalURL: "wss://client.example:443/signal"},
+		{SignalURL: "wss://relay.example/signal", ICEURL: "https://CLIENT.example./ice"},
+	} {
+		cfg.ClientURL = "https://client.example/"
+		if _, err := NewController(&Host{}, filepath.Join(t.TempDir(), "connection.json"), cfg); err == nil {
+			t.Errorf("accepted insecure relay: %+v", cfg)
+		}
+	}
+}

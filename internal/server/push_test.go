@@ -1,6 +1,9 @@
 package server
 
 import (
+	"errors"
+	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -49,6 +52,11 @@ func TestValidPushEndpoint(t *testing.T) {
 	}{
 		{"https://fcm.googleapis.com/fcm/send/abc123", true},
 		{"https://updates.push.services.mozilla.com/wpush/v2/xyz", true},
+		{"https://web.push.apple.com/fixture", true},
+		{"https://localhost/", false},
+		{"https://127.0.0.1/", false},
+		{"https://[::1]/", false},
+		{"https://100.64.0.1/", false},
 		{"", false},
 		{"http://fcm.googleapis.com/fcm/send/abc", false}, // cleartext
 		{"http://127.0.0.1:31415/api/chat", false},        // SSRF to loopback
@@ -61,6 +69,33 @@ func TestValidPushEndpoint(t *testing.T) {
 		if got := validPushEndpoint(c.endpoint); got != c.want {
 			t.Errorf("validPushEndpoint(%q) = %v, want %v", c.endpoint, got, c.want)
 		}
+	}
+}
+
+func TestPushClientChecksPublicIPAndDoesNotFollowRedirects(t *testing.T) {
+	for _, tt := range []struct {
+		ip   string
+		want bool
+	}{
+		{"8.8.8.8", true},
+		{"2001:4860:4860::8888", true},
+		{"64:ff9b::8.8.8.8", true},
+		{"169.254.169.254", false},
+		{"192.168.0.4", false},
+		{"100.64.0.1", false},
+		{"::ffff:127.0.0.1", false},
+		{"64:ff9b::127.0.0.1", false},
+	} {
+		if got := publicPushIP(netip.MustParseAddr(tt.ip)); got != tt.want {
+			t.Errorf("publicPushIP(%s) = %t, want %t", tt.ip, got, tt.want)
+		}
+	}
+	client := newPushHTTPClient()
+	if client.Transport.(*http.Transport).Proxy != nil {
+		t.Fatal("push credentials must be sent directly to the approved destination")
+	}
+	if !errors.Is(client.CheckRedirect(nil, nil), http.ErrUseLastResponse) {
+		t.Fatal("push client must not follow redirects")
 	}
 }
 

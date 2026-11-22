@@ -119,6 +119,16 @@ func TestAuthAcceptsQueryPreservesOtherParams(t *testing.T) {
 	}
 }
 
+func TestAuthRedirectKeepsEscapedPath(t *testing.T) {
+	a := New("fixture-token")
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/session%3Fname?id=fixture&token=fixture-token", nil)
+	a.Wrap(okHandler)(rec, req)
+	if location := rec.Header().Get("Location"); location != "/session%3Fname?id=fixture" {
+		t.Fatalf("clean auth redirect = %q", location)
+	}
+}
+
 func TestAuthAcceptsCookie(t *testing.T) {
 	a := New("secret")
 	rec := httptest.NewRecorder()

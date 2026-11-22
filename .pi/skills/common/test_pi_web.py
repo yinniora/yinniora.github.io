@@ -41,6 +41,11 @@ class TestDiscover(unittest.TestCase):
         url = pi_web.discover_base_url(state={"port": "31416", "host": "100.64.0.1"})
         self.assertEqual(url, "http://127.0.0.1:31416")
 
+    def test_state_port_is_numeric_and_in_range(self):
+        for port in ("service", "0", "65536", "１２３"):
+            with self.subTest(port=port), self.assertRaisesRegex(pi_web.CtlError, "valid TCP port"):
+                pi_web.discover_base_url(state={"port": port})
+
     def test_missing_state_defaults_port(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = {"PI_CODING_AGENT_DIR": tmp}
@@ -133,6 +138,15 @@ class TestTimezoneAndCron(unittest.TestCase):
 
 
 class TestClientRequest(unittest.TestCase):
+    def test_default_opener_disables_proxy_and_redirect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("pi_web.urllib.request.build_opener") as build_opener:
+                client = pi_web.Client(env={"PI_CODING_AGENT_DIR": tmp}, homedir=tmp)
+                proxy, redirects = build_opener.call_args.args
+                self.assertEqual(proxy.proxies, {})
+                self.assertIsNone(redirects.redirect_request(None, None, 302, "", {}, None))
+                self.assertIs(client.urlopen, build_opener.return_value.open)
+
     def test_sends_token_header_not_query(self):
         captured = []
 

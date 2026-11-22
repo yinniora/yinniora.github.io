@@ -121,13 +121,13 @@ func profileSignature(p map[string]any, key string) string {
 }
 
 func publicModelBaseURL(base string) string {
-	if u, err := url.Parse(base); err == nil {
+	if u, err := url.Parse(base); err == nil && u.Hostname() != "" {
 		u.User = nil
 		u.RawQuery = ""
 		u.Fragment = ""
 		return u.String()
 	}
-	return base
+	return ""
 }
 
 func configuredModels(p map[string]any) []map[string]any {

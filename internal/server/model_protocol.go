@@ -49,10 +49,19 @@ type modelProtocolDetection struct {
 	BearerAuth bool
 }
 
+func isOfficialOpenAI(u *url.URL) bool {
+	return u != nil && u.Scheme == "https" && strings.EqualFold(u.Hostname(), "api.openai.com") &&
+		(u.Port() == "" || u.Port() == "443")
+}
+
 func (s *Server) detectModelProtocol(ctx context.Context, base, key, preferred, pinned string) (modelProtocolDetection, error) {
 	base, explicit := modelProtocolRoute(base)
 	if explicit == "" {
 		explicit = pinned
+	}
+	if u, err := modelBaseURL(base, apiResponses); err == nil && isOfficialOpenAI(u) && u.EscapedPath() == "/v1" && explicit == "" {
+		models, err := s.discoverModels(ctx, map[string]any{"baseUrl": u.String(), "api": apiResponses}, key)
+		return modelProtocolDetection{BaseURL: u, API: apiResponses, Models: models}, err
 	}
 	apis := []string{apiChat, apiAnthropic, apiGemini}
 	if explicit == apiAnthropic {

@@ -83,8 +83,8 @@ it('keeps keys out of browser storage, refreshes without applying, and applies m
         calls.push(body);
         if (body.action === 'refresh')
           profile.available = [
-            { id: 'one', name: 'Chat One' },
-            { id: 'two', name: 'Chat Two' },
+            { id: 'one', name: 'Chat One', reasoning: true },
+            { id: 'two', name: 'Chat Two', input: ['text', 'image'] },
           ];
         if (body.action === 'apply')
           profile.applied = profile.available.filter((m) => body.modelIds.includes(m.id));
@@ -98,7 +98,13 @@ it('keeps keys out of browser storage, refreshes without applying, and applies m
   await fireEvent.click(await view.findByRole('button', { name: 'Refresh models' }));
   await view.findByText('Chat One');
   expect(calls.some((c) => c.action === 'apply')).toBe(false);
-  await fireEvent.click(view.getByRole('checkbox', { name: /Chat One/ }));
+  await fireEvent.click(view.getByRole('button', { name: 'Adjustable reasoning effort' }));
+  expect(view.queryByRole('checkbox', { name: /Chat Two/ })).not.toBeInTheDocument();
+  await fireEvent.click(view.getByRole('button', { name: 'Select search results' }));
+  await fireEvent.click(view.getByRole('button', { name: 'Accepts images' }));
+  await fireEvent.input(view.getByRole('searchbox', { name: 'Search models' }), {
+    target: { value: ' two CHAT ' },
+  });
   await fireEvent.click(view.getByRole('checkbox', { name: /Chat Two/ }));
   await fireEvent.click(view.getByRole('button', { name: 'Apply 2 selected models' }));
   await waitFor(() => expect(view.getByText('Applied models (2)')).toBeInTheDocument());
@@ -127,6 +133,8 @@ it('sends a newly entered key once and clears the form after saving', async () =
   const view = render(ModelSettings);
   await view.findByText('No models applied yet.');
   await fireEvent.click(view.getByRole('button', { name: 'Add key' }));
+  expect(view.getByLabelText('API base URL')).toHaveValue('https://api.openai.com/v1');
+  expect(view.getByRole('button', { name: 'OpenAI', pressed: true })).toBeInTheDocument();
   await fireEvent.input(view.getByLabelText('Key label'), { target: { value: 'Home' } });
   await fireEvent.input(view.getByLabelText('API base URL'), {
     target: { value: 'https://example.invalid/v1' },

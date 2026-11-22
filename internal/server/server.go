@@ -168,7 +168,7 @@ func New(deps Deps) (*Server, error) {
 		agentDir = agentdir.Path()
 	}
 
-	if err := os.MkdirAll(agentDir, 0755); err != nil {
+	if err := os.MkdirAll(agentDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create agent directory %s: %w", agentDir, err)
 	}
 
@@ -260,11 +260,33 @@ func New(deps Deps) (*Server, error) {
 	return s, nil
 }
 
+// Pre-create a private database before SQLite opens it and tighten metadata on
+// existing databases and their recovery files without changing their contents.
+func protectDBFiles(path string) error {
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		isMainFile := suffix == ""
+		f, err := agentdir.OpenPrivateFile(path+suffix, isMainFile)
+		if !isMainFile && os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // initDB opens the SQLite database and creates the schema. Any failure is
 // returned so the server refuses to start rather than running with a
 // half-initialized database that fails opaquely on first use.
 func initDB(agentDir string) (*sql.DB, error) {
 	dbPath := filepath.Join(agentDir, "pi-web.sqlite")
+	if err := protectDBFiles(dbPath); err != nil {
+		return nil, fmt.Errorf("protect sqlite database files: %w", err)
+	}
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)

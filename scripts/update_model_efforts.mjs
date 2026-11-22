@@ -28,6 +28,13 @@ for (const provider of providers) {
     efforts.set(model.id, value);
   }
 }
+// Official releases that can precede the bundled Pi catalog.
+// https://developers.openai.com/api/docs/guides/deployment-checklist#set-up-reasoningeffort
+for (const id of ['gpt-6.2-astra', 'gpt-6.2-sol']) {
+  const bundled = efforts.get(id);
+  const fallback = { levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' } };
+  efforts.set(id, { ...(bundled ?? fallback), image: true });
+}
 const lines = [...efforts].sort(([a], [b]) => a.localeCompare(b, 'en'))
   .map(([id, value]) => `  ${JSON.stringify(id)}: ${JSON.stringify(value)}`);
 process.stdout.write(`{\n${lines.join(',\n')}\n}\n`);

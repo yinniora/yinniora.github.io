@@ -241,9 +241,76 @@ func TestHostCandidateFilters(t *testing.T) {
 			t.Fatalf("keepInterface(%q) = %v", name, !keep)
 		}
 	}
-	for ip, keep := range map[string]bool{"192.168.1.5": true, "100.64.1.2": true, "2001:db8::1": true, "127.0.0.1": false, "::1": false, "169.254.1.1": false, "fe80::1": false} {
+	for ip, keep := range map[string]bool{"192.168.1.5": true, "100.64.1.2": true, "2001:db8::1": true, "fd7a:115c:a1e0::1": true, "127.0.0.1": false, "::1": false, "169.254.1.1": false, "fe80::1": false, "224.0.0.1": false, "ff02::1": false, "255.255.255.255": false} {
 		if keepCandidateIP(net.ParseIP(ip)) != keep {
 			t.Fatalf("keepCandidateIP(%s) = %v", ip, !keep)
 		}
+	}
+}
+
+func TestBrokerDialDoesNotForwardBearerOnRedirect(t *testing.T) {
+	const token = "test-host-token"
+	var redirected atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/signal" {
+			redirected.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			t.Error("configured relay did not receive the host bearer")
+		}
+		http.Redirect(w, r, "/other", http.StatusTemporaryRedirect)
+	}))
+	defer server.Close()
+	if conn, err := dialBroker(t.Context(), server.URL+"/signal", token); err == nil {
+		_ = conn.CloseNow()
+		t.Fatal("redirected signal was accepted")
+	}
+	if redirected.Load() {
+		t.Fatal("signaling credentials were allowed to cross a redirect")
+	}
+}
+
+func TestSignalPeerOwnershipAndDuplicateOffer(t *testing.T) {
+	h, err := NewHost(filepath.Join(t.TempDir(), "host.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(h.Close)
+	client, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if _, err := client.CreateDataChannel("pi-workspace-v1", nil); err != nil {
+		t.Fatal(err)
+	}
+	offer, err := client.CreateOffer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+	defer cancel()
+	direct := signalPeer{id: "0123456789abcdef0123456789abcdef"}
+	primary := signalPeer{id: direct.id, broker: new(websocket.Conn)}
+	other := signalPeer{id: direct.id, broker: new(websocket.Conn)}
+	for _, peer := range []signalPeer{direct, primary} {
+		if _, err := h.answer(ctx, peer, offer.SDP); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := h.answer(ctx, primary, offer.SDP); err == nil || len(h.slots) != 2 {
+		t.Fatal("duplicate offer replaced a peer or used another connection slot")
+	}
+	h.closePeer(other)
+	for _, peer := range []signalPeer{direct, primary} {
+		if value, ok := h.peers.Load(peer); !ok || value.(*webrtc.PeerConnection).ConnectionState() == webrtc.PeerConnectionStateClosed {
+			t.Fatal("a different signaling connection controlled this peer")
+		}
+	}
+	h.closePeer(primary)
+	if value, ok := h.peers.Load(direct); !ok || value.(*webrtc.PeerConnection).ConnectionState() == webrtc.PeerConnectionStateClosed {
+		t.Fatal("broker closed direct peer")
 	}
 }

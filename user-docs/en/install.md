@@ -64,21 +64,28 @@ rm -rf ~/.pi/agent/npm/node_modules/@ygncode/.pi-web-*
 pi install npm:@ygncode/pi-web@beta
 ```
 
-### Quick install (no build tools needed)
+### Standalone YuGo Pi command-line installation
 
-macOS / Linux:
+On macOS or Linux, the owner of the computer can run this installer with Bash,
+Python 3 and `curl` or `wget`.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ygncode/pi-web/main/install.sh | bash
+curl -fsSLo install-yugo.sh https://raw.githubusercontent.com/yinniora/yugo-pi/main/install.sh
+bash install-yugo.sh
 ```
 
-Windows (PowerShell):
+On Windows, use PowerShell.
 
 ```powershell
-irm https://raw.githubusercontent.com/ygncode/pi-web/main/install.ps1 | iex
+Invoke-WebRequest https://raw.githubusercontent.com/yinniora/yugo-pi/main/install.ps1 -OutFile install-yugo.ps1
+.\install-yugo.ps1
 ```
 
-This downloads the latest pi-web binary, installs it to `/usr/local/bin` (`~/.pi/agent/bin` on Windows), and sets up auto-start on login. No Go, Node, or pi required.
+The installer verifies the archive's published size and SHA-256 before extracting
+the matching executable. It installs to `/usr/local/bin` (`~/.pi/agent/bin` on
+Windows) and configures auto-start. The local access token is stored in the
+owner's configuration file. The full desktop Host package is available from
+[YuGo Pi releases](https://github.com/yinniora/yugo-pi/releases).
 
 ### Download binary
 
@@ -226,7 +233,7 @@ PI_WEB_TOKEN=$(openssl rand -hex 16) pi-web
 
 > By default, pi-web refuses to bind to a non-loopback address unless `PI_WEB_TOKEN` is set — anyone who can reach the bound address could otherwise view sessions and send instructions to pi. To override this guard for local-network testing, pass `--insecure`. **Don't use `--insecure` on Tailscale or any address reachable from outside your machine.**
 >
-> Clients can pass the token via the `Authorization: Bearer <token>` header, the `X-Pi-Token` header, or once via `?token=<token>` (or the login prompt). When the token arrives through the query string, pi-web sets a `pi_token` cookie and redirects to the same URL with the token stripped, so it does not linger in the address bar or browser history. Prefer the header form for scripts and automation.
+> Sign in through the browser login prompt. For scripts and automation, pass the token with `Authorization: Bearer <token>` or `X-Pi-Token`. URLs displayed by Pi contain only connection and session information. If a legacy client submits `?token=<token>`, pi-web removes it from the redirect, but the original request can still appear in browser or proxy records.
 
 ## Browser Chat
 

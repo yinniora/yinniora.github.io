@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"pi-web/internal/picmd"
 )
 
 // installChannel matches the dist-tag pi-web is published under and the
@@ -23,8 +25,8 @@ const inPlaceUpdateEnv = "PI_WEB_INPLACE_UPDATE"
 
 // installCmd builds the `pi install` invocation used by the in-app updater.
 func installCmd(ctx context.Context) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "pi", "install", installPackage)
-	cmd.Env = append(os.Environ(), inPlaceUpdateEnv+"=1")
+	cmd := picmd.Command(ctx, "", "install", installPackage)
+	cmd.Env = append(cmd.Env, inPlaceUpdateEnv+"=1")
 	return cmd
 }
 
@@ -78,6 +80,9 @@ func runRestart() error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
+		if err := checkDarwinRestartConfig(); err != nil {
+			return err
+		}
 		cmd = exec.Command("sh", "-lc", darwinRestartScript)
 	case "linux":
 		cmd = exec.Command("systemctl", "--user", "restart", "pi-web.service")
@@ -113,15 +118,29 @@ func windowsRestartScript() string {
 		os.Getpid(), psQuote(launcher), psQuote(`"`+launcher+`"`), psQuote(exe))
 }
 
-// darwinRestartScript mirrors the extension's `/pi-web restart`: re-bootstrap
-// the launchd job, preserving the PI_WEB_TOKEN from the env file, then kick it.
+func checkDarwinRestartConfig() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	plist := filepath.Join(home, "Library", "LaunchAgents", "com.pi-web.plist")
+	info, err := os.Lstat(plist)
+	if err != nil || !info.Mode().IsRegular() {
+		return fmt.Errorf("YuGo Pi LaunchAgent configuration is missing or invalid")
+	}
+	if os.Getenv(tokenEnvVar) == "" {
+		return nil
+	}
+	configured, err := exec.Command("/usr/libexec/PlistBuddy", "-c", "Print :EnvironmentVariables:PI_WEB_TOKEN", plist).Output()
+	if err != nil || strings.TrimSpace(string(configured)) == "" {
+		return fmt.Errorf("configure the token in YuGo Pi's LaunchAgent before restarting")
+	}
+	return nil
+}
+
+// The configured LaunchAgent passes its private environment to this job only.
 const darwinRestartScript = `plist="$HOME/Library/LaunchAgents/com.pi-web.plist"
-if [ ! -f "$plist" ]; then exit 127; fi
-env_file="$HOME/.config/pi-web/env"
-token="$(awk -F= '$1 == "PI_WEB_TOKEN" { sub(/^[^=]*=/, ""); print; exit }' "$env_file" 2>/dev/null || true)"
-if [ -n "$token" ]; then
-  launchctl setenv PI_WEB_TOKEN "$token" 2>/dev/null || true
-fi
+if [ ! -f "$plist" ] || [ -L "$plist" ]; then exit 127; fi
 launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || launchctl unload "$plist" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null || launchctl load "$plist"
 launchctl kickstart -k "gui/$(id -u)/com.pi-web" 2>/dev/null || launchctl start com.pi-web`

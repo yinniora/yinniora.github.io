@@ -35,7 +35,6 @@ $LauncherVbs = Join-Path $ConfigDir 'pi-web-start.vbs'
 $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
 function Info($msg) { Write-Host "-> $msg" }
-function Warn($msg) { Write-Host "!  $msg" -ForegroundColor Yellow }
 
 function Get-Arch {
   $arch = "$env:PROCESSOR_ARCHITECTURE"
@@ -58,15 +57,18 @@ function Get-PackageTag {
 }
 
 function Get-LatestTag {
-  try {
-    $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest"
-    if ($rel.tag_name) { return $rel.tag_name }
-  } catch {}
-  # /latest ignores prereleases. Fall back to the newest release of any type
-  # (GitHub orders by creation date; install.sh sorts by semver instead).
-  $rels = @(Invoke-RestMethod "https://api.github.com/repos/${Repo}/releases?per_page=1")
-  if ($rels.Count -gt 0 -and $rels[0].tag_name) { return $rels[0].tag_name }
-  throw "Could not determine latest release tag from $Repo."
+  $releases = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases?per_page=25" -MaximumRedirection 0 -TimeoutSec 30
+  $versions = foreach ($release in $releases) {
+    if ($release.draft -eq $false -and $release.tag_name -cmatch '^yugo-v(\d{1,7}\.\d{1,7}\.\d{1,7})(?:-([A-Za-z]+)\.(\d{1,7}))?$') {
+      [PSCustomObject]@{
+        Tag = $release.tag_name; Version = [version]$Matches[1]; Stable = [int](-not $Matches[2]);
+        Channel = $Matches[2]; Revision = [int]$Matches[3]
+      }
+    }
+  }
+  $latest = $versions | Sort-Object Version,Stable,Channel,Revision -Descending | Select-Object -First 1
+  if (-not $latest) { throw 'No published YuGo Pi release was found.' }
+  return $latest.Tag
 }
 
 function Get-InstalledVersion {
@@ -82,23 +84,104 @@ function Get-InstalledVersion {
   return $null
 }
 
+function Save-ReleaseArchive([Uri]$url, $archive, [long]$size) {
+  Add-Type -AssemblyName System.Net.Http
+  $handler = New-Object System.Net.Http.HttpClientHandler
+  $handler.AllowAutoRedirect = $false
+  $client = [System.Net.Http.HttpClient]::new($handler)
+  $client.Timeout = [TimeSpan]::FromSeconds(60)
+  $cancel = New-Object System.Threading.CancellationTokenSource
+  $cancel.CancelAfter(300000)
+  try {
+    for ($attempt = 0; $attempt -lt 5; $attempt++) {
+      if ($url.Scheme -ne 'https' -or -not $url.IsDefaultPort -or $url.UserInfo -or
+          $url.Host -notin 'github.com','release-assets.githubusercontent.com','objects.githubusercontent.com') {
+        throw 'YuGo Pi installer redirected to an unexpected download host.'
+      }
+      $response = $client.GetAsync($url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead, $cancel.Token).GetAwaiter().GetResult()
+      try {
+        $status = [int]$response.StatusCode
+        if ($status -eq 200) {
+          if ($response.Content.Headers.ContentLength -and $response.Content.Headers.ContentLength -ne $size) {
+            throw 'YuGo Pi download failed its size check.'
+          }
+          $body = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+          $file = [IO.File]::Open($archive, [IO.FileMode]::CreateNew)
+          try {
+            $buffer = New-Object byte[] 65536
+            $written = 0L
+            while (($count = $body.ReadAsync($buffer, 0, $buffer.Length, $cancel.Token).GetAwaiter().GetResult()) -gt 0) {
+              $written += $count
+              if ($written -gt $size) { throw 'YuGo Pi download exceeds its published size.' }
+              $file.Write($buffer, 0, $count)
+            }
+            if ($written -ne $size) { throw 'YuGo Pi download failed its size check.' }
+          } finally {
+            $file.Dispose()
+            $body.Dispose()
+          }
+          return
+        }
+        if ($status -notin 301,302,303,307,308 -or -not $response.Headers.Location) { break }
+        $url = [Uri]::new($url, $response.Headers.Location)
+      } finally {
+        $response.Dispose()
+      }
+    }
+    throw 'Could not download the verified YuGo Pi installer.'
+  } finally {
+    $client.Dispose()
+    $cancel.Dispose()
+  }
+}
+
 function Get-Binary($arch, $tag) {
   $asset = "yugo-pi-windows-$arch.zip"
   $url = "https://github.com/$Repo/releases/download/$tag/$asset"
+  $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/tags/$tag" -MaximumRedirection 0 -TimeoutSec 30
+  $assets = @($release.assets | Where-Object { $_.name -ceq $asset })
+  if ($release.draft -ne $false -or $release.tag_name -cne $tag -or $assets.Count -ne 1) {
+    throw 'This YuGo Pi release does not contain the expected archive.'
+  }
+  $size = [long]$assets[0].size
+  if ($assets[0].state -cne 'uploaded' -or $size -le 0 -or $size -gt 256MB -or
+      $assets[0].digest -cnotmatch '^sha256:[a-f0-9]{64}$') {
+    throw 'The YuGo Pi archive has no valid size or SHA-256 metadata.'
+  }
   Info "Downloading pi-web $tag (windows-$arch)..."
-  Info "  $url"
   $tmpDir = Join-Path ([IO.Path]::GetTempPath()) ('pi-web-' + [IO.Path]::GetRandomFileName())
   New-Item -ItemType Directory -Path $tmpDir | Out-Null
   $dest = Join-Path $tmpDir 'pi-web.exe'
   $archive = Join-Path $tmpDir 'release.zip'
-  Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
-  Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
-  $legal = Join-Path $HOME '.local\share\yugo-pi\legal'
-  New-Item -ItemType Directory -Force -Path $legal | Out-Null
-  foreach ($name in 'LICENSE','NOTICE','THIRD_PARTY_NOTICES') {
-    Copy-Item (Join-Path $tmpDir $name) (Join-Path $legal $name) -Force
+  try {
+    Save-ReleaseArchive $url $archive $size
+    $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($digest -cne $assets[0].digest.Substring(7)) { throw 'YuGo Pi download failed its SHA-256 check.' }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [IO.Compression.ZipFile]::OpenRead($archive)
+    try {
+      $expected = @{'pi-web.exe' = 256MB; LICENSE = 4MB; NOTICE = 4MB; THIRD_PARTY_NOTICES = 8MB}
+      foreach ($entry in $zip.Entries) {
+        if ($entry.FullName -cnotin @($expected.Keys) -or $entry.Length -le 0 -or $entry.Length -gt $expected[$entry.FullName]) {
+          throw 'Unexpected member in the YuGo Pi archive.'
+        }
+        [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $tmpDir $entry.FullName))
+        $expected.Remove($entry.FullName)
+      }
+      if ($expected.Count) { throw 'The YuGo Pi archive is incomplete.' }
+    } finally {
+      $zip.Dispose()
+    }
+    $legal = Join-Path $HOME '.local\share\yugo-pi\legal'
+    New-Item -ItemType Directory -Force -Path $legal | Out-Null
+    foreach ($name in 'LICENSE','NOTICE','THIRD_PARTY_NOTICES') {
+      Copy-Item -LiteralPath (Join-Path $tmpDir $name) -Destination (Join-Path $legal $name) -Force
+    }
+    return $dest
+  } catch {
+    Remove-Item -LiteralPath $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    throw
   }
-  return $dest
 }
 
 function Stop-PiWeb {
@@ -127,7 +210,7 @@ function Install-Binary($src, $tag) {
 }
 
 function Install-Ctl {
-  if (-not $PSScriptRoot) { return }
+  if (-not $PSScriptRoot -or $env:npm_package_name -cne '@yinniora/yugo-pi') { return }
   $src = Join-Path $PSScriptRoot '.pi\skills\common\pi_web.py'
   if (-not (Test-Path $src)) { return }
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -152,6 +235,7 @@ exit /b 1
 }
 
 function Set-EnvFileVar($file, $key, $value) {
+  if ($value -match '[\r\n]') { throw 'A value in the local service environment contains a line break.' }
   $lines = @()
   if (Test-Path $file) { $lines = @(Get-Content $file) }
   $found = $false
@@ -159,21 +243,49 @@ function Set-EnvFileVar($file, $key, $value) {
     if ($_ -match ('^' + [regex]::Escape($key) + '=')) { $found = $true; "$key=$value" } else { $_ }
   })
   if (-not $found) { $lines += "$key=$value" }
-  Set-Content -Path $file -Value $lines
+  $staged = Join-Path (Split-Path $file) ([IO.Path]::GetRandomFileName())
+  try {
+    New-Item -ItemType File -Path $staged | Out-Null
+    Protect-EnvironmentFile $staged
+    [IO.File]::WriteAllLines($staged, [string[]]$lines, [System.Text.UTF8Encoding]::new($false))
+    [IO.File]::Replace($staged, $file, $null)
+  } finally {
+    Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Protect-EnvironmentFile($file) {
+  $item = Get-Item -LiteralPath $file
+  if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+    throw 'The local service environment must use a private regular file.'
+  }
+  $owner = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+  $sid = [System.Security.Principal.SecurityIdentifier]
+  $acl = Get-Acl -LiteralPath $file
+  if ($acl.GetOwner($sid) -ne $owner) { throw 'The current user must own the local service environment.' }
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($entry in $acl.GetAccessRules($true, $false, $sid)) { $acl.RemoveAccessRuleSpecific($entry) }
+  $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($owner, 'FullControl', 'Allow')
+  $acl.AddAccessRule($rule)
+  Set-Acl -LiteralPath $file -AclObject $acl
 }
 
 function Initialize-EnvFile {
   New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
   if (-not (Test-Path $EnvFile)) { New-Item -ItemType File -Path $EnvFile | Out-Null }
+  Protect-EnvironmentFile $EnvFile
 
   $hasToken = Select-String -Path $EnvFile -Pattern '^PI_WEB_TOKEN=' -Quiet
-  if (-not $env:PI_WEB_TOKEN -and -not $hasToken) {
-    $bytes = New-Object byte[] 16
-    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-    $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+  if (-not $hasToken) {
+    $token = $env:PI_WEB_TOKEN
+    if (-not $token) {
+      $bytes = New-Object byte[] 32
+      $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+      try { $generator.GetBytes($bytes) } finally { $generator.Dispose() }
+      $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+    }
     Set-EnvFileVar $EnvFile 'PI_WEB_TOKEN' $token
-    Info "Generated PI_WEB_TOKEN in $EnvFile"
-    Warn "Use this token when opening pi-web from another device: $token"
+    Info "Saved the local service token in $EnvFile"
   }
 
   # Persist PI_CODING_AGENT_DIR so auto-started pi-web finds the right sessions.
@@ -186,11 +298,13 @@ function Initialize-EnvFile {
 
 function Initialize-Autostart {
   New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+  $envPathLiteral = $EnvFile.Replace("'", "''")
+  $binaryLiteral = $Binary.Replace("'", "''")
 
   $ps1 = @"
 # Generated by pi-web install.ps1 — starts pi-web hidden with the environment
 # from the env file (PI_WEB_TOKEN, PATH, ...). Regenerated on every install.
-`$envFile = '$EnvFile'
+`$envFile = '$envPathLiteral'
 if (Test-Path `$envFile) {
   foreach (`$line in Get-Content `$envFile) {
     if (`$line -match '^\s*#' -or `$line -notmatch '=') { continue }
@@ -198,7 +312,7 @@ if (Test-Path `$envFile) {
     Set-Item -Path ('Env:' + `$name) -Value `$value
   }
 }
-Start-Process -FilePath '$Binary' -WindowStyle Hidden
+Start-Process -FilePath '$binaryLiteral' -WindowStyle Hidden
 "@
   Set-Content -Path $LauncherPs1 -Value $ps1
 
@@ -224,9 +338,10 @@ function Main {
 
   $tag = Get-PackageTag
   if ($tag) { Info "Using pi-web package version $tag." } else { $tag = Get-LatestTag }
+  if ($tag -cnotmatch '^yugo-v\d{1,7}\.\d{1,7}\.\d{1,7}(?:-[A-Za-z]+\.\d{1,7})?$') { throw 'Unexpected YuGo Pi release tag.' }
 
   $installed = Get-InstalledVersion
-  if ((Test-Path $Binary) -and $installed -eq $tag) {
+  if ((Test-Path $Binary) -and ("$installed" -creplace '^yugo-v','') -ceq ($tag -creplace '^yugo-v','')) {
     Install-Ctl
     Info "Already up-to-date ($tag)."
     Write-Host ''
@@ -237,9 +352,12 @@ function Main {
   $tmpBinary = Get-Binary $arch $tag
 
   $inplace = [bool]$env:PI_WEB_INPLACE_UPDATE
-  if ((Test-Path $Binary) -and -not $inplace) { Stop-PiWeb }
-
-  Install-Binary $tmpBinary $tag
+  try {
+    if ((Test-Path $Binary) -and -not $inplace) { Stop-PiWeb }
+    Install-Binary $tmpBinary $tag
+  } finally {
+    Remove-Item -LiteralPath (Split-Path $tmpBinary) -Recurse -Force -ErrorAction SilentlyContinue
+  }
   Install-Ctl
 
   # In-place self-update: pi-web triggered this and restarts itself afterward.

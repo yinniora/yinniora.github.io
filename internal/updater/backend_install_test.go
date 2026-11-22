@@ -126,7 +126,7 @@ func TestInstallBackendRetainsWorkingBinaryUntilVerified(t *testing.T) {
 			assets[1].Size--
 			return assets
 		}, wantError: true},
-		{name: "release needs full installer", archive: standardArchive, compatibility: `{"backendCompatibility":2}`, wantError: true, fullInstaller: true},
+		{name: "release needs full installer", archive: standardArchive, compatibility: `{"backendCompatibility":3}`, wantError: true, fullInstaller: true},
 		{name: "marker is invalid", archive: standardArchive, compatibility: `{}`, wantError: true},
 		{name: "archive attempts path escape", archive: backendTestArchive(t, "../pi-web", tar.TypeReg, "new backend"), wantError: true},
 		{name: "archive executable is a link", archive: backendTestArchive(t, "pi-web", tar.TypeSymlink, "../pi-web"), wantError: true},
@@ -143,7 +143,7 @@ func TestInstallBackendRetainsWorkingBinaryUntilVerified(t *testing.T) {
 			}
 			manifest := tc.compatibility
 			if manifest == "" {
-				manifest = `{"backendCompatibility":1}`
+				manifest = fmt.Sprintf(`{"backendCompatibility":%d}`, backendCompatibility)
 			}
 			client := backendReleaseFixture(t, tc.archive, []byte(manifest), tc.edit)
 			ctx, cancel := context.WithCancel(context.Background())

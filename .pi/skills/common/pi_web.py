@@ -139,6 +139,8 @@ def discover_base_url(env=None, homedir=None, state=None):
     port = DEFAULT_PORT
     if isinstance(state, dict) and str(state.get("port") or "").strip():
         port = str(state["port"]).strip()
+        if len(port) > 5 or not port.isascii() or not port.isdecimal() or not 1 <= int(port) <= 65535:
+            raise CtlError("pi-web state does not contain a valid TCP port")
     return f"http://127.0.0.1:{port}"
 
 
@@ -256,11 +258,20 @@ def _url_has_token_query(url):
     return "token=" in url.split("?", 1)[-1].lower() if "?" in url else False
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 class Client:
-    def __init__(self, env=None, homedir=None, urlopen=urllib.request.urlopen, timeout=10):
+    def __init__(self, env=None, homedir=None, urlopen=None, timeout=10):
         self.env = os.environ if env is None else env
         self.homedir = homedir
-        self.urlopen = urlopen
+        # The API is local and does not redirect. Never give a proxy or a
+        # redirected request the local control token.
+        self.urlopen = urlopen or urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), _NoRedirect()
+        ).open
         self.timeout = timeout
         self.base_url = discover_base_url(env=self.env, homedir=self.homedir)
         self.token = read_token(env=self.env, homedir=self.homedir)
@@ -284,6 +295,8 @@ class Client:
         )
 
     def request(self, method, path, body=None):
+        if not path.startswith("/") or path.startswith("//"):
+            raise CtlError("pi-web requests must use a local API path")
         url = self.base_url + path
         if _url_has_token_query(url):
             raise CtlError("refusing to put the token in the query string")

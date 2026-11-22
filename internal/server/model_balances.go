@@ -143,6 +143,10 @@ func (c *modelBalanceCache) get(ctx context.Context, source modelBalanceSource) 
 
 func fetchModelBalance(ctx context.Context, source modelBalanceSource) modelBalance {
 	u := *source.base
+	// OpenAI inference keys do not implement the New API balance endpoint.
+	if isOfficialOpenAI(&u) {
+		return modelBalance{Status: "unsupported"}
+	}
 	if strings.EqualFold(u.Hostname(), "openrouter.ai") && u.Port() == "" && u.Scheme == "https" {
 		u.Path = "/api/v1/key"
 		var doc struct {

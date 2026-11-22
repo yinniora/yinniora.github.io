@@ -29,6 +29,9 @@ For a legacy install, the existing LaunchAgent and any standalone approval
 helper it uses stay available. Linux and Windows use an app
 tray to keep the backend running after the window is closed. An existing
 authenticated local service can be opened without overwriting its settings.
+Native Host windows rely on the user's local service listening on port 31415.
+On a multi-user host, other local accounts share the loopback network. They
+should be within the trust boundary for this local connection.
 Mac and Linux hosts keep a writable per-user backend for in-place YuGo
 updates. The bundled runtime and approval helper stay in the installed app.
 Use the native app menu to find the current YuGo installer release.

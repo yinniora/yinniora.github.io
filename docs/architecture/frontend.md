@@ -319,9 +319,12 @@ an install/restart action. Dismissal records only the public commit ID locally;
 a different future official commit shows a new reminder.
 
 Settings → Models is shared by desktop and mobile. `ModelSettings` groups keys
-by user labels, refreshes one provider at a time, allows searching and selecting
-multiple models, then explicitly applies them. The backend detects API format from
-the catalog and keeps model IDs intact. Advertised effort capability and available
+by user labels and refreshes one provider at a time. The catalog combines search
+with filters for effort controls, image input and applied models. Selections
+survive search and filter changes and are applied explicitly. New keys start
+with the official OpenAI URL, which remains editable for other providers. The
+backend uses Responses for automatic official OpenAI setup, detects other formats
+from their catalog and keeps model IDs intact. Advertised effort capability and available
 levels drive the conversation effort picker. A custom model can also
 use `reasoning` and a `thinkingLevelMap` in Pi's model configuration when its
 catalog omits those fields. Fixed-effort aliases and models with unknown capability
@@ -349,7 +352,7 @@ provider override and exact references in local Pi startup settings. The key
 can still be used with its other models.
 Conversation history is retained. Idle workers reload after deletion, and
 active replies finish with their original configuration.
-Key entry uses a password field, is cleared after save, and never uses browser
+Key entry uses a masked field, is cleared after save, and never uses browser
 storage. The conversation picker refreshes on opening and displays provider labels.
 
 The composer attachment menu opens file selection, the photo library, or the

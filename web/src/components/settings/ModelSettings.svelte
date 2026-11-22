@@ -9,7 +9,14 @@
     parseTokenLimit,
     MAX_TOKEN_LIMIT,
   } from '../../settings/model-token-limits.js';
-  import { icon, Pencil, Trash2 } from '../../shared/icons.js';
+  import { icon, Gauge, Image, Pencil, Search, Trash2 } from '../../shared/icons.js';
+  const openAIBaseURL = 'https://api.openai.com/v1';
+  const catalogFilters = [
+    { id: 'all', label: 'session.filterAll' },
+    { id: 'reasoning', label: 'models.effortAvailable', icon: Gauge },
+    { id: 'vision', label: 'models.vision', icon: Image },
+    { id: 'applied', label: 'models.inUse' },
+  ];
   const apiLabels = {
     'openai-completions': 'models.openaiCompatible',
     'openai-responses': 'models.openaiResponses',
@@ -30,6 +37,7 @@
     baseUrl = $state(''),
     key = $state('');
   let query = $state(''),
+    catalogFilter = $state('all'),
     selected = $state([]);
   let balances = $state({});
   let loadingBalances = $state(false);
@@ -53,11 +61,19 @@
     }
   });
   const appliedIDs = $derived(new Set(active?.applied?.map((m) => m.id) || []));
-  const filtered = $derived(
-    (active?.available || []).filter((m) =>
-      `${m.name} ${m.id}`.toLowerCase().includes(query.toLowerCase()),
-    ),
-  );
+  const selectedIDs = $derived(new Set(selected));
+  const filtered = $derived.by(() => {
+    const terms = query.toLowerCase().trim().split(/\s+/);
+    return (active?.available || []).filter((model) => {
+      const searchable = `${model.name || ''} ${model.id}`.toLowerCase();
+      if (!terms.every((term) => searchable.includes(term))) return false;
+      if (catalogFilter === 'reasoning') return supportedThinkingLevels(model).length > 1;
+      if (catalogFilter === 'vision') return model.input?.includes('image');
+      if (catalogFilter === 'applied') return appliedIDs.has(model.id);
+      return true;
+    });
+  });
+  const selectableResults = $derived(filtered.filter((model) => !appliedIDs.has(model.id)));
   const appliedGroups = $derived(profiles.filter((profile) => profile.applied?.length));
   const appliedCount = $derived(
     appliedGroups.reduce((count, profile) => count + profile.applied.length, 0),
@@ -109,6 +125,7 @@
     activeID = id;
     selected = [];
     query = '';
+    catalogFilter = 'all';
     error = '';
     status = '';
   }
@@ -156,7 +173,7 @@
     if (wasOpen) return;
     keyFormMode = mode;
     label = profile?.label || '';
-    baseUrl = profile?.baseUrl || '';
+    baseUrl = profile?.baseUrl || openAIBaseURL;
     status = '';
   }
   async function saveKey(event) {
@@ -277,7 +294,16 @@
       maxlength="100"
       disabled={busy}
     />
-    <label for={prefix + '-url'}>{t('models.baseUrl')}</label><input
+    <div class="model-endpoint-label">
+      <label for={prefix + '-url'}>{t('models.baseUrl')}</label>
+      <button
+        type="button"
+        aria-pressed={baseUrl.trim() === openAIBaseURL}
+        disabled={busy}
+        onclick={() => (baseUrl = openAIBaseURL)}>OpenAI</button
+      >
+    </div>
+    <input
       id={prefix + '-url'}
       type="url"
       bind:value={baseUrl}
@@ -434,24 +460,36 @@
           </div>
         {/if}
         {#if keyFormMode === 'edit'}{@render keyForm(true)}{/if}
-        <input
-          type="search"
-          aria-label={t('models.search')}
-          placeholder={t('models.search')}
-          bind:value={query}
-          disabled={busy}
-        />
+        <div class="model-search">
+          <span aria-hidden="true">{@html icon(Search, { size: 17 })}</span>
+          <input
+            type="search"
+            aria-label={t('models.search')}
+            placeholder={t('models.search')}
+            bind:value={query}
+            disabled={busy}
+          />
+        </div>
+        <div class="model-filters">
+          {#each catalogFilters as filter (filter.id)}
+            <button
+              type="button"
+              aria-pressed={catalogFilter === filter.id}
+              disabled={busy}
+              onclick={() => (catalogFilter = filter.id)}
+            >
+              {#if filter.icon}{@html icon(filter.icon, { size: 14 })}{/if}
+              {t(filter.label)}
+            </button>
+          {/each}
+        </div>
         <div class="model-selection-tools">
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || !selectableResults.length}
             onclick={() =>
-              (selected = [
-                ...new Set([
-                  ...selected,
-                  ...filtered.filter((m) => !appliedIDs.has(m.id)).map((m) => m.id),
-                ]),
-              ])}>{t('models.selectAll')}</button
+              (selected = [...new Set([...selected, ...selectableResults.map((m) => m.id)])])}
+            >{t('models.selectAll')}</button
           ><button type="button" disabled={busy || !selected.length} onclick={() => (selected = [])}
             >{t('models.clearSelection')}</button
           ><span>{t('models.selectedCount', { count: selected.length })}</span>
@@ -462,7 +500,11 @@
               ><input
                 type="checkbox"
                 value={model.id}
-                bind:group={selected}
+                checked={selectedIDs.has(model.id) || appliedIDs.has(model.id)}
+                onchange={(event) =>
+                  (selected = event.currentTarget.checked
+                    ? [...selected, model.id]
+                    : selected.filter((id) => id !== model.id))}
                 disabled={busy || appliedIDs.has(model.id)}
               /><span
                 ><strong>{model.name || model.id}</strong
@@ -473,7 +515,15 @@
                   >{/if}</span
               >{#if appliedIDs.has(model.id)}<em>{t('models.inUse')}</em>{/if}</label
             >
-          {:else}<p>{t('models.refreshHint')}</p>{/each}
+          {:else}
+            <p class="model-no-results">
+              {t(
+                active.available?.length || active.catalogVerified
+                  ? 'models.noMatches'
+                  : 'models.refreshHint',
+              )}
+            </p>
+          {/each}
         </div>
         <details>
           <summary>{t('models.capabilities')}</summary>
@@ -754,6 +804,31 @@
     margin: 14px 0 6px;
     font-size: 13px;
   }
+  .model-endpoint-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 6px;
+    font-size: 13px;
+  }
+  .model-endpoint-label button,
+  .model-filters button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 5px 9px;
+    background: var(--surface);
+    border-radius: 8px;
+    font-size: 12px;
+  }
+  .model-endpoint-label button[aria-pressed='true'],
+  .model-filters button[aria-pressed='true'] {
+    background: var(--surface-2);
+    border-color: var(--accent);
+  }
   .model-saved-key {
     display: flex;
     align-items: center;
@@ -837,6 +912,32 @@
   .model-protocol button {
     flex: none;
     font-size: 12px;
+  }
+  .model-search {
+    position: relative;
+    margin-top: 12px;
+  }
+  .model-search > span {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 12px;
+    pointer-events: none;
+    color: var(--text-soft);
+  }
+  .model-search input {
+    min-height: 44px;
+    padding-inline-start: 36px;
+  }
+  .model-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .model-no-results {
+    padding: 8px 0;
   }
   .model-selection-tools {
     display: flex;

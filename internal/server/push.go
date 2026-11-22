@@ -1,14 +1,19 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -69,7 +74,7 @@ func NewPushManager(agentDir string) (*PushManager, error) {
 		storeDir: dir,
 		subs:     make(map[string]pushSub),
 		subject:  "mailto:pi-web@local",
-		client:   &http.Client{Timeout: 10 * time.Second},
+		client:   newPushHTTPClient(),
 	}
 	if err := m.loadOrCreateKeys(); err != nil {
 		return nil, err
@@ -142,13 +147,72 @@ func (m *PushManager) handleVapid(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 0, map[string]any{"publicKey": m.PublicKey()})
 }
 
-// validPushEndpoint restricts subscriptions to absolute https:// URLs with a
-// host. The endpoint is later POSTed to when notifying, so this keeps the push
-// sender from being pointed at arbitrary schemes or internal hosts. Real Web
-// Push services (FCM, Mozilla autopush, WNS) are always https.
+// Push subscriptions may supply any public HTTPS push service. Validate the
+// resolved IP at dial time to keep notifications away from private services,
+// including when a stored endpoint's DNS changes after registration.
+var nonPublicPushNets = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("2002::/16"),
+}
+
+var pushNAT64 = netip.MustParsePrefix("64:ff9b::/96")
+
+func publicPushIP(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	if pushNAT64.Contains(ip) {
+		bytes := ip.As16()
+		ip = netip.AddrFrom4([4]byte(bytes[12:]))
+	}
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() {
+		return false
+	}
+	for _, blocked := range nonPublicPushNets {
+		if blocked.Contains(ip) {
+			return false
+		}
+	}
+	return true
+}
+
+func newPushHTTPClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	dialer.ControlContext = func(_ context.Context, _, address string, _ syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		ip, parseErr := netip.ParseAddr(host)
+		if err != nil || parseErr != nil || !publicPushIP(ip) {
+			return errors.New("push service must resolve to a public address")
+		}
+		return nil
+	}
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			DialContext:         dialer.DialContext,
+			ForceAttemptHTTP2:   true,
+			TLSHandshakeTimeout: 10 * time.Second,
+			IdleConnTimeout:     90 * time.Second,
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
 func validPushEndpoint(endpoint string) bool {
 	u, err := url.Parse(endpoint)
-	return err == nil && u.Scheme == "https" && u.Host != ""
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return false
+	}
+	ip, err := netip.ParseAddr(host)
+	return err != nil || publicPushIP(ip)
 }
 
 func (m *PushManager) handleSubscribe(w http.ResponseWriter, r *http.Request) {
@@ -244,6 +308,9 @@ func (m *PushManager) notify(payload map[string]string) {
 
 	var stale []string
 	for _, s := range subs {
+		if !validPushEndpoint(s.Endpoint) {
+			continue
+		}
 		ws := &webpush.Subscription{
 			Endpoint: s.Endpoint,
 			Keys:     webpush.Keys{P256dh: s.Keys.P256dh, Auth: s.Keys.Auth},
@@ -256,7 +323,8 @@ func (m *PushManager) notify(payload map[string]string) {
 			TTL:             60,
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "push send failed: %v\n", err)
+			// Subscription URLs are credentials, including their path/query.
+			fmt.Fprintln(os.Stderr, "push delivery failed")
 			continue
 		}
 		if resp != nil {

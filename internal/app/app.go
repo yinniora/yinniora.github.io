@@ -51,6 +51,14 @@ func Main(version string) {
 	developmentMode := os.Getenv(developmentEnvVar) == "1"
 
 	agentDir := agentdir.Path()
+	if err := agentdir.ProtectDefault(agentDir); err != nil {
+		fmt.Fprintln(os.Stderr, "cannot protect the agent directory:", err)
+		os.Exit(1)
+	}
+	if err := agentdir.PrepareWeb(agentDir); err != nil {
+		fmt.Fprintln(os.Stderr, "cannot protect the YuGo Pi state directory:", err)
+		os.Exit(1)
+	}
 	if err := server.RepairSavedModelEndpoints(agentDir); err != nil {
 		fmt.Fprintln(os.Stderr, "could not update saved model API paths:", err)
 	}

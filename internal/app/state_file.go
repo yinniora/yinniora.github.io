@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -19,24 +20,28 @@ func stateFileName(development bool) string {
 // writeStateFile returns an open file handle that the caller must retain for
 // the process lifetime. Closing it releases the instance lock.
 func writeStateFile(agentDir string, development bool, host, port string, tailscale bool, tailscaleURL string) (string, *os.File, error) {
-	webDir := agentdir.WebDir(agentDir)
-	if err := os.MkdirAll(webDir, 0755); err != nil {
+	if err := agentdir.PrepareWeb(agentDir); err != nil {
 		return "", nil, err
 	}
-	path := filepath.Join(webDir, stateFileName(development))
+	path := filepath.Join(agentdir.WebDir(agentDir), stateFileName(development))
 
 	// Only the regular server owns the legacy state path used by extensions.
 	// Development mode gets an independent state file and lock.
 	if !development {
 		oldPath := filepath.Join(agentDir, "pi-web-state.json")
-		if _, err := os.Stat(oldPath); err == nil {
-			if _, err := os.Stat(path); os.IsNotExist(err) {
+		old, err := agentdir.OpenPrivateFile(oldPath, false)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", nil, err
+		}
+		if err == nil {
+			_ = old.Close()
+			if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
 				_ = os.Rename(oldPath, path)
 			}
 		}
 	}
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	f, err := agentdir.OpenPrivateFile(path, true)
 	if err != nil {
 		return "", nil, err
 	}

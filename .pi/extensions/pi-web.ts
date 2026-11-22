@@ -301,14 +301,14 @@ async function restartPiWeb(pi: ExtensionAPI): Promise<void> {
     await pi.exec("sh", [
       "-lc",
       `plist="$HOME/Library/LaunchAgents/com.pi-web.plist"
-if [ ! -f "$plist" ]; then exit 127; fi
+if [ ! -f "$plist" ] || [ -L "$plist" ]; then exit 127; fi
 env_file="$HOME/.config/pi-web/env"
 token="$(awk -F= '$1 == "PI_WEB_TOKEN" { sub(/^[^=]*=/, ""); print; exit }' "$env_file" 2>/dev/null || true)"
 if [ -n "$token" ]; then
+  chmod 600 "$plist" || exit 1
   /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$plist" 2>/dev/null || true
   /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:PI_WEB_TOKEN $token" "$plist" 2>/dev/null || \
-    /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:PI_WEB_TOKEN string $token" "$plist"
-  launchctl setenv PI_WEB_TOKEN "$token" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:PI_WEB_TOKEN string $token" "$plist" || exit 1
 fi
 launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || launchctl unload "$plist" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null || launchctl load "$plist"
@@ -393,13 +393,6 @@ export function writePiWebToken(token: string): void {
 
   writeFileSync(path, content, { mode: 0o600 });
   chmodSync(path, 0o600);
-}
-
-export function withToken(url: string): string {
-  const token = readPiWebToken();
-  if (!token) return url;
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}token=${encodeURIComponent(token)}`;
 }
 
 export function cleanupPiWebNpmTemps(agentRoot = agentDir()): number {
@@ -722,9 +715,7 @@ async function showRemoteAccess(
 
   const sessionId = basename(sessionFile);
   const baseUrl = detectedTailscaleUrl || `http://${host}:${port}`;
-  const url = withToken(
-    `${baseUrl}/session?id=${encodeURIComponent(sessionId)}`,
-  );
+  const url = `${baseUrl}/session?id=${encodeURIComponent(sessionId)}`;
 
   const hasQr = await ensureQrCode(pi, ctx);
 
@@ -792,6 +783,10 @@ export default function (pi: ExtensionAPI) {
 
     handler: async (args, ctx: ExtensionCommandContext) => {
       const [subcommand = "status"] = normalizeCommandArgs(args);
+      if ((subcommand === "token" || subcommand === "set-token") && ctx.mode !== "tui") {
+        ctx.ui.notify("Manage the login token in the local Pi terminal.", "warning");
+        return;
+      }
       const bin = await findPiWebBinary(pi);
       const detected = await detectHostPort(pi);
       const host = detected?.host || "127.0.0.1";
@@ -840,8 +835,8 @@ export default function (pi: ExtensionAPI) {
 
       if (subcommand === "start") {
         if (running) {
-          const lines = [`pi-web already running at ${withToken(`http://${host}:${port}`)}`];
-          if (tailscaleUrl) lines.push(`remote: ${withToken(tailscaleUrl)}`);
+          const lines = [`pi-web already running at http://${host}:${port}`];
+          if (tailscaleUrl) lines.push(`remote: ${tailscaleUrl}`);
           ctx.ui.notify(lines.join("\n"), "info");
           return;
         }
@@ -858,10 +853,10 @@ export default function (pi: ExtensionAPI) {
           const remoteURL = await detectTailscaleHttpsUrl(pi, port);
           const lines = [
             started
-              ? `Started pi-web at ${withToken(`http://${host}:${port}`)}`
+              ? `Started pi-web at http://${host}:${port}`
               : "Started pi-web; still waiting for health check.",
           ];
-          if (remoteURL) lines.push(`remote: ${withToken(remoteURL)}`);
+          if (remoteURL) lines.push(`remote: ${remoteURL}`);
           ctx.ui.notify(lines.join("\n"), started ? "success" : "warning");
         } catch (err) {
           ctx.ui.notify(`Failed to start pi-web: ${err}`, "error");
@@ -893,10 +888,10 @@ export default function (pi: ExtensionAPI) {
           const remoteURL = await detectTailscaleHttpsUrl(pi, port);
           const lines = [
             restarted
-              ? `Restarted pi-web at ${withToken(`http://${host}:${port}`)}`
+              ? `Restarted pi-web at http://${host}:${port}`
               : "Restarted pi-web; still waiting for health check.",
           ];
-          if (remoteURL) lines.push(`remote: ${withToken(remoteURL)}`);
+          if (remoteURL) lines.push(`remote: ${remoteURL}`);
           ctx.ui.notify(lines.join("\n"), restarted ? "success" : "warning");
         } catch (err) {
           ctx.ui.notify(`Failed to restart pi-web: ${err}`, "error");
@@ -955,11 +950,11 @@ export default function (pi: ExtensionAPI) {
       const lines = [
         `binary: ${bin || "not found (~/.pi/agent/bin/pi-web, /usr/local/bin/pi-web)"}`,
         `status: ${running ? "running" : "not responding"}`,
-        `local: ${withToken(`http://${host}:${port}`)}`,
+        `local: http://${host}:${port}`,
       ];
-      if (tailscaleUrl) lines.push(`remote: ${withToken(tailscaleUrl)}`);
+      if (tailscaleUrl) lines.push(`remote: ${tailscaleUrl}`);
       if (detected?.tailscaleUrl && detected.tailscaleUrl !== tailscaleUrl)
-        lines.push(`state remote: ${withToken(detected.tailscaleUrl)}`);
+        lines.push(`state remote: ${detected.tailscaleUrl}`);
       ctx.ui.notify(lines.join("\n"), running ? "info" : "warning");
     },
   });
@@ -1006,9 +1001,7 @@ export default function (pi: ExtensionAPI) {
 
       const sessionId = basename(sessionFile);
       const baseUrl = tailscaleUrl || `http://${host}:${port}`;
-      const url = withToken(
-        `${baseUrl}/session?id=${encodeURIComponent(sessionId)}`,
-      );
+      const url = `${baseUrl}/session?id=${encodeURIComponent(sessionId)}`;
 
       const inSSH = isSSH();
       ctx.ui.notify(

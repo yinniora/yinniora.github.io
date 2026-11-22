@@ -25,7 +25,9 @@ and model configuration when updating their binaries.
 The default independent client is https://yinniora.github.io/. Operators can
 publish `make remote-build` output to their own independent HTTPS origin and
 supply it with the installer's `--client` option. Keep this program origin separate
-from the relay; a compromised relay must not be able to replace the phone code.
+from the relay. Pi rejects relay endpoints on the client hostname, including
+when the relay uses a different port. A compromised relay must not be able to
+replace the phone code.
 
 ## Prepare a relay
 
@@ -140,6 +142,10 @@ TURN uses expiring credentials and separate allocation/bandwidth limits; an
 already-issued TURN credential can remain valid until its expiry, but grants no
 Mac workspace access. A compromised relay can interrupt service and observe
 connection metadata; it cannot impersonate the pinned Mac or approve a device.
+The host does not follow relay signaling redirects with its bearer credential.
+Each broker connection owns only its own peers. The host rejects loopback,
+link-local and multicast ICE candidates, and can use private unicast addresses
+for ordinary P2P connections.
 
 The phone's Mac-folder picker reads directory names under the Mac account home,
 with symlink confinement and bounded listings. Files remain on the Mac. Other

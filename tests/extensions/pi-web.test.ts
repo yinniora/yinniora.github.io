@@ -47,11 +47,10 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-import {
+import setupPiWeb, {
   isTailscaleHost,
   isSSH,
   normalizeCommandArgs,
-  withToken,
   readPiWebToken,
   writePiWebToken,
   cleanupPiWebNpmTemps,
@@ -179,7 +178,7 @@ describe("cleanupPiWebNpmTemps", () => {
   });
 });
 
-// ── withToken / readPiWebToken ──────────────────────────────────────
+// ── Token management ──────────────────────────────────────────────
 describe("token helpers", () => {
   // A developer who runs pi-web usually exports PI_WEB_TOKEN, and the helper
   // reads process.env before the env file. Without clearing it the suite picks
@@ -196,45 +195,46 @@ describe("token helpers", () => {
     else process.env.PI_WEB_TOKEN = originalToken;
   });
 
-  it("withToken appends token when available", () => {
-    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = "my-token";
-
-    expect(withToken("http://127.0.0.1:31415/session?id=abc")).toBe(
-      "http://127.0.0.1:31415/session?id=abc&token=my-token",
-    );
+  it("keeps token management out of RPC notifications", async () => {
+    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = "login-token-fixture";
+    vi.stubEnv("PI_CODING_AGENT_DIR", "/nonexistent/pi-web-extension-fixture");
+    try {
+      const registerCommand = vi.fn();
+      const notify = vi.fn();
+      setupPiWeb({ registerCommand, exec: async () => ({ stdout: "" }) } as any);
+      const [, command] = registerCommand.mock.calls.find(([name]) => name === "pi-web")!;
+      const context = { mode: "rpc", ui: { notify } };
+      await command.handler("token", context);
+      await command.handler("set-token fixture-replacement", context);
+      expect(notify).toHaveBeenCalledTimes(2);
+      expect(notify).toHaveBeenCalledWith("Manage the login token in the local Pi terminal.", "warning");
+      expect(readPiWebToken()).toBe("login-token-fixture");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
-  it("withToken adds token with ? when no existing query", () => {
-    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = "my-token";
-
-    expect(withToken("http://127.0.0.1:31415")).toBe(
-      "http://127.0.0.1:31415?token=my-token",
-    );
-  });
-
-  it("withToken returns URL unchanged when no token file", () => {
-    // No mock set → ENOENT → no token
-    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = undefined;
-
-    expect(withToken("http://127.0.0.1:31415/session?id=abc")).toBe(
-      "http://127.0.0.1:31415/session?id=abc",
-    );
-  });
-
-  it("withToken returns URL unchanged when env file has no token", () => {
-    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = null; // file exists but no token line
-
-    expect(withToken("http://127.0.0.1:31415/session?id=abc")).toBe(
-      "http://127.0.0.1:31415/session?id=abc",
-    );
-  });
-
-  it("withToken URL-encodes the token value", () => {
-    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = "tok en=val&ue";
-
-    expect(withToken("http://127.0.0.1:31415")).toBe(
-      "http://127.0.0.1:31415?token=tok%20en%3Dval%26ue",
-    );
+  it("reports connection URLs without the login token", async () => {
+    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = "login-token-fixture";
+    vi.stubEnv("PI_CODING_AGENT_DIR", "/nonexistent/pi-web-extension-fixture");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null)));
+    try {
+      const registerCommand = vi.fn();
+      const notify = vi.fn();
+      const exec = vi.fn(async (_cmd, args) => ({
+        stdout: args?.includes("--json")
+          ? JSON.stringify({ BackendState: "Running", Self: { DNSName: "host.tailnet.test" } })
+          : "",
+      }));
+      setupPiWeb({ registerCommand, exec } as any);
+      const [, command] = registerCommand.mock.calls.find(([name]) => name === "pi-web")!;
+      await command.handler("status", { mode: "rpc", ui: { notify } });
+      expect(notify).toHaveBeenCalledWith(expect.stringContaining("https://host.tailnet.test:31415"), "info");
+      expect(notify.mock.calls[0][0]).not.toContain("login-token-fixture");
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("readPiWebToken reads token from env file", () => {

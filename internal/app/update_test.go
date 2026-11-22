@@ -11,6 +11,9 @@ import (
 // The in-app updater must hand install.sh the in-place flag so it skips the
 // service stop/restart (which would kill the npm process running it).
 func TestInstallCmdSignalsInPlaceUpdate(t *testing.T) {
+	t.Setenv("PI_WEB_PI_NODE", "")
+	t.Setenv("PI_WEB_PI_SCRIPT", "")
+	t.Setenv("PI_TELEMETRY", "1")
 	cmd := installCmd(context.Background())
 
 	wantArgs := []string{"pi", "install", installPackage}
@@ -20,7 +23,10 @@ func TestInstallCmdSignalsInPlaceUpdate(t *testing.T) {
 
 	want := inPlaceUpdateEnv + "=1"
 	if !slices.Contains(cmd.Env, want) {
-		t.Errorf("env missing %q; got %v", want, cmd.Env)
+		t.Errorf("env missing %q", want)
+	}
+	if !slices.Contains(cmd.Env, "PI_TELEMETRY=0") {
+		t.Error("Pi install telemetry enabled")
 	}
 }
 

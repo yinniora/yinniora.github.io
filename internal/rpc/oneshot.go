@@ -20,11 +20,10 @@ import (
 // still load — including globally installed ones that register models — but
 // project extensions from this checkout are not loaded on top of that copy.
 func OneShot(ctx context.Context, command string, extraFields map[string]any) (json.RawMessage, error) {
-	cmd := picmd.Command(ctx, "--mode", "rpc")
+	cmd := picmd.Command(ctx, detachedPiDir(), "--mode", "rpc")
 	if cmd.Err != nil {
 		return nil, fmt.Errorf("pi executable not found: %w", cmd.Err)
 	}
-	cmd.Dir = detachedPiDir()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

@@ -136,10 +136,13 @@ function createWindow(initialUrl) {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
-    if (!sameOrigin(url) && (HOST_APP || !url.startsWith('file:'))) {
+    if (!sameOrigin(url)) {
       event.preventDefault();
       openExternal(url);
     }
+  });
+  win.webContents.on('will-redirect', (event) => {
+    if (event.isMainFrame && !sameOrigin(event.url)) event.preventDefault();
   });
   // Right-click / long-press: link and text actions.
   win.webContents.on('context-menu', (_event, params) => {
@@ -157,8 +160,8 @@ function createWindow(initialUrl) {
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
   win.webContents.on('did-fail-load', (_event, code, _desc, url, isMainFrame) => {
-    if (!isMainFrame || code === -3 /* aborted */) return;
-    win.loadFile(path.join(__dirname, 'offline.html'), { query: { retry: url || CLIENT_URL } });
+    if (!isMainFrame || code === -3 /* aborted */ || !sameOrigin(url)) return;
+    win.loadFile(path.join(__dirname, 'offline.html'), { query: { retry: CLIENT_URL } });
   });
 
   if (HOST_APP && initialUrl === null) {
@@ -212,11 +215,17 @@ if (!locked) {
   });
 
   app.whenReady().then(async () => {
-    session.defaultSession.setPermissionRequestHandler((contents, permission, callback) => {
-      callback(sameOrigin(contents.getURL()) && ALLOWED_PERMISSIONS.has(permission));
+    session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+      callback(ALLOWED_PERMISSIONS.has(permission) && details.isMainFrame &&
+        sameOrigin(contents.getURL()) && sameOrigin(details.requestingUrl) &&
+        (!details.securityOrigin || sameOrigin(details.securityOrigin)));
     });
-    session.defaultSession.setPermissionCheckHandler((contents, permission, origin) => {
-      return (origin === CLIENT_ORIGIN || sameOrigin(contents?.getURL() || '')) && ALLOWED_PERMISSIONS.has(permission);
+    session.defaultSession.setPermissionCheckHandler((contents, permission, origin, details) => {
+      if (!ALLOWED_PERMISSIONS.has(permission) || !sameOrigin(origin)) return false;
+      if (!contents) return permission === 'notifications' && !details.requestingUrl;
+      return details.isMainFrame && sameOrigin(contents.getURL()) &&
+        (!details.requestingUrl || sameOrigin(details.requestingUrl)) &&
+        (!details.securityOrigin || sameOrigin(details.securityOrigin));
     });
     if (process.platform === 'darwin') {
       Menu.setApplicationMenu(
