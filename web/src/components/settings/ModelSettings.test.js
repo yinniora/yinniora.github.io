@@ -51,6 +51,14 @@ it('shows the native effort protocol and saves only an available per-model defau
     'xhigh',
     'max',
   ]);
+  expect(Array.from(select.options, (option) => option.textContent)).toEqual([
+    'Default',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+  ]);
   await fireEvent.change(select, { target: { value: 'high' } });
   await view.findByText(/Default high$/);
   expect(requests).toEqual([

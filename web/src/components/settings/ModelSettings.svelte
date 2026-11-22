@@ -2,7 +2,10 @@
   import { onMount } from 'svelte';
   import { getJSON, postJSON } from '../../shared/api.js';
   import { t } from '../../shared/i18n.js';
-  import { supportedThinkingLevels } from '../../session/chat/chat-selectors.js';
+  import {
+    supportedThinkingLevels,
+    thinkingLevelLabel,
+  } from '../../session/chat/chat-selectors.js';
   import { loadModelBalances, modelBalanceLabel } from '../../session/chat/model-balances.js';
   import {
     formatTokenLimit,
@@ -596,7 +599,8 @@
                     · {model.adaptiveThinking ? 'effort' : 'budget_tokens'}
                   {/if}
                   {#if model.defaultThinkingLevel}
-                    · {t('schedules.thinkingDefault')} {t('thinking.' + model.defaultThinkingLevel)}
+                    · {t('schedules.thinkingDefault')}
+                    {thinkingLevelLabel(model, model.defaultThinkingLevel)}
                   {/if}
                 </small>{/if}
             </div>
@@ -695,7 +699,7 @@
                     >
                       <option value="">{t('schedules.thinkingDefault')}</option>
                       {#each supportedThinkingLevels(model) as level (level)}
-                        <option value={level}>{t('thinking.' + level)}</option>
+                        <option value={level}>{thinkingLevelLabel(model, level)}</option>
                       {/each}
                     </select>
                   </label>

@@ -72,6 +72,10 @@ export function supportedThinkingLevels(model, levels = THINKING_LEVELS) {
   });
 }
 
+export function thinkingLevelLabel(model, level) {
+  return model?.thinkingLevelMap?.[level] ?? level;
+}
+
 export function detectCurrentThinkingLevel(entries) {
   const changes = entries.filter((entry) => entry.type === 'thinking_level_change');
   const latest = changes[changes.length - 1];

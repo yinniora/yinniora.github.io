@@ -1281,7 +1281,7 @@ test("composer switches effort on model change and sends a file using the attach
       switch (new URL(String(input), location.href).pathname) {
         case "/api/models":
           return Response.json({ models: [
-            { provider: "catalog", providerLabel: "Pro key", id: "parameter-model", reasoning: true, thinkingLevelMap: { minimal: null, medium: null, max: "max" } },
+            { provider: "catalog", providerLabel: "Pro key", id: "parameter-model", reasoning: true, thinkingLevelMap: { off: "none", minimal: null, medium: null, max: "max" } },
             { provider: "other-key", id: "parameter-model", reasoning: true, thinkingLevelMap: { off: null, minimal: null, high: null, low: null, xhigh: "xhigh" } },
             { provider: "catalog", id: "fixed-model-thinking", reasoning: false },
           ] });
@@ -1326,14 +1326,17 @@ test("composer switches effort on model change and sends a file using the attach
   const model = picker.locator('.model-item[data-provider="catalog"][data-model-id="parameter-model"]');
   await model.click();
   await expect(model).toHaveAttribute("aria-pressed", "true");
-  await expect(modelControl).toHaveAccessibleName("Pro key · parameter-model · off");
+  await expect(modelControl).toHaveAccessibleName("Pro key · parameter-model · none");
   await expect(picker.locator("#pi-chat-model-current")).toHaveText("parameter-model @ Pro key");
   await expect(picker.locator(".thinking-level-item")).toHaveCount(3);
   await expect(picker.locator(".thinking-level-item[data-level=high]")).toHaveCount(0);
   await expect(picker.locator(".thinking-level-item[data-level=off]")).toHaveAttribute("aria-pressed", "true");
+  await expect(picker.locator(".thinking-level-item[data-level=off]")).toHaveText("none");
   await picker.locator(".thinking-level-item[data-level=max]").click();
-  await expect(modelControl).toHaveAccessibleName("Pro key · parameter-model · maximum");
+  await expect(modelControl).toHaveAccessibleName("Pro key · parameter-model · max");
   await expect(picker.locator(".thinking-level-item[data-level=max]")).toHaveAttribute("aria-pressed", "true");
+  await picker.getByRole("button", { name: "none", exact: true }).click();
+  await expect(modelControl).toHaveAccessibleName("Pro key · parameter-model · none");
   if (await isMobileLayout(page)) {
     await search.focus();
     await page.evaluate(() => (window as Window & { setKeyboardVisible?: (value: boolean) => void }).setKeyboardVisible?.(true));
@@ -1348,7 +1351,7 @@ test("composer switches effort on model change and sends a file using the attach
   }
   await picker.locator('.model-item[data-provider="other-key"][data-model-id="parameter-model"]').click();
   await expect(picker.locator(".thinking-level-item")).toHaveCount(2);
-  await expect(picker.locator(".thinking-level-item[data-level=xhigh]")).toBeVisible();
+  await expect(picker.locator(".thinking-level-item[data-level=xhigh]")).toHaveText("xhigh");
   await picker.locator('.model-item[data-model-id="fixed-model-thinking"]').click();
   await expect(modelControl).toHaveText("");
   await expect(effortRow).toBeHidden();

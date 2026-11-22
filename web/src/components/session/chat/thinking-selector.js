@@ -2,8 +2,8 @@ import {
   THINKING_LEVELS,
   detectCurrentThinkingLevel,
   supportedThinkingLevels,
+  thinkingLevelLabel,
 } from '../../../session/chat/chat-selectors.js';
-import { t } from '../../../shared/i18n.js';
 import { icon, Check } from '../../../shared/icons.js';
 import { escapeHtml } from '../../../session/render/session-format.js';
 
@@ -35,19 +35,19 @@ export function setupThinkingLevelSelector({
     const model = getCurrentModel();
     const levels = model ? supportedThinkingLevels(model) : [];
     thinkingControls.hidden = levels.length <= 1;
-    const key = levels.join(',');
+    const options = levels.map((level) => [level, thinkingLevelLabel(model, level)]);
+    const key = JSON.stringify(options);
     if (key !== previousLevels) {
       const mark = icon(Check, { size: 14, class: 'thinking-choice-mark' });
-      thinkingList.innerHTML = levels
-        .map((level) => {
-          const label = escapeHtml(t('thinking.' + level));
+      thinkingList.innerHTML = options
+        .map(([level, label]) => {
           return (
             '<button type="button" class="thinking-level-item" data-level="' +
             level +
             '">' +
             mark +
             '<span>' +
-            label +
+            escapeHtml(label) +
             '</span></button>'
           );
         })

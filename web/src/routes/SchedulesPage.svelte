@@ -5,9 +5,11 @@
   import { t } from '../shared/i18n.js';
   import FullScreenSheet from '../components/session/FullScreenSheet.svelte';
   import {
+    findModel,
     groupModelsByProvider,
     modelDisplayLabel,
     THINKING_LEVELS,
+    thinkingLevelLabel,
   } from '../session/chat/chat-selectors.js';
   import {
     icon,
@@ -74,6 +76,7 @@
     enabled: true,
   });
   let form = $state(blankForm());
+  const scheduleModel = $derived(findModel(models, form.modelProvider, form.modelId));
 
   const filteredProviders = $derived.by(() => {
     const byProvider = groupModelsByProvider(models, modelFilter);
@@ -636,7 +639,7 @@
     <select bind:value={form.thinkingLevel}>
       <option value="">{t('schedules.thinkingDefault')}</option>
       {#each THINKING_LEVELS as level (level)}
-        <option value={level}>{level}</option>
+        <option value={level}>{thinkingLevelLabel(scheduleModel, level)}</option>
       {/each}
     </select>
   </label>

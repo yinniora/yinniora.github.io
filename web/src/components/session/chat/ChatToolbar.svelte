@@ -14,7 +14,10 @@
     Terminal,
   } from '../../../shared/icons.js';
   import { t } from '../../../shared/i18n.js';
-  import { supportedThinkingLevels } from '../../../session/chat/chat-selectors.js';
+  import {
+    supportedThinkingLevels,
+    thinkingLevelLabel,
+  } from '../../../session/chat/chat-selectors.js';
   import { ChatToolbarState } from './chat-toolbar-state.svelte.js';
   import ContextUsage from './ContextUsage.svelte';
   import ComputerPermission from './ComputerPermission.svelte';
@@ -42,7 +45,7 @@
   );
   const effortLabel = $derived(
     supportedThinkingLevels(toolbar.selectedModel).includes(toolbar.thinkingLevel)
-      ? t('thinking.' + toolbar.thinkingLevel)
+      ? thinkingLevelLabel(toolbar.selectedModel, toolbar.thinkingLevel)
       : '',
   );
   const modelControlLabel = $derived(
