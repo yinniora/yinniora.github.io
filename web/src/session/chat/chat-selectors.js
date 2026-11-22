@@ -1,4 +1,15 @@
+import { getLocale } from '../../shared/i18n.js';
+
 export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+// https://openai.com/zh-Hans-CN/index/practical-guide-building-gpt-6/
+const openAIThinkingLabelsZh = new Map([
+  ['low', '低'],
+  ['medium', '中'],
+  ['high', '高'],
+  ['xhigh', '极高'],
+  ['max', 'Max'],
+]);
 
 export function isScopedModel(model) {
   return !!(model?.isScoped || model?.scoped || model?.scope);
@@ -73,7 +84,12 @@ export function supportedThinkingLevels(model, levels = THINKING_LEVELS) {
 }
 
 export function thinkingLevelLabel(model, level) {
-  return model?.thinkingLevelMap?.[level] ?? level;
+  const value = model?.thinkingLevelMap?.[level] ?? level;
+  const id = model?.id || model?.modelId || '';
+  if (getLocale() === 'zh' && (model?.provider === 'openai' || /^(gpt-|o[134](?:-|$))/i.test(id))) {
+    return openAIThinkingLabelsZh.get(value) ?? value;
+  }
+  return value;
 }
 
 export function detectCurrentThinkingLevel(entries) {

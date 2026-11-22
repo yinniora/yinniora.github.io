@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LOCALE_KEY } from '../../shared/i18n.js';
 import {
   detectCurrentModel,
   detectCurrentThinkingLevel,
@@ -7,6 +8,7 @@ import {
   isScopedModel,
   modelDisplayLabel,
   supportedThinkingLevels,
+  thinkingLevelLabel,
 } from './chat-selectors.js';
 
 describe('chat selector helpers', () => {
@@ -63,5 +65,30 @@ describe('chat selector helpers', () => {
   it('formats model labels', () => {
     expect(modelDisplayLabel(models[0])).toBe('GPT 5 @ openai');
     expect(modelDisplayLabel(null, 'fallback')).toBe('fallback');
+  });
+
+  it('uses documented OpenAI labels in Chinese and preserves API labels without a Chinese name', () => {
+    const model = {
+      provider: 'yugo-configured-key',
+      id: 'gpt-6.2-sol',
+      thinkingLevelMap: { off: 'none' },
+    };
+    const levels = ['low', 'medium', 'high', 'xhigh', 'max', 'off', 'minimal'];
+    localStorage.setItem(LOCALE_KEY, 'zh');
+    try {
+      expect(levels.map((level) => thinkingLevelLabel(model, level))).toEqual([
+        '低',
+        '中',
+        '高',
+        '极高',
+        'Max',
+        'none',
+        'minimal',
+      ]);
+      expect(thinkingLevelLabel({ id: 'claude-opus-5-5' }, 'xhigh')).toBe('xhigh');
+    } finally {
+      localStorage.removeItem(LOCALE_KEY);
+    }
+    expect(thinkingLevelLabel(model, 'xhigh')).toBe('xhigh');
   });
 });

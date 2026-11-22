@@ -338,8 +338,9 @@ describe exact levels using the OpenCode/models.dev `capabilities.reasoning`
 or Anthropic's `capabilities.effort` and `capabilities.thinking` shapes.
 Model discovery uses the provider's read-only catalog, and switching
 reads the selected model's declared options locally. The model picker shows
-the current model and available effort levels alongside the model list. Effort
-labels use the model's API values, such as `none` and `xhigh`, across locales. The
+the current model and available effort levels alongside the model list. Chinese
+UI uses the names in OpenAI's Chinese documentation for recognized OpenAI models,
+with API values as the fallback. The
 toolbar opens the picker with an icon, and its accessible name follows the
 worker's model and effort.
 
