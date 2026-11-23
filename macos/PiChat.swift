@@ -269,7 +269,9 @@ final class PiWindow: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
         if action.shouldPerformDownload { decisionHandler(.download); return }
         if let url = action.request.url, action.targetFrame?.isMainFrame == true,
            !allowsNavigation(url) {
-            if action.navigationType == .linkActivated { openInBrowser(url) }
+            let fromLocalWorkspace = mode == .local && action.sourceFrame.isMainFrame &&
+                allowsWorkspaceURL(action.sourceFrame.request.url)
+            if action.navigationType == .linkActivated || fromLocalWorkspace { openInBrowser(url) }
             decisionHandler(.cancel)
             return
         }
