@@ -36,8 +36,9 @@ import java.util.regex.Pattern;
 
 /** Checks and stages a release APK. Android makes the final install decision. */
 final class ApkUpdates implements AutoCloseable {
-    private static final String RELEASE_API = "https://api.github.com/repos/yinniora/yugo-pi/releases";
+    private static final String RELEASE_API = "https://api.github.com/repositories/1461162242/releases";
     private static final String RELEASE_DOWNLOAD = "https://github.com/yinniora/yugo-pi/releases/download/";
+    private static final String SITE_REPOSITORY_DOWNLOAD = "https://github.com/yinniora/yinniora.github.io/releases/download/";
     private static final Pattern TAG = Pattern.compile("^yugo-v(\\d+\\.\\d+\\.\\d+-yugo\\.([1-9]\\d*))$");
     private static final Pattern DIGEST = Pattern.compile("^sha256:[a-f0-9]{64}$");
     private static final int MAX_METADATA_BYTES = 4 * 1024 * 1024;
@@ -240,10 +241,11 @@ final class ApkUpdates implements AutoCloseable {
             if (!name.equals(candidate.optString("name"))) continue;
             long size = candidate.optLong("size", -1);
             String digest = candidate.optString("digest");
-            String url = RELEASE_DOWNLOAD + selected.tag + "/" + name;
+            String url = candidate.optString("browser_download_url");
+            String assetPath = selected.tag + "/" + name;
             if (found != null || !"uploaded".equals(candidate.optString("state"))
                     || size <= 0 || size > MAX_APK_BYTES || !DIGEST.matcher(digest).matches()
-                    || !url.equals(candidate.optString("browser_download_url"))) {
+                    || (!url.equals(RELEASE_DOWNLOAD + assetPath) && !url.equals(SITE_REPOSITORY_DOWNLOAD + assetPath))) {
                 throw new IOException("Invalid APK release metadata");
             }
             found = new Asset(url, size, digest.substring("sha256:".length()));

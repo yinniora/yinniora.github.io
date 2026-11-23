@@ -39,6 +39,13 @@ The release workflow builds YuGo archives from our repository, includes LICENSE,
 NOTICE and THIRD_PARTY_NOTICES, and does not publish the upstream npm package.
 Do not reuse an official version number or point an installer at upstream.
 
+The YuGo Web Client workflow builds the encrypted browser app from the release
+tag. On the account's Pages repository it deploys that build after the release
+is published, and can also run from the maintained branch for a site rebuild.
+The site keeps its root URL, manifest ID and service-worker scope for installed
+Home Screen apps. The Docs workflow packages a preview of the documentation
+site for download.
+
 The Mac service automatically checks the public official `main` commit three
 seconds after startup and every six hours thereafter. This is read-only metadata
 tracking without GitHub tokens, model calls, Git operations or installation. The

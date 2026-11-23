@@ -1,0 +1,49 @@
+name: YuGo Web Client
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yugo-web-client
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build encrypted web client
+    if: github.ref_name == github.event.repository.default_branch || startsWith(github.ref, 'refs/tags/yugo-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build web client
+        run: make remote-build
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist-remote
+          include-hidden-files: true
+
+  deploy:
+    name: Publish the existing phone entry
+    if: github.repository == 'yinniora/yinniora.github.io'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.publish.outputs.page_url }}
+    steps:
+      - id: publish
+        uses: actions/deploy-pages@v5

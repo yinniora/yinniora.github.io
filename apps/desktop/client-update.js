@@ -6,7 +6,7 @@ const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { promisify } = require('node:util');
 
-const API = 'https://api.github.com/repos/yinniora/yugo-pi/releases?per_page=10';
+const API = 'https://api.github.com/repositories/1461162242/releases?per_page=10';
 const RELEASES = 'https://github.com/yinniora/yugo-pi/releases';
 const VERSION = /^(\d{1,7})\.(\d{1,7})\.(\d{1,7})-yugo\.(\d{1,7})$/;
 const MAX_ASSET_SIZE = 1024 ** 3;
