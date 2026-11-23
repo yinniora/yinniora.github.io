@@ -1,8 +1,10 @@
 # Maintaining YuGo Pi
 
 YuGo Pi is the independently maintained variant at
-https://github.com/yinniora/yugo-pi, with `main` as the maintained branch and
-`yugo-v*` as its release tags. Upstream is https://github.com/ygncode/pi-web.
+https://github.com/yinniora/yinniora.github.io, with `main` as the maintained
+branch and `yugo-v*` as its release tags. GitHub redirects the previous `yugo-pi`
+and `pi-web` repository addresses to the same repository. Upstream is
+https://github.com/ygncode/pi-web.
 The original MIT license and author attribution must be preserved. This
 repository keeps full ancestry and its GitHub fork relationship for provenance.
 

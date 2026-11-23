@@ -27,15 +27,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yinniora/yugo-pi"
+    "url": "https://github.com/yinniora/yinniora.github.io"
   },
   "license": "MIT",
   "devDependencies": {
     "typebox": "^1.1.38",
     "vitest": "^4.1.7"
   },
-  "homepage": "https://github.com/yinniora/yugo-pi",
+  "homepage": "https://github.com/yinniora/yinniora.github.io",
   "bugs": {
-    "url": "https://github.com/yinniora/yugo-pi/issues"
+    "url": "https://github.com/yinniora/yinniora.github.io/issues"
   }
 }

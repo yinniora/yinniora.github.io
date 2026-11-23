@@ -1,6 +1,6 @@
 {
   "name": "YuGo Pi",
-  "repository": "https://github.com/yinniora/yugo-pi",
+  "repository": "https://github.com/yinniora/yinniora.github.io",
   "defaultBranch": "main",
   "releaseTagPrefix": "yugo-v",
   "upstream": "https://github.com/ygncode/pi-web",

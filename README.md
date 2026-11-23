@@ -6,7 +6,7 @@ YuGo Pi is an independently maintained, MIT-licensed variant of **pi-web**,
 originally created by **Set Kyar Wa Lar (YGNCode)**. It is not an official
 pi-web or Pi release. The upstream copyright and license remain intact.
 
-The project is maintained at [yinniora/yugo-pi](https://github.com/yinniora/yugo-pi).
+Source, releases, and the web app are maintained in the [YuGo Pi repository](https://github.com/yinniora/yinniora.github.io).
 Bug reports and contributions for this variant belong in this repository.
 
 ## What YuGo Pi adds
