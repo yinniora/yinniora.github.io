@@ -5520,40 +5520,6 @@
       padding-bottom: 0;
     }
 
-    /* One collapsible card for every file the session produced, shown once the
-       turn has finished. Inline output cards stay where they were written. */
-    .outputs-card {
-      margin: 10px 0 4px;
-      border: 1px solid var(--dim);
-      border-radius: 12px;
-      background: var(--container-bg);
-    }
-    .outputs-card > summary {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 40px;
-      padding: 8px 12px;
-      color: var(--text-soft);
-      font-size: 13px;
-      font-weight: 550;
-      cursor: pointer;
-      list-style: none;
-    }
-    .outputs-card > summary::-webkit-details-marker {
-      display: none;
-    }
-    .outputs-card-chevron {
-      display: inline-flex;
-      color: var(--muted);
-      transition: transform 140ms ease;
-    }
-    .outputs-card[open] > summary .outputs-card-chevron {
-      transform: rotate(90deg);
-    }
-    .outputs-card-body {
-      padding: 2px 10px 10px;
-    }
     .question-sheet-body .question-picker-actions {
       position: sticky;
       bottom: 0;

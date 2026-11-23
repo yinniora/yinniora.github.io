@@ -103,6 +103,7 @@ export function groupConversationActivity(
   outputsByEntry,
   running = false,
   thinkingPreviews = [],
+  toolImagesByCall,
 ) {
   const results = new Map();
   for (const { entry } of entries) {
@@ -124,6 +125,7 @@ export function groupConversationActivity(
         retries: 0,
         latestTool: '',
         outputs: [],
+        imagePreviews: [],
         timeline: [],
         needsResponse: false,
         questionOutcome: '',
@@ -140,6 +142,8 @@ export function groupConversationActivity(
     for (const tool of tools) {
       activity.latestTool = tool.name;
       if (results.get(tool.id)?.isError) activity.failures++;
+      const previews = toolImagesByCall?.get(tool.id);
+      if (previews) activity.imagePreviews.push(...previews);
     }
   }
 

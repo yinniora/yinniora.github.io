@@ -5,7 +5,7 @@
   import { t } from '../../shared/i18n.js';
 
   const ZOOMABLE_SELECTOR =
-    '.message-image, .pi-chat-attachment-preview, .assistant-text img, .markdown-content img, .pi-btw-md img';
+    '.message-image, .tool-image, .pi-chat-attachment-preview, .assistant-text img, .markdown-content img, .pi-btw-md img';
   let open = $state(false);
   let src = $state(null);
   let alt = $state('');

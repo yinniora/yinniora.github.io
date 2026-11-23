@@ -34,6 +34,19 @@ describe('session markdown', () => {
     );
   });
 
+  it('renders embedded raster images without allowing other data URLs', () => {
+    const marked = new Marked();
+    expect(safeMarkedParse('![PNG](data:image/png;base64,YWJj)', { marked })).toContain(
+      '<img src="data:image/png;base64,YWJj" alt="PNG">',
+    );
+    expect(safeMarkedParse('![SVG](data:image/svg+xml;base64,YWJj)', { marked })).not.toContain(
+      '<img',
+    );
+    expect(safeMarkedParse('[Data](data:image/png;base64,YWJj)', { marked })).not.toContain(
+      'href=',
+    );
+  });
+
   it('keeps workspace downloads inside the live session and leaves export anchors alone', () => {
     const instance = new Marked();
     const inputs =

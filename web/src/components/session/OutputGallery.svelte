@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { marked } from 'marked';
   import { safeMarkedParse } from '../../session/render/markdown.js';
-  import { icon, Download, ExternalLink, FileDiff, Play } from '../../shared/icons.js';
+  import { icon, Download, ExternalLink, FileDiff, Maximize2 } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { showToast } from '../../shared/toast.js';
   import {
@@ -211,48 +211,35 @@
 <!-- eslint-disable svelte/no-at-html-tags -- Lucide icons and sanitized Markdown -->
 {#snippet gallery(group)}
   <section class="output-gallery" aria-label={t('outputs.title')}>
-    <div class="output-section-title">{t('outputs.title')}<span>{group.length}</span></div>
+    <div class="output-section-title">{t('outputs.title')}</div>
     <div class="output-grid">
       {#each group as output (output.id)}
-        <article
-          class="output-card"
-          class:output-visual={['svg', 'image', 'video'].includes(output.kind)}
-        >
-          <div class="output-card-header">
-            <span class="output-file-icon" aria-hidden="true"
-              >{@html icon(output.kind === 'video' ? Play : FileDiff, { size: 17 })}</span
-            >
-            <span class="output-file-name" title={output.filePath || output.title}
-              >{output.title}</span
-            >
-            <span class="output-file-size">{formatAssetSize(output.size)}</span>
+        {@const hasImage = output.kind === 'image' || (output.kind === 'svg' && output.content)}
+        {@const hasPreview = hasImage || ['video', 'audio'].includes(output.kind)}
+        {@const fileType =
+          output.title.match(/\.([\w-]+)$/)?.[1].toUpperCase() ||
+          (output.kind === 'file' ? '' : output.kind.toUpperCase())}
+        {@const fileMetadata = [fileType, formatAssetSize(output.size)].filter(Boolean).join(' · ')}
+        <article class="output-card" class:output-has-preview={hasPreview}>
+          {#if hasImage}
             <button
-              class="output-icon-button"
-              title={t('artifact.download')}
-              aria-label={`${t('artifact.download')} ${output.title}`}
-              onclick={() => download(output)}>{@html icon(Download, { size: 16 })}</button
-            >
-          </div>
-          {#if output.kind === 'svg' && output.content}
-            <button
+              type="button"
               class="output-image-button"
+              class:output-svg={output.kind === 'svg'}
               aria-label={`${t('media.enlarge')} ${output.title}`}
               onclick={() => open(output)}
             >
               <img
                 class="output-inline-preview"
-                src={svgPreviewURL(output.content)}
-                alt={output.title}
+                src={output.kind === 'svg' ? svgPreviewURL(output.content) : output.previewUrl}
+                alt=""
                 loading="lazy"
+                decoding="async"
               />
+              <span class="output-image-zoom" aria-hidden="true"
+                >{@html icon(Maximize2, { size: 16 })}</span
+              >
             </button>
-          {:else if output.kind === 'image'}
-            <button
-              class="output-image-button"
-              onclick={() => open(output)}
-              aria-label={`${t('artifact.preview')} ${output.title}`}
-              ><img src={output.previewUrl} alt={output.title} loading="lazy" /></button
-            >
           {:else if output.kind === 'video'}
             <!-- svelte-ignore a11y_media_has_caption -->
             <video
@@ -264,18 +251,43 @@
               onerror={() => failedVideos.add(output.id)}
             ></video>
             {#if failedVideos.has(output.id)}<p class="output-media-help">
-                {t('media.videoUnsupported')}<button onclick={() => download(output)}
-                  >{t('artifact.download')}</button
-                >
+                {t('media.videoUnsupported')}
               </p>{/if}
           {:else if output.kind === 'audio'}
             <audio class="output-audio" controls preload="metadata" src={output.previewUrl}></audio>
           {/if}
-          <div class="output-card-footer">
-            <span>{output.kind.toUpperCase()}</span>
-            <button onclick={() => open(output)}
-              >{@html icon(ExternalLink, { size: 14 })}{t('outputs.open')}</button
-            >
+          <div class="output-card-bar">
+            {#if !hasPreview}
+              <span class="output-file-icon" aria-hidden="true"
+                >{@html icon(FileDiff, { size: 17 })}</span
+              >
+            {/if}
+            <div class="output-file-details">
+              <span class="output-file-name" title={output.filePath || output.title}
+                >{output.title}</span
+              >
+              {#if fileMetadata}<span class="output-file-meta">{fileMetadata}</span>{/if}
+            </div>
+            <div class="output-card-actions">
+              {#if !hasImage}
+                <button
+                  type="button"
+                  class="output-action"
+                  title={t('outputs.open')}
+                  aria-label={`${t('outputs.open')} ${output.title}`}
+                  onclick={() => open(output)}>{@html icon(ExternalLink, { size: 16 })}</button
+                >
+              {/if}
+              <button
+                type="button"
+                class="output-action output-download"
+                title={t('artifact.download')}
+                aria-label={`${t('artifact.download')} ${output.title}`}
+                onclick={() => download(output)}
+              >
+                {@html icon(Download, { size: 16 })}<span>{t('artifact.download')}</span>
+              </button>
+            </div>
           </div>
         </article>
       {/each}

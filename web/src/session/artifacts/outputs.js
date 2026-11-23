@@ -7,7 +7,7 @@ export function assetUrl(sessionId, path, inline = false) {
   return `/api/asset?${query}`;
 }
 
-function relativeOutputPath(path, cwd) {
+export function relativeOutputPath(path, cwd) {
   const windows = /^[a-z]:[\\/]|^\\\\/i.test(cwd);
   if (windows) {
     path = path.replaceAll('\\', '/');

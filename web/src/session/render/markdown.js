@@ -5,6 +5,7 @@ export const strictStrikethroughRegex =
   /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
 
 const configured = new WeakSet();
+const rasterDataImage = /^data:image\/(?:png|jpe?g|gif|webp|avif|bmp);base64,[a-z0-9+/]+={0,2}$/i;
 
 export function configureSessionMarkdown({ marked, hljs, escapeHtml = defaultEscapeHtml }) {
   if (configured.has(marked)) return;
@@ -59,7 +60,10 @@ export function configureSessionMarkdown({ marked, hljs, escapeHtml = defaultEsc
       },
       image(token) {
         const href = (token.href || '').trim();
-        if (/^\s*(javascript|vbscript|data):/i.test(href)) {
+        if (
+          /^(javascript|vbscript):/i.test(href) ||
+          (/^data:/i.test(href) && !rasterDataImage.test(href))
+        ) {
           return escapeHtml(token.text || '');
         }
         let out = '<img src="' + escapeHtml(href) + '" alt="' + escapeHtml(token.text || '') + '"';

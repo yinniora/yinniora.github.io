@@ -11,14 +11,15 @@
   import ActivityDisclosure from './ActivityDisclosure.svelte';
   import ToolCall from './ToolCall.svelte';
   import ToolRun from './ToolRun.svelte';
+  import ToolImageStrip from './ToolImageStrip.svelte';
   import ReplyError from './ReplyError.svelte';
   import { marked } from 'marked';
   import { safeMarkedParse } from '../../session/render/markdown.js';
   import { entriesWithReplyDetails } from '../../session/render/reply-details.js';
   import { groupOutputsByReply } from '../../session/artifacts/outputs.js';
+  import { collectToolImagePreviews } from '../../session/artifacts/tool-images.js';
   import { groupConversationActivity } from '../../session/render/conversation-activity.js';
   import { t } from '../../shared/i18n.js';
-  import { icon, ChevronRight } from '../../shared/icons.js';
   import { formatElapsed } from '../../session/render/entry-format.js';
 
   function activityText(section) {
@@ -63,6 +64,7 @@
     renderOutputs = null,
     onCompact = null,
     cwd = '',
+    sessionId = '',
   } = $props();
 
   const md = (text) => safeMarkedParse(text, { marked, workspaceCwd: live ? cwd : undefined });
@@ -73,9 +75,18 @@
       : model.activePath.map((entry) => ({ entry })),
   );
   const groups = $derived(outputs.length ? groupOutputsByReply(entries, outputs) : null);
+  const toolImages = $derived(
+    live ? collectToolImagePreviews(model.activePath, cwd, sessionId) : null,
+  );
   const sections = $derived(
     live
-      ? groupConversationActivity(entries, groups?.byEntry, sessionRunning, thinkingPreviews)
+      ? groupConversationActivity(
+          entries,
+          groups?.byEntry,
+          sessionRunning,
+          thinkingPreviews,
+          toolImages,
+        )
       : entries.map((item) => ({ key: item.entry.id, item })),
   );
   // Sections after the last user message belong to the newest turn; only that
@@ -87,19 +98,6 @@
     }
     return 0;
   });
-  const outputsBefore = $derived(
-    !sessionRunning && outputs.length
-      ? sections.findLastIndex((section, i) => i >= latestFrom && section.final)
-      : -1,
-  );
-  const collapsedOutputs = $derived(
-    sessionRunning
-      ? []
-      : [
-          ...(groups?.byEntry.get(sections[outputsBefore]?.item?.entry.id) || []),
-          ...(groups?.unassigned || []),
-        ],
-  );
   function continueTask() {
     document
       .getElementById('pi-chat-composer')
@@ -133,9 +131,7 @@
     skipActivity,
     emptyReply,
   },
-  inActivity = false,
   latestTurn = false,
-  outputsCollapsed = false,
 )}
   {#if repeatedError || retried || autoContinued}
     <span id={`entry-${entry.id}`} hidden></span>
@@ -152,8 +148,8 @@
       showEmptyReplyWarning={!latestTurn || (sessionRunning === false && outputsReady)}
       latestTurn={latestTurn && sessionRunning === false}
       {skipActivity}
-      outputs={inActivity ? undefined : groups?.byEntry.get(entry.id)}
-      renderOutputs={outputsCollapsed ? null : renderOutputs}
+      outputs={groups?.byEntry.get(entry.id)}
+      {renderOutputs}
       {onCompact}
       {cwd}
     />
@@ -161,17 +157,6 @@
 {/snippet}
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: sanitized session markdown -->
-{#snippet outputsCard()}
-  <details class="outputs-card" data-output-count={collapsedOutputs.length}>
-    <summary>
-      <span class="outputs-card-chevron" aria-hidden="true"
-        >{@html icon(ChevronRight, { size: 14 })}</span
-      >{t('outputs.title')} · {collapsedOutputs.length}
-    </summary>
-    <div class="outputs-card-body">{@render renderOutputs?.(collapsedOutputs)}</div>
-  </details>
-{/snippet}
-
 <div id="messages-list" class="messages-list" bind:this={containerEl}>
   {#each sections as section, sectionIndex (section.key)}
     {#if section.items}
@@ -211,6 +196,9 @@
           {/if}
         {/each}
       </ActivityDisclosure>
+      {#if section.imagePreviews.length}
+        <ToolImageStrip images={section.imagePreviews} />
+      {/if}
       {#if section.unfinished && chatAvailable && sessionRunning === false && sectionIndex >= latestFrom}
         <ReplyError actionsOnly onContinue={continueTask} onChooseModel={chooseModel} />
       {/if}
@@ -218,13 +206,10 @@
         {@render renderOutputs?.(section.outputs)}
       {/if}
     {:else}
-      {@const outputsCollapsed = sectionIndex === outputsBefore && collapsedOutputs.length > 0}
-      {#if outputsCollapsed}{@render outputsCard()}{/if}
-      {@render renderEntry(section.item, false, sectionIndex >= latestFrom, outputsCollapsed)}
+      {@render renderEntry(section.item, sectionIndex >= latestFrom)}
     {/if}
   {/each}
-  {#if groups?.unassigned.length && sessionRunning}
+  {#if groups?.unassigned.length}
     {@render renderOutputs?.(groups.unassigned)}
   {/if}
-  {#if collapsedOutputs.length && outputsBefore === -1}{@render outputsCard()}{/if}
 </div>

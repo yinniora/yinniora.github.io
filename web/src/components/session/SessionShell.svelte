@@ -311,6 +311,7 @@
               {renderOutputs}
               {outputsReady}
               {cwd}
+              {sessionId}
               {chatAvailable}
               {thinkingPreviews}
               onCompact={() => openPiTools('session')}

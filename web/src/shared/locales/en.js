@@ -866,6 +866,9 @@ export default {
   // ── Artifacts panel actions ──
   'artifact.copy': 'Copy',
   'outputs.title': 'Outputs',
+  'toolImages.title': 'Images from tools',
+  'toolImages.loadingPreview': 'Loading preview…',
+  'toolImages.previewUnavailable': 'Preview unavailable',
   'home.navigation': 'Workspace navigation',
   'home.headline': 'What would you like to work on?',
   'home.privateWorkspace': 'Your private workspace',

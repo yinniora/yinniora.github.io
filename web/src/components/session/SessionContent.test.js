@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
+import { createRawSnippet } from 'svelte';
 import SessionContent from './SessionContent.svelte';
 import { SessionDataModel } from '../../session/data/session-data.svelte.js';
 
@@ -86,7 +87,7 @@ describe('SessionContent', () => {
   it.each([
     ['final reply', { stopReason: 'stop', content: 'Here is the file.' }, '.reply-footer'],
     ['failed reply', { stopReason: 'error', errorMessage: 'HTTP 402' }, '.reply-error-actions'],
-  ])('places the collapsed outputs before the %s and its controls', (_, message, controls) => {
+  ])('keeps files visible after the %s', (_, message, controls) => {
     const path = [
       ...entries.slice(0, 3),
       {
@@ -110,14 +111,29 @@ describe('SessionContent', () => {
     ];
     const model = new SessionDataModel({ entries: path, header: {}, leafId: 'final' });
     const { container } = render(SessionContent, {
-      props: { model, live: true, chatAvailable: true, outputs: [{ id: 'file', entryId: 'work' }] },
+      props: {
+        model,
+        live: true,
+        chatAvailable: true,
+        outputs: [{ id: 'file', entryId: 'work' }],
+        renderOutputs: createRawSnippet(() => ({
+          render: () => '<div class="file-preview"></div>',
+        })),
+      },
     });
-    const cards = container.querySelectorAll('.outputs-card');
+    const cards = container.querySelectorAll('.file-preview');
     expect(cards).toHaveLength(1);
-    expect(cards[0].open).toBe(false);
-    expect(cards[0].previousElementSibling).toHaveClass('activity-group');
-    expect(cards[0].nextElementSibling).toHaveAttribute('id', 'entry-final');
-    expect(cards[0].nextElementSibling.querySelector(controls)).toBeInTheDocument();
+    const reply = container.querySelector('#entry-final');
+    expect(reply.previousElementSibling).toHaveClass('activity-group');
+    expect(reply).toContainElement(cards[0]);
+    if (message.stopReason === 'error') {
+      expect(reply.querySelector(controls).compareDocumentPosition(cards[0])).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    } else {
+      expect(cards[0].previousElementSibling).toHaveClass('assistant-text');
+      expect(cards[0].nextElementSibling).toBe(reply.querySelector(controls));
+    }
     expect(container.querySelector('#entry-mid').nextElementSibling.id).toBe('entry-leaf');
   });
 

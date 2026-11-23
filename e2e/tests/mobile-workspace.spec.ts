@@ -11,6 +11,9 @@ import {
   appendEntry,
 } from "../lib/sessions";
 
+const SAMPLE_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMwnnkGAAKbAZnxMlgqAAAAAElFTkSuQmCC";
+
 test("leaving a running conversation isolates its completion from the next conversation", async ({
   page,
   sessionsDir,
@@ -353,7 +356,7 @@ test("two-finger image gestures scale only the image and leave the viewer open",
   entries.push(
     assistantTextEntry(
       lastId,
-      "![Pinch preview](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j8z0AAAAASUVORK5CYII=)",
+      `![Pinch preview](data:image/png;base64,${SAMPLE_PNG})`,
     ).entry as any,
   );
   const id = writeSession(
@@ -1001,7 +1004,7 @@ test("mobile images zoom independently and BTW explains itself before opening th
   const { entries, lastId } = buildSession({ cwd });
   const image = assistantTextEntry(
     lastId,
-    "![A sample diagram](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j8z0AAAAASUVORK5CYII=)",
+    `![A sample diagram](data:image/png;base64,${SAMPLE_PNG})`,
   );
   entries.push(image.entry as any);
   const id = writeSession(
@@ -1209,7 +1212,7 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
     )
     .toBe(64);
   const card = gallery.locator(".output-card").filter({ has: page.locator("video.output-video") });
-  await card.getByRole("button", { name: "Open", exact: true }).click();
+  await card.getByRole("button", { name: "Open clip.mp4", exact: true }).click();
   await expect(page.locator(".output-full-video")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator(".output-full-video")).toBeHidden();
@@ -1240,21 +1243,70 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
   }
 });
 
-test("a finished turn shows one SVG and its link downloads on a cold session load", async ({
+test("a finished turn previews tool images and shows its downloadable SVG after the reply", async ({
   page,
   sessionsDir,
 }, testInfo) => {
   const cwd = realWorkingDir();
   const { entries, lastId } = buildSession({ cwd });
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3"/></svg>';
-  const write = assistantTextEntry(lastId, "");
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3"/></svg>';
+  const read = assistantTextEntry(lastId, "");
+  entries.push({
+    ...read.entry,
+    message: {
+      ...read.entry.message,
+      stopReason: "toolUse",
+      content: [
+        { type: "toolCall", id: "read-svg", name: "read", arguments: { path: "./reviewed.svg" } },
+        { type: "toolCall", id: "read-png", name: "read", arguments: { path: "/tmp/check.png" } },
+      ],
+    },
+  } as any);
+  entries.push({
+    type: "message",
+    id: "read-svg-result",
+    parentId: read.id,
+    timestamp: new Date().toISOString(),
+    message: {
+      role: "toolResult",
+      toolCallId: "read-svg",
+      toolName: "read",
+      content: [
+        {
+          type: "text",
+          text: '<svg xmlns="http://www.w3.org/2000/svg">\n[3 more lines in file. Use offset=2 to continue.]',
+        },
+      ],
+      isError: false,
+    },
+  } as any);
+  entries.push({
+    type: "message",
+    id: "read-png-result",
+    parentId: "read-svg-result",
+    timestamp: new Date().toISOString(),
+    message: {
+      role: "toolResult",
+      toolCallId: "read-png",
+      toolName: "read",
+      content: [{ type: "image", mimeType: "image/png", data: SAMPLE_PNG }],
+      isError: false,
+    },
+  } as any);
+  const write = assistantTextEntry("read-png-result", "");
   entries.push({
     ...write.entry,
     message: {
       ...write.entry.message,
       stopReason: "toolUse",
       content: [
-        { type: "toolCall", id: "write-svg", name: "write", arguments: { path: "finished.svg", content: svg } },
+        {
+          type: "toolCall",
+          id: "write-svg",
+          name: "write",
+          arguments: { path: "finished.svg", content: svg },
+        },
       ],
     },
   } as any);
@@ -1271,9 +1323,13 @@ test("a finished turn shows one SVG and its link downloads on a cold session loa
       isError: false,
     },
   } as any);
-  const reply = assistantTextEntry("write-svg-result", "[Download the SVG](./finished.svg)");
+  const reply = assistantTextEntry(
+    "write-svg-result",
+    "[Download the SVG](./finished.svg) · [Documentation](https://example.test/docs)",
+  );
   entries.push(reply.entry);
   writeFileSync(join(cwd, "finished.svg"), svg);
+  writeFileSync(join(cwd, "reviewed.svg"), svg);
   const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "finished-gallery"), entries);
   if (/Mobile Safari|iPad/.test(testInfo.project.name)) {
     await page.addInitScript(() => {
@@ -1282,11 +1338,35 @@ test("a finished turn shows one SVG and its link downloads on a cold session loa
   }
   await collapseScratchpad(page);
   await page.goto("/session?id=" + encodeURIComponent(id));
-  const output = page.locator(".outputs-card");
-  await expect(output).toHaveCount(1);
+  const assistant = page.locator(`#entry-${reply.id}`);
+  const output = assistant.getByRole("region", { name: "Outputs", exact: true });
+  const previews = page.getByRole("region", { name: "Images from tools", exact: true });
+  await expect(assistant.locator(".assistant-text + .output-gallery + .reply-footer")).toBeVisible();
   await expect(output.locator(".output-file-name")).toHaveText("finished.svg");
   await expect(page.locator(".output-file-name")).toHaveCount(1);
-  const assistant = page.locator(`#entry-${reply.id}`);
+  await expect(page.locator(".activity-group[open]")).toHaveCount(0);
+  await expect(previews.locator("figcaption")).toHaveText(["reviewed.svg", "check.png"]);
+  await previews.scrollIntoViewIfNeeded();
+  await expect(previews.locator("img")).toHaveCount(2);
+  for (const [name, source] of [
+    ["reviewed.svg", /^data:image\/svg\+xml/],
+    ["check.png", /^data:image\/png/],
+  ] as const) {
+    await previews.getByRole("button", { name: `Enlarge ${name}`, exact: true }).click();
+    await expect(page.locator("#modal-image")).toHaveAttribute("src", source);
+    await expect.poll(() => page.locator("#modal-image").evaluate(
+      (image) => (image as HTMLImageElement).naturalWidth,
+    )).toBeGreaterThan(0);
+    await page.locator("#image-modal").getByRole("button", { name: "Close", exact: true }).click();
+  }
+  const linkColors = await assistant.evaluate((element) =>
+    [".session-file-link", "a", ".output-download"].map((selector) =>
+      getComputedStyle(element.querySelector(selector)!).color,
+    ),
+  );
+  expect(linkColors).toEqual([linkColors[0], linkColors[0], linkColors[0]]);
+  const [red, green, blue] = linkColors[0].match(/\d+/g)!.map(Number);
+  expect(blue).toBeGreaterThan(Math.max(red, green));
   await expect(assistant.locator('a[href="./finished.svg"]')).toHaveCount(0);
   const url = page.url();
   const download = page.waitForEvent("download");
