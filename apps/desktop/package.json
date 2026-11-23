@@ -10,7 +10,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test lan-signal.test.js",
+    "test": "node --test",
     "dist": "electron-builder --publish never"
   },
   "dependencies": {
@@ -25,7 +25,7 @@
     "productName": "YuGo Pi Client",
     "artifactName": "yugo-pi-client-${version}-${os}-${arch}.${ext}",
     "copyright": "MIT License",
-    "files": ["main.js", "host.js", "client-update.js", "lan-preload.js", "lan-signal.js", "offline.html", "starting.html", "package.json", "build/icon.png"],
+    "files": ["main.js", "host.js", "client-update.js", "lan-preload.js", "lan-signal.js", "offline.html", "starting.html", "workspace-mode.html", "package.json", "build/icon.png"],
     "extraResources": [
       { "from": "../../LICENSE", "to": "LICENSE" },
       { "from": "../../NOTICE", "to": "NOTICE" }

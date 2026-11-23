@@ -1,4 +1,4 @@
-name: YuGo Host Packages
+name: YuGo Desktop Packages
 
 on:
   workflow_call:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   host:
-    name: Host (${{ matrix.platform }}/${{ matrix.arch }})
+    name: Desktop (${{ matrix.platform }}/${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -90,6 +90,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           npm ci --no-audit --no-fund
+          npm test
           PLATFORM="$HOST_PLATFORM"
           if [ "$PLATFORM" = win ]; then PLATFORM=win32; fi
           node package-host.js "$PLATFORM" "$HOST_ARCH" ../../build/host-runtime

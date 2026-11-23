@@ -1,5 +1,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+if (process.isMainFrame && process.argv.includes('--yugo-desktop-modes')) {
+  if (location.protocol === 'file:' && location.pathname.endsWith('/workspace-mode.html')) {
+    contextBridge.exposeInMainWorld('__YUGOPI_CHOOSE_MODE__', (mode) =>
+      ipcRenderer.invoke('yugo:workspace:choose', mode));
+  } else if (['http://127.0.0.1:31415', 'https://yinniora.github.io'].includes(location.origin)) {
+    const chinese = navigator.language.toLowerCase().startsWith('zh');
+    contextBridge.exposeInMainWorld('__YUGOPI_WORKSPACE_MODE__', {
+      label: chinese ? '桌面模式' : 'Desktop mode',
+      open: () => ipcRenderer.send('yugo:workspace:settings'),
+    });
+  }
+}
+
 if (process.isMainFrame && location.origin === 'https://yinniora.github.io' && location.pathname === '/' &&
     typeof contextBridge.executeInMainWorld === 'function') {
   const callbacks = new Map();

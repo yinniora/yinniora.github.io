@@ -1,17 +1,23 @@
-// YuGo Pi desktop client: a window around the published encrypted remote
-// client. It never stores host credentials itself; pairing keys live in the
-// web client's storage inside this app's profile, exactly as in a browser.
 const { app, BrowserWindow, Menu, Tray, clipboard, dialog, safeStorage, session, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
+const { pathToFileURL } = require('node:url');
 const host = require('./host');
 const { checkClientUpdate, downloadClientUpdate, RELEASES } = require('./client-update');
 const { TRUSTED_VIEWER, connectViewerLAN } = require('./lan-signal');
 
 const HOST_APP = fs.existsSync(host.BINARY);
-const CLIENT_URL = HOST_APP ? host.HOST_ORIGIN : process.env.YUGO_PI_CLIENT_URL || `${TRUSTED_VIEWER}/`;
+const CLIENT_URL = HOST_APP ? `${TRUSTED_VIEWER}/` : process.env.YUGO_PI_CLIENT_URL || `${TRUSTED_VIEWER}/`;
 const CLIENT_ORIGIN = new URL(CLIENT_URL).origin;
-const NATIVE_LAN = !HOST_APP && CLIENT_ORIGIN === TRUSTED_VIEWER;
+const PICKER = path.join(__dirname, 'workspace-mode.html');
+const PICKER_URL = pathToFileURL(PICKER).href;
+const APP_DATA = app.getPath('appData');
+if (HOST_APP) {
+  // Preserve the host profile and its existing safeStorage identity.
+  app.setName('YuGo Pi Host');
+  app.setPath('userData', path.join(APP_DATA, 'YuGo Pi Host'));
+}
 const ALLOWED_PERMISSIONS = new Set([
   'media', // camera for scanning the pairing QR code
   'clipboard-read',
@@ -25,6 +31,70 @@ let tray = null;
 let quitting = false;
 let hostProcess = null;
 let updatingClient = false;
+let workspaceMode = null;
+let choosingMode = false;
+let hostReady = null;
+let viewerSession;
+
+function modeFile() {
+  return path.join(app.getPath('userData'), 'workspace-mode');
+}
+
+function savedMode() {
+  try {
+    const mode = fs.readFileSync(modeFile(), 'utf8').trim();
+    return ['local', 'remote'].includes(mode) ? mode : null;
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    const profile = app.getPath('userData');
+    return ['host-token.encrypted', 'host-token'].some((name) => fs.existsSync(path.join(profile, name)))
+      ? 'local' : null;
+  }
+}
+
+function switchMode(mode) {
+  if (workspaceMode === mode) return;
+  const file = modeFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const temporary = file + '.' + randomUUID();
+  fs.writeFileSync(temporary, mode + '\n', { flag: 'wx', mode: 0o600 });
+  try {
+    fs.renameSync(temporary, file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+  const old = win;
+  createWindow(mode, undefined, old?.getBounds());
+  workspaceMode = mode;
+  if (old && !old.isDestroyed()) old.destroy();
+}
+
+async function showModeSettings() {
+  if (!HOST_APP || choosingMode || !win || win.isDestroyed()) return;
+  choosingMode = true;
+  const chinese = app.getLocale().toLowerCase().startsWith('zh');
+  const buttons = chinese
+    ? ['在这台电脑运行 Pi', '连接另一台电脑', '取消']
+    : ['Run Pi on this computer', 'Connect to another computer', 'Cancel'];
+  try {
+    const current = workspaceMode === 'local' ? 0 : workspaceMode === 'remote' ? 1 : 2;
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      title: 'YuGo Pi',
+      message: chinese ? '桌面模式' : 'Desktop mode',
+      detail: current === 2 ? '' : (chinese ? '当前使用：' : 'Current mode: ') + buttons[current],
+      buttons,
+      defaultId: current,
+      cancelId: 2,
+      noLink: true,
+    });
+    if (response < 2 && !quitting) switchMode(response === 0 ? 'local' : 'remote');
+  } catch (error) {
+    dialog.showErrorBox('YuGo Pi', error.message);
+  } finally {
+    choosingMode = false;
+  }
+}
 
 async function updateClient() {
   if (updatingClient || !app.isPackaged) return;
@@ -36,11 +106,11 @@ async function updateClient() {
     if (parent && !parent.isDestroyed()) parent.setProgressBar(value);
   };
   const { platform, arch } = process;
-  const portable = platform === 'linux' ? !!process.env.APPIMAGE : !!process.env.PORTABLE_EXECUTABLE_FILE;
+  const portable = !HOST_APP && (platform === 'linux' ? !!process.env.APPIMAGE : !!process.env.PORTABLE_EXECUTABLE_FILE);
   try {
-    const update = await checkClientUpdate(app.getVersion(), { platform, arch, portable });
+    const update = await checkClientUpdate(app.getVersion(), { platform, arch, portable, unified: HOST_APP });
     if (!update) {
-      await message({ type: 'info', message: 'YuGo Pi 客户端已是最新版本。' });
+      await message({ type: 'info', message: 'YuGo Pi 已是最新版本。' });
       return;
     }
     const { response } = await message({
@@ -53,13 +123,13 @@ async function updateClient() {
     if (response !== 0) return;
     progress(0);
     const file = await downloadClientUpdate(update, app.getPath('userData'), {
-      platform, arch, portable, progress,
+      platform, arch, portable, unified: HOST_APP, progress,
     });
     if (portable || (await shell.openPath(file))) shell.showItemInFolder(file);
   } catch (error) {
     const { response } = await message({
       type: 'warning',
-      message: '暂时无法安装客户端更新',
+      message: '暂时无法安装 YuGo Pi 更新',
       detail: error.message,
       buttons: ['关闭', '查看发布页'],
       cancelId: 0,
@@ -72,13 +142,16 @@ async function updateClient() {
 }
 
 const updateMenuItem = {
-  label: HOST_APP ? '查看更新' : '检查客户端更新…',
-  click: HOST_APP || !app.isPackaged ? () => openExternal(RELEASES) : updateClient,
+  label: '检查更新…',
+  click: () => {
+    if (!app.isPackaged || workspaceMode === 'local' || hostReady) openExternal(RELEASES);
+    else void updateClient();
+  },
 };
 
-function sameOrigin(url) {
+function sameOrigin(url, origin) {
   try {
-    return new URL(url).origin === CLIENT_ORIGIN;
+    return new URL(url).origin === origin;
   } catch {
     return false;
   }
@@ -95,57 +168,106 @@ function openExternal(url) {
 
 // A pairing link (…/#pair=…) passed on the command line or via the OS opens in the app.
 function pairingUrl(argv) {
-  if (HOST_APP) return undefined;
-  return argv.find((arg) => typeof arg === 'string' && sameOrigin(arg) && arg.includes('#pair='));
+  return argv.find((arg) => typeof arg === 'string' && sameOrigin(arg, CLIENT_ORIGIN) && arg.includes('#pair='));
 }
 
-function createWindow(initialUrl) {
-  win = new BrowserWindow({
+function allowPermissions(targetSession, origin) {
+  const trusted = (url) => sameOrigin(url, origin);
+  targetSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(ALLOWED_PERMISSIONS.has(permission) && details.isMainFrame &&
+      trusted(contents.getURL()) && trusted(details.requestingUrl) &&
+      (!details.securityOrigin || trusted(details.securityOrigin)));
+  });
+  targetSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
+    if (!ALLOWED_PERMISSIONS.has(permission) || !trusted(requestingOrigin)) return false;
+    if (!contents) return permission === 'notifications' && !details.requestingUrl;
+    return details.isMainFrame && trusted(contents.getURL()) &&
+      (!details.requestingUrl || trusted(details.requestingUrl)) &&
+      (!details.securityOrigin || trusted(details.securityOrigin));
+  });
+}
+
+function getViewerSession() {
+  if (!viewerSession) {
+    // The former desktop client stored non-exportable pairing keys here.
+    if (HOST_APP) {
+      const profile = path.join(APP_DATA, 'YuGo Pi Client');
+      fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
+      viewerSession = session.fromPath(profile);
+    } else {
+      viewerSession = session.defaultSession;
+    }
+    allowPermissions(viewerSession, CLIENT_ORIGIN);
+  }
+  return viewerSession;
+}
+
+function createWindow(mode, initialUrl, bounds) {
+  const remote = mode === 'remote';
+  const local = mode === 'local';
+  const origin = remote ? CLIENT_ORIGIN : local ? host.HOST_ORIGIN : null;
+  const target = remote ? CLIENT_URL : host.HOST_ORIGIN;
+  const nativeLAN = remote && CLIENT_ORIGIN === TRUSTED_VIEWER;
+  const desktop = new BrowserWindow({
     width: 1220,
     height: 820,
+    ...bounds,
     minWidth: 380,
     minHeight: 480,
     title: 'YuGo Pi',
     backgroundColor: '#09090b',
-    autoHideMenuBar: HOST_APP,
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      ...(NATIVE_LAN ? { preload: path.join(__dirname, 'lan-preload.js') } : {}),
+      session: remote ? getViewerSession() : session.defaultSession,
+      ...(nativeLAN || HOST_APP ? { preload: path.join(__dirname, 'lan-preload.js') } : {}),
+      additionalArguments: HOST_APP ? ['--yugo-desktop-modes'] : [],
       spellcheck: false,
     },
   });
-  if (!HOST_APP) win.webContents.setUserAgent(`${win.webContents.getUserAgent()} YuGoPi-Desktop`);
-  if (NATIVE_LAN) connectViewerLAN(win.webContents);
+  win = desktop;
+  const contents = desktop.webContents;
+  const trusted = (url) => origin !== null && sameOrigin(url, origin);
+  const fromCurrentDocument = (event) => win === desktop && event.senderFrame &&
+    event.senderFrame === contents.mainFrame;
+
+  if (remote) contents.setUserAgent(`${contents.getUserAgent()} YuGoPi-Desktop`);
+  if (nativeLAN) connectViewerLAN(contents);
   if (HOST_APP) {
-    win.on('close', (event) => {
+    contents.ipc.on('yugo:workspace:settings', (event) => {
+      if (fromCurrentDocument(event) && trusted(event.senderFrame.url) &&
+          (local || nativeLAN)) void showModeSettings();
+    });
+    contents.ipc.handle('yugo:workspace:choose', (event, next) => {
+      if (mode !== null || !fromCurrentDocument(event) || event.senderFrame.url !== PICKER_URL ||
+          !['local', 'remote'].includes(next)) throw new Error('Invalid desktop mode selection');
+      switchMode(next);
+    });
+    desktop.on('close', (event) => {
       if (quitting || !tray) return;
       event.preventDefault();
-      win.hide();
+      desktop.hide();
     });
   }
 
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (sameOrigin(url)) {
-      win.loadURL(url);
-    } else {
-      openExternal(url);
-    }
+  contents.setWindowOpenHandler(({ url }) => {
+    if (trusted(url)) desktop.loadURL(url).catch(() => {});
+    else openExternal(url);
     return { action: 'deny' };
   });
-  win.webContents.on('will-navigate', (event, url) => {
-    if (!sameOrigin(url)) {
+  contents.on('will-navigate', (event, url) => {
+    if (!trusted(url)) {
       event.preventDefault();
       openExternal(url);
     }
   });
-  win.webContents.on('will-redirect', (event) => {
-    if (event.isMainFrame && !sameOrigin(event.url)) event.preventDefault();
+  contents.on('will-redirect', (event) => {
+    if (event.isMainFrame && !trusted(event.url)) event.preventDefault();
   });
   // Right-click / long-press: link and text actions.
-  win.webContents.on('context-menu', (_event, params) => {
+  contents.on('context-menu', (_event, params) => {
     const items = [];
     if (params.linkURL && /^(https?|mailto):/i.test(params.linkURL)) {
       items.push(
@@ -157,17 +279,44 @@ function createWindow(initialUrl) {
     if (params.isEditable) items.push({ role: 'cut', label: '剪切' }, { role: 'copy', label: '复制' }, { role: 'paste', label: '粘贴' });
     else if (params.selectionText) items.push({ role: 'copy', label: '复制' });
     while (items.at(-1)?.type === 'separator') items.pop();
-    if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: desktop });
   });
-  win.webContents.on('did-fail-load', (_event, code, _desc, url, isMainFrame) => {
-    if (!isMainFrame || code === -3 /* aborted */ || !sameOrigin(url)) return;
-    win.loadFile(path.join(__dirname, 'offline.html'), { query: { retry: CLIENT_URL } });
+  contents.on('did-fail-load', (_event, code, _desc, url, isMainFrame) => {
+    if (!isMainFrame || code === -3 /* aborted */ || !trusted(url) || desktop.isDestroyed()) return;
+    desktop.loadFile(path.join(__dirname, 'offline.html'), { query: { retry: target } }).catch(() => {});
   });
 
-  if (HOST_APP && initialUrl === null) {
-    win.loadFile(path.join(__dirname, 'starting.html'));
+  if (local) {
+    desktop.loadFile(path.join(__dirname, 'starting.html')).catch(() => {});
+    void startLocalView(desktop);
+  } else if (remote) {
+    desktop.loadURL(initialUrl || CLIENT_URL).catch(() => {});
   } else {
-    win.loadURL(initialUrl || CLIENT_URL);
+    desktop.loadFile(PICKER).catch(() => {});
+  }
+}
+
+async function startLocalView(desktop) {
+  try {
+    hostReady ??= attachHost().catch((error) => {
+      hostReady = null;
+      throw error;
+    });
+    await hostReady;
+    if (win === desktop && !desktop.isDestroyed() && !quitting) {
+      await desktop.loadURL(host.HOST_ORIGIN).catch(() => {});
+    }
+  } catch (error) {
+    if (win !== desktop || desktop.isDestroyed() || quitting) return;
+    const { response } = await dialog.showMessageBox(desktop, {
+      type: 'error',
+      message: '无法启动本机 Pi',
+      detail: error.message,
+      buttons: ['重试', '桌面模式…', '关闭'],
+      cancelId: 2,
+    });
+    if (response === 0 && win === desktop && !desktop.isDestroyed()) void startLocalView(desktop);
+    if (response === 1 && win === desktop && !desktop.isDestroyed()) void showModeSettings();
   }
 }
 
@@ -179,7 +328,17 @@ async function attachHost() {
     profile: app.getPath('userData'),
     safeStorage,
   });
+  if (quitting) {
+    child?.kill();
+    return;
+  }
   hostProcess = child;
+  child?.once('exit', () => {
+    if (hostProcess === child) {
+      hostProcess = null;
+      hostReady = null;
+    }
+  });
   await session.defaultSession.cookies.set({
     url: host.HOST_ORIGIN,
     name: 'pi_token',
@@ -189,10 +348,11 @@ async function attachHost() {
   });
   try {
     tray = new Tray(path.join(__dirname, 'build', 'icon.png'));
-    tray.setToolTip('YuGo Pi Host');
+    tray.setToolTip('YuGo Pi');
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: '打开 YuGo Pi', click: () => win?.show() },
-      { label: '查看更新', click: () => openExternal(RELEASES) },
+      { label: '桌面模式…', click: () => { win?.show(); void showModeSettings(); } },
+      updateMenuItem,
       { label: '退出', role: 'quit' },
     ]));
     tray.on('click', () => win?.show());
@@ -211,28 +371,22 @@ if (!locked) {
     if (!win.isVisible()) win.show();
     win.focus();
     const link = pairingUrl(argv);
-    if (link) win.loadURL(link);
+    if (link && workspaceMode === 'remote') win.loadURL(link).catch(() => {});
   });
 
   app.whenReady().then(async () => {
-    session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-      callback(ALLOWED_PERMISSIONS.has(permission) && details.isMainFrame &&
-        sameOrigin(contents.getURL()) && sameOrigin(details.requestingUrl) &&
-        (!details.securityOrigin || sameOrigin(details.securityOrigin)));
-    });
-    session.defaultSession.setPermissionCheckHandler((contents, permission, origin, details) => {
-      if (!ALLOWED_PERMISSIONS.has(permission) || !sameOrigin(origin)) return false;
-      if (!contents) return permission === 'notifications' && !details.requestingUrl;
-      return details.isMainFrame && sameOrigin(contents.getURL()) &&
-        (!details.requestingUrl || sameOrigin(details.requestingUrl)) &&
-        (!details.securityOrigin || sameOrigin(details.securityOrigin));
-    });
+    if (HOST_APP) allowPermissions(session.defaultSession, host.HOST_ORIGIN);
+    const settings = HOST_APP ? [{
+      label: app.getLocale().toLowerCase().startsWith('zh') ? '桌面模式…' : 'Desktop mode…',
+      accelerator: 'CmdOrCtrl+,',
+      click: showModeSettings,
+    }] : [];
     if (process.platform === 'darwin') {
       Menu.setApplicationMenu(
         Menu.buildFromTemplate([
           { role: 'appMenu' },
           { role: 'editMenu' },
-          { label: '帮助', submenu: [updateMenuItem] },
+          { label: '帮助', submenu: [...settings, updateMenuItem] },
           {
             label: 'View',
             submenu: [{ role: 'reload' }, { role: 'togglefullscreen' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }],
@@ -243,24 +397,21 @@ if (!locked) {
     } else {
       Menu.setApplicationMenu(Menu.buildFromTemplate([
         { label: 'YuGo Pi', submenu: [
+          ...settings,
           updateMenuItem,
           { role: 'quit' },
         ] },
       ]));
     }
-    createWindow(HOST_APP ? null : pairingUrl(process.argv));
-    if (HOST_APP) {
-      try {
-        await attachHost();
-        if (win && !win.isDestroyed() && !quitting) win.loadURL(CLIENT_URL);
-      } catch (error) {
-        dialog.showErrorBox('无法启动 YuGo Pi 主机', error.message);
-        app.quit();
-        return;
-      }
+    try {
+      workspaceMode = HOST_APP ? savedMode() : 'remote';
+      createWindow(workspaceMode, workspaceMode === 'remote' ? pairingUrl(process.argv) : undefined);
+    } catch (error) {
+      dialog.showErrorBox('YuGo Pi', error.message);
+      app.quit();
     }
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      if (BrowserWindow.getAllWindows().length === 0) createWindow(workspaceMode);
     });
   });
 

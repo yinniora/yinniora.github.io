@@ -11,7 +11,7 @@ Bug reports and contributions for this variant belong in this repository.
 
 ## What YuGo Pi adds
 
-- A native Mac conversation window and a mobile Home Screen web app.
+- One desktop app for local and remote work, and a mobile Home Screen web app.
 - Projects and conversations on the phone home screen, project menus and new
   conversation controls, persistent collapse, and a clear Home return action.
 - Stable mobile keyboard layout, bounded scrolling and page zoom protection.
@@ -29,18 +29,19 @@ Bug reports and contributions for this variant belong in this repository.
 
 ## Quick start
 
-1. On the computer that will run Pi, download its **YuGo Pi Host** installer
+1. On the computer that will run Pi, download its **YuGo Pi** installer
    from [YuGo Releases](https://github.com/yinniora/yugo-pi/releases). Open YuGo
-   Pi after installation. Existing Pi data is reused. For a fresh setup, open
-   Settings → Models and configure a model provider.
+   Pi after installation and choose **Run Pi on this computer**. Upgrades reuse
+   existing Pi data. For a fresh setup, open Settings → Models and configure a
+   model provider.
 2. For phone access, open **Settings → Remote control and devices** on the
    host. With Tailscale, join the same tailnet on both devices and select
    **Enable Tailscale connection**. To use your own relay, run the [relay
    installer](docs/architecture/self-hosted-remote.md) and paste its activation
    code in **Connect with your server**. You can also deploy to an existing,
    trusted SSH destination from the desktop. On the same local network, the
-   native YuGo Pi Client for Android, iOS, iPadOS, Windows, macOS or Linux
-   can connect to the host without Tailscale or a relay.
+   native YuGo Pi apps for Android, iOS, iPadOS, Windows, macOS and Linux can
+   connect to the host without Tailscale or a relay.
 3. In **Devices**, authenticate on the host to show one code for the enabled
    connections. Scan it from the client. Android users can install the release APK. iPhone and iPad users
    can open the [web app](https://yinniora.github.io/) in Safari and add it to the
@@ -50,12 +51,12 @@ Bug reports and contributions for this variant belong in this repository.
    When you enable another connection later, scan a new code from the same
    client to add the route to that client's existing device authorization.
 
-Host installers include the backend and the desktop window. The separately
-named **YuGo Pi Client** apps connect to a host. See [platform downloads and
-system requirements](apps/README.md). The version dialog checks YuGo releases.
-Select **Download and install update** on the host. Compatible versions can
-replace just the backend and restart when Pi is idle. Other versions open the
-system installer after the complete package is verified.
+On a second desktop, install the same YuGo Pi package for its platform and
+choose **Connect to another computer**. Switch later in **Settings →
+Connections → Desktop mode** or the native app menu. See [platform downloads
+and system requirements](apps/README.md). In local mode, the version dialog
+can download and verify an update. Compatible versions replace the backend
+when Pi is idle. Changes to the desktop app open the system installer.
 
 The same release includes a web-client ZIP for independent HTTPS hosting.
 

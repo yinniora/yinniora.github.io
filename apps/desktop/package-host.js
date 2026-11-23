@@ -17,12 +17,12 @@ async function main() {
   const policy = path.resolve(__dirname, '../../init/org.yugopi.approve-pairing.policy');
   const config = {
     appId: 'io.github.yinniora.yugopi.host',
-    productName: 'YuGo Pi Host',
+    productName: 'YuGo Pi',
     extraMetadata: {
       name: 'yugo-pi-host',
-      productName: 'YuGo Pi Host',
+      productName: 'YuGo Pi',
       desktopName: 'io.github.yinniora.yugopi.host.desktop',
-      description: 'YuGo Pi desktop window and local host',
+      description: 'YuGo Pi desktop workspace',
       version,
     },
     artifactName: 'yugo-pi-host-${version}-${os}-${arch}.${ext}',
@@ -49,7 +49,7 @@ async function main() {
       target: [{ target: 'deb', arch: [arch] }],
       category: client.linux.category,
       maintainer: client.linux.maintainer,
-      synopsis: 'YuGo Pi desktop window and local host',
+      synopsis: 'YuGo Pi desktop workspace',
       syncDesktopName: true,
     },
   };

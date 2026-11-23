@@ -26,7 +26,7 @@ import (
 
 const (
 	backendManifestAsset       = "yugo-backend-compatibility.json"
-	backendCompatibility       = 2
+	backendCompatibility       = 3
 	maximumReleaseMetadataSize = 2 << 20
 	maximumBackendManifestSize = 4 << 10
 	maximumBackendArchiveSize  = 80 << 20

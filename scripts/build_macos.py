@@ -31,6 +31,10 @@ for name, source, ident, helper in [
             'NSHighResolutionCapable': True}
     if helper:
         info['LSUIElement'] = True
+    else:
+        info['WKAppBoundDomains'] = ['yinniora.github.io', '127.0.0.1']
+        info['NSCameraUsageDescription'] = 'Scan a YuGo Pi pairing code.'
+        info['NSLocalNetworkUsageDescription'] = 'Connect to a paired YuGo Pi computer on the local network.'
     resources = contents / 'Resources'
     resources.mkdir(exist_ok=True)
     for legal_name in ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES']:
@@ -39,6 +43,9 @@ for name, source, ident, helper in [
     sources = [str(ROOT / 'macos' / source)]
     if not helper:
         sources.append(str(ROOT / 'macos' / 'HostRuntime.swift'))
+        sources += [str(ROOT / 'apps/ios/YuGoPi' / name) for name in ['TrustedClient.swift', 'LANSignaling.swift']]
+        for page in ['workspace-mode.html', 'offline.html']:
+            shutil.copy2(ROOT / 'apps/desktop' / page, resources)
     subprocess.run(['xcrun', 'swiftc', '-swift-version', '5', '-O',
                     '-target', f'{architecture}-apple-macos{MINIMUM_MACOS}',
                     *sources, '-o', str(executable)],

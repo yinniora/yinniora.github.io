@@ -22,8 +22,15 @@ function compareVersions(left, right) {
   return left.map((part, index) => part - right[index]).find(Boolean) || 0;
 }
 
-function assetName(version, platform, arch, portable) {
+function assetName(version, platform, arch, portable, unified) {
   if (arch !== 'x64' && arch !== 'arm64') return '';
+  if (unified) {
+    const prefix = `yugo-pi-host-${version}-`;
+    if (platform === 'darwin') return `${prefix}macos-${arch}.pkg`;
+    if (platform === 'win32') return `${prefix}windows-${arch}-setup.exe`;
+    if (platform === 'linux') return `${prefix}linux-${arch === 'x64' ? 'amd64' : arch}.deb`;
+    return '';
+  }
   const prefix = `yugo-pi-client-${version}-`;
   if (platform === 'darwin') return `${prefix}mac-${arch}.dmg`;
   if (platform === 'win32' && portable) return arch === 'x64' ? `${prefix}windows-x64-portable.exe` : '';
@@ -33,7 +40,7 @@ function assetName(version, platform, arch, portable) {
   return '';
 }
 
-async function checkClientUpdate(current, { platform, arch, portable, fetchImpl = fetch }) {
+async function checkClientUpdate(current, { platform, arch, portable, unified = false, fetchImpl = fetch }) {
   const installed = versionParts(current);
   if (!installed) throw new Error('无法识别当前客户端版本。');
   const response = await fetchImpl(API, {
@@ -63,8 +70,12 @@ async function checkClientUpdate(current, { platform, arch, portable, fetchImpl 
   if (!selected) throw new Error('无法验证 YuGo Pi 的发行版本。');
   if (compareVersions(selected.parts, installed) <= 0) return null;
   const { version, assets } = selected;
-  const name = assetName(version, platform, arch, portable);
-  const matching = (Array.isArray(assets) ? assets : []).filter((asset) => asset?.name === name);
+  const releaseAssets = Array.isArray(assets) ? assets : [];
+  let name = assetName(version, platform, arch, portable, unified);
+  if (!unified && !releaseAssets.some((asset) => asset?.name === name)) {
+    name = assetName(version, platform, arch, portable, true);
+  }
+  const matching = releaseAssets.filter((asset) => asset?.name === name);
   const [asset] = matching;
   if (!name || matching.length !== 1 || asset.state !== 'uploaded' ||
       !Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.size > MAX_ASSET_SIZE ||
@@ -74,9 +85,13 @@ async function checkClientUpdate(current, { platform, arch, portable, fetchImpl 
   return { version, name, size: asset.size, sha256: asset.digest.slice(7) };
 }
 
-async function downloadClientUpdate(update, profile, { platform, arch, portable, progress, fetchImpl = fetch }) {
-  const name = versionParts(update.version) && assetName(update.version, platform, arch, portable);
-  if (!name || update.name !== name) throw new Error('安装包与此客户端不匹配。');
+async function downloadClientUpdate(update, profile, { platform, arch, portable, unified = false, progress, fetchImpl = fetch }) {
+  const name = update.name;
+  const allowed = [assetName(update.version, platform, arch, portable, true)];
+  if (!unified) allowed.push(assetName(update.version, platform, arch, portable, false));
+  if (!versionParts(update.version) || !name || !allowed.includes(name)) {
+    throw new Error('安装包与此客户端不匹配。');
+  }
   const source = new URL(`${RELEASES}/download/yugo-v${update.version}/${name}`);
   const signal = AbortSignal.timeout(5 * 60 * 1000);
   let url = source;

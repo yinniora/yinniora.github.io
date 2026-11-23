@@ -7,6 +7,7 @@
   import { copyToClipboard } from '../../shared/clipboard.js';
   import { createCameraScanner } from '../../remote/camera-scanner.js';
 
+  const desktopMode = typeof window !== 'undefined' ? window.__YUGOPI_WORKSPACE_MODE__ : null;
   let {
     initialConfig = null,
     initialError = '',
@@ -239,6 +240,11 @@
   {#if config}<button type="button" class="connect-retry" disabled={busy} onclick={() => connect()}
       >{t('remote.retry')}</button
     >{/if}
+  {#if desktopMode}
+    <button type="button" class="connect-retry" onclick={() => desktopMode.open()}
+      >{desktopMode.label}</button
+    >
+  {/if}
 </section>
 
 <style>

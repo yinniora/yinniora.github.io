@@ -2,8 +2,8 @@
 
 ## 安装主机和客户端
 
-1. 在运行 Pi 的电脑上下载 **YuGo Pi Host**。macOS 使用 `.pkg`，Windows 使用 `-setup.exe`，Debian 和 Ubuntu 桌面使用 `.deb`。安装后打开 YuGo Pi，桌面窗口会启动内置的 Pi 后端。已有 Pi 用户可直接使用原有配置，新用户在「模型」中添加 API 密钥。 [YuGo Pi 发行页](https://github.com/yinniora/yugo-pi/releases)
-2. 在 iPhone 或 iPad 上用 Safari 打开 YuGo Pi，选择「分享 → 添加到主屏幕」。Android 可安装发行页上的 APK。另一台电脑可在浏览器打开同一地址，也可安装 **YuGo Pi Client**。 [打开 YuGo Pi](https://yinniora.github.io/) · [各平台下载说明](../apps/README.md)
+1. 在运行 Pi 的电脑上下载 **YuGo Pi**。macOS 使用 `.pkg`，Windows 使用 `-setup.exe`，Debian 和 Ubuntu 桌面使用 `.deb`。安装后打开 YuGo Pi，首次选择「在这台电脑运行 Pi」即启动内置后端。已有 Pi 用户可直接使用原有配置，新用户在「模型」中添加 API 密钥。 [YuGo Pi 发行页](https://github.com/yinniora/yugo-pi/releases)
+2. 在 iPhone 或 iPad 上用 Safari 打开 YuGo Pi，选择「分享 → 添加到主屏幕」。Android 可安装发行页上的 APK。另一台电脑可在浏览器打开同一地址，也可安装同一个 **YuGo Pi** 桌面版并选择「连接另一台电脑」。之后可以在「设置 → 连接 → 桌面模式」切换。 [打开 YuGo Pi](https://yinniora.github.io/) · [各平台下载说明](../apps/README.md)
 
 ## 配置连接并扫码
 

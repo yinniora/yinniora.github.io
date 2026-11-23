@@ -8,6 +8,7 @@
     Link2,
     Loader,
     LogOut,
+    Monitor,
     RotateCcw,
     Server,
     Zap,
@@ -15,6 +16,7 @@
   } from '../../shared/icons.js';
 
   const remoteClient = typeof window !== 'undefined' ? window.__PI_REMOTE_CLIENT__ : null;
+  const desktopMode = typeof window !== 'undefined' ? window.__YUGOPI_WORKSPACE_MODE__ : null;
   const mobile =
     typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/.test(navigator.userAgent);
   const titleID = $props.id();
@@ -179,6 +181,15 @@
   {/if}
 
   <div class="connection-actions">
+    {#if desktopMode}
+      <button type="button" onclick={() => desktopMode.open()}>
+        <span aria-hidden="true">{@html icon(Monitor, { size: 18 })}</span>
+        <span>{desktopMode.label}</span>
+        <span class="action-chevron" aria-hidden="true"
+          >{@html icon(ChevronRight, { size: 16 })}</span
+        >
+      </button>
+    {/if}
     {#if remoteClient}
       <button type="button" disabled={busy} onclick={() => window.location.assign('/?pairing=1')}>
         <span aria-hidden="true">{@html icon(RotateCcw, { size: 18 })}</span>
