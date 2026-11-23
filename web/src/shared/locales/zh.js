@@ -771,6 +771,29 @@ export default {
   'remote.lanNeedsApp':
     '请在 YuGo Pi 原生客户端扫码或粘贴配对链接。浏览器入口可使用 Tailscale 或中继。',
   'remoteSettings.relaySetup': '通过自己的服务器连接',
+  'remoteSettings.relayGuide': '教程',
+  'remoteSettings.relayGuideTitle': '私有中继设置教程',
+  'remoteSettings.relayGuidePrepare': '准备服务器',
+  'remoteSettings.relayGuideServer':
+    '使用 Debian 12 或 Ubuntu 22.04 及以上版本的 VPS。可以直接用公网 IP，也可以用已解析到 VPS 的域名。',
+  'remoteSettings.relayGuidePorts':
+    '在服务商的防火墙中放行 HTTPS 所需的 {web}、TURN 所需的 {turn}，以及中继传输所需的 {media}。',
+  'remoteSettings.relayGuideInstall': '安装中继',
+  'remoteSettings.relayGuideRun':
+    '用 SSH 登录 VPS，在服务器终端执行下方命令，并按提示输入公网 IP 或域名。',
+  'remoteSettings.relayGuideCopy': '复制命令',
+  'remoteSettings.relayGuideDownload': '下载安装脚本',
+  'remoteSettings.relayGuideReleases': '查找中继安装脚本',
+  'remoteSettings.relayGuideActivate': '连接主机和中继',
+  'remoteSettings.relayGuideCode':
+    '将安装程序输出的 yugopi-relay: 激活码粘贴到下方，点「连接服务器」并在主机上完成系统认证。请妥善保管一次性激活码。',
+  'remoteSettings.relayGuideExpired':
+    '激活码 15 分钟后过期。过期后可在服务器上运行以下命令重新生成。',
+  'remoteSettings.relayGuidePair': '配对远程设备',
+  'remoteSettings.relayGuideScan':
+    '在主机上打开「设备」，完成系统认证并显示配对二维码，再用远程 App 扫码。',
+  'remoteSettings.relayGuideSSH':
+    '如果已配置并验证服务器的 SSH 访问，也可以展开下方的 SSH 部署，从 YuGo Pi 直接安装并连接。',
   'remoteSettings.relayReady': '已配置服务器 · {server}',
   'remoteSettings.activation': '中继激活码或私有配置',
   'remoteSettings.linkRelay': '连接服务器',

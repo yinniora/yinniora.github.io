@@ -564,6 +564,47 @@ test.describe("home menu models entry", () => {
   });
 });
 
+test("opens the private relay guide and copies the host-version installer command", async ({
+  page,
+}) => {
+  await page.route("**/api/remote-settings", (route) =>
+    route.fulfill({ json: { enabled: true, settings: {} } }),
+  );
+  await page.route("**/api/version", (route) =>
+    route.fulfill({ json: { current: "0.1.0-yugo.73" } }),
+  );
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        async writeText(text: string) {
+          document.documentElement.dataset.copied = text;
+        },
+      },
+    });
+  });
+  await page.goto("/settings?section=remote");
+  const activation = page.getByLabel("Relay activation code or private configuration");
+  const guide = page.getByRole("region", { name: "Set up a private relay" });
+  const trigger = page.getByRole("button", { name: "Guide", exact: true });
+  await activation.fill("draft-code");
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect(guide).toBeVisible();
+  const url = "https://github.com/yinniora/yinniora.github.io/releases/download/yugo-v0.1.0-yugo.73/yugo-pi-relay-install.py";
+  await expect(guide.getByRole("link", { name: "Download installer" })).toHaveAttribute(
+    "href",
+    url,
+  );
+  await guide.getByRole("button", { name: "Copy command" }).click();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-copied",
+    `curl -fL '${url}' -o yugo-pi-relay-install.py &&\nsudo python3 yugo-pi-relay-install.py`,
+  );
+  await trigger.click();
+  await expect(guide).toBeHidden();
+  await expect(activation).toHaveValue("draft-code");
+});
+
 test("opens Connection settings from the home badge and returns home", async ({
   page,
 }) => {

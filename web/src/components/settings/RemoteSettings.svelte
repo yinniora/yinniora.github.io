@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { getJSON, postJSON } from '../../shared/api.js';
   import { t } from '../../shared/i18n.js';
-  import { icon, Globe, Link2 } from '../../shared/icons.js';
+  import { icon, CircleHelp, Globe, Link2 } from '../../shared/icons.js';
+  import RelaySetupGuide from './RelaySetupGuide.svelte';
   let { showDevices = true } = $props();
   const prefix = $props.id();
   let enabled = $state(false),
@@ -18,6 +19,7 @@
     hasSecrets = $state(false),
     configuration = $state('');
   let activation = $state('');
+  let showRelayGuide = $state(false);
   let privateSetupAvailable = $state(false);
   let privateConfigured = $state(false);
   let privateNetworkDetected = $state(false);
@@ -205,7 +207,17 @@
     <div class="remote-setup-option">
       <div class="remote-setup-title">
         {@html icon(Link2, { size: 17 })}<strong>{t('remoteSettings.relaySetup')}</strong>
+        <button
+          type="button"
+          class="remote-setup-help"
+          aria-expanded={showRelayGuide}
+          aria-controls={showRelayGuide ? prefix + '-relay-guide' : undefined}
+          onclick={() => (showRelayGuide = !showRelayGuide)}
+        >
+          {@html icon(CircleHelp, { size: 16 })}{t('remoteSettings.relayGuide')}
+        </button>
       </div>
+      {#if showRelayGuide}<RelaySetupGuide id={prefix + '-relay-guide'} />{/if}
       {#if hasSecrets}<p>{t('remoteSettings.relayReady', { server: serverUrl })}</p>{/if}
       <form onsubmit={importActivation} autocomplete="off">
         <label for={prefix + '-activation'}>{t('remoteSettings.activation')}</label>
@@ -361,6 +373,31 @@
     align-items: center;
     gap: 8px;
     font-size: 14px;
+  }
+  .remote-setup-title .remote-setup-help {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: 0 0 auto;
+    margin: 0 0 0 auto;
+    padding: 4px 8px;
+    min-height: 32px;
+    font-size: 12px;
+    background: transparent;
+    color: var(--text-soft);
+    transition:
+      background 150ms ease,
+      color 150ms ease;
+  }
+  .remote-setup-title .remote-setup-help:hover,
+  .remote-setup-title .remote-setup-help[aria-expanded='true'] {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .remote-setup-title .remote-setup-help {
+      transition: none;
+    }
   }
   .remote-setup-option > p {
     margin: 0;

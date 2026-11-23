@@ -1105,6 +1105,29 @@ export default {
   'remote.lanNeedsApp':
     'Scan or paste the pairing link in the native YuGo Pi client for local-network access. The browser client supports Tailscale and relays.',
   'remoteSettings.relaySetup': 'Connect with your server',
+  'remoteSettings.relayGuide': 'Guide',
+  'remoteSettings.relayGuideTitle': 'Set up a private relay',
+  'remoteSettings.relayGuidePrepare': 'Prepare your server',
+  'remoteSettings.relayGuideServer':
+    'Use a Debian 12+ or Ubuntu 22.04+ server. You can use a public IP or a domain that points to the server.',
+  'remoteSettings.relayGuidePorts':
+    'In the server provider’s firewall, allow {web} for HTTPS setup, {turn} for TURN, and {media} for relay traffic.',
+  'remoteSettings.relayGuideInstall': 'Install the relay',
+  'remoteSettings.relayGuideRun':
+    'Sign in to the server over SSH and run the command in its terminal. Enter the public IP or domain when prompted.',
+  'remoteSettings.relayGuideCopy': 'Copy command',
+  'remoteSettings.relayGuideDownload': 'Download installer',
+  'remoteSettings.relayGuideReleases': 'Find the relay installer',
+  'remoteSettings.relayGuideActivate': 'Connect your host to the relay',
+  'remoteSettings.relayGuideCode':
+    'Paste the yugopi-relay: code printed by the installer into the field below, then choose Connect server and authenticate on the host. Keep this one-time code private.',
+  'remoteSettings.relayGuideExpired':
+    'The code expires in 15 minutes. Generate a new one on the server with',
+  'remoteSettings.relayGuidePair': 'Pair another device',
+  'remoteSettings.relayGuideScan':
+    'On the host, open Devices and authenticate to display the pairing QR code. Scan it from the remote app.',
+  'remoteSettings.relayGuideSSH':
+    'Already have a trusted SSH key for this server? Use Deploy to a server over SSH below to install and connect from YuGo Pi.',
   'remoteSettings.relayReady': 'Connected server · {server}',
   'remoteSettings.activation': 'Relay activation code or private configuration',
   'remoteSettings.linkRelay': 'Connect server',
