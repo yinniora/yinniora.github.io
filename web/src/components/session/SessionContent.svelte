@@ -21,10 +21,6 @@
   import { icon, ChevronRight } from '../../shared/icons.js';
   import { formatElapsed } from '../../session/render/entry-format.js';
 
-  // Titled like "Worked for 1m 12s · 3 tool calls": the turn's duration says
-  // more than a generic "Tool calls" label.
-  const md = (text) => safeMarkedParse(text, { marked });
-
   function activityText(section) {
     const tools = section.toolCount ? t('activity.toolCount', { count: section.toolCount }) : '';
     const failed = section.failures ? t('activity.failed') + ' ' + section.failures : '';
@@ -66,8 +62,10 @@
     outputsReady = true,
     renderOutputs = null,
     onCompact = null,
+    cwd = '',
   } = $props();
 
+  const md = (text) => safeMarkedParse(text, { marked, workspaceCwd: live ? cwd : undefined });
   let containerEl = $state(null);
   const entries = $derived(
     live
@@ -147,6 +145,7 @@
       outputs={inActivity ? undefined : groups?.byEntry.get(entry.id)}
       {renderOutputs}
       {onCompact}
+      {cwd}
     />
   {/if}
 {/snippet}

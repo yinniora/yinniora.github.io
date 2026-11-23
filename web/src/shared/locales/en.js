@@ -943,6 +943,8 @@ export default {
   'devices.revokeFailed': 'Access could not be revoked. Try again.',
   'outputs.open': 'Open',
   'outputs.previewUnavailable': 'Preview is unavailable. You can download the file to open it.',
+  'outputs.fileUnavailable': 'This file is unavailable in the session workspace.',
+  'outputs.downloadFailed': 'Could not download the file. Try again.',
   'outputs.downloadToOpen': 'Download this file to open it in a compatible app.',
   'artifact.copySource': 'Copy source',
   'artifact.download': 'Download',

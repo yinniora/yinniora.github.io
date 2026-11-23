@@ -609,6 +609,8 @@ export default {
   'devices.macApprovalFailed': '系统验证已取消或不可用，未创建配对码。',
   'devices.revokeFailed': '无法撤销访问权限，请重试。',
   'outputs.open': '打开',
+  'outputs.fileUnavailable': '会话工作区中找不到这个文件。',
+  'outputs.downloadFailed': '文件下载失败，请重试。',
   'outputs.previewUnavailable': '无法预览。你可以下载文件后打开。',
   'outputs.downloadToOpen': '下载此文件，以便在兼容的应用中打开。',
   'projects.delete': '删除项目',

@@ -33,4 +33,18 @@ describe('session markdown', () => {
       'class="hljs"',
     );
   });
+
+  it('keeps workspace downloads inside the live session and leaves export anchors alone', () => {
+    const instance = new Marked();
+    configureSessionMarkdown({ marked: instance, escapeHtml: (text) => String(text) });
+    const inputs =
+      '[Download](./drawing%20test.svg) [Outside](../other.svg) [Website](https://example.com/a.svg) [Settings](/settings)';
+    const html = safeMarkedParse(inputs, { marked: instance, workspaceCwd: '/work' });
+    expect(html).toContain('data-session-file="drawing test.svg"');
+    expect(html).toContain('data-session-file="" data-filename="other.svg"');
+    expect(html).not.toContain('href="./drawing%20test.svg"');
+    expect(html).toContain('href="https://example.com/a.svg"');
+    expect(html).toContain('href="/settings"');
+    expect(safeMarkedParse(inputs, { marked: instance })).toContain('href="./drawing%20test.svg"');
+  });
 });

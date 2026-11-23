@@ -31,6 +31,7 @@
 
   let {
     sessionId,
+    cwd = '',
     thinkingPreviews = $bindable([]),
     onRefreshReady = () => {},
     onTranscriptReconciled = () => {},
@@ -59,7 +60,7 @@
     // with an escapeHtml fallback (matches the former live-renderer.renderMarkdown).
     const renderMarkdown = (text) => {
       try {
-        return safeMarkedParse(text, { marked });
+        return safeMarkedParse(text, { marked, workspaceCwd: cwd });
       } catch {
         return escapeHtml(text, { documentImpl });
       }

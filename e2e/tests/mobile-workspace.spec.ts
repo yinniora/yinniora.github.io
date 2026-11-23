@@ -1,4 +1,4 @@
-import { copyFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { test, expect, collapseScratchpad, isMobileLayout } from "../lib/test";
@@ -1057,7 +1057,7 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
     ...assetEntry.entry,
     message: {
       ...assetEntry.entry.message,
-      content: ["./clip.mp4", join(cwd, "diagram.svg")].map((path, index) => ({
+      content: ["./clip.mp4", join(cwd, "diagram.svg"), "./read-only.svg"].map((path, index) => ({
         type: "toolCall",
         name: "read",
         id: "read-" + index,
@@ -1065,7 +1065,10 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
       })),
     },
   } as any);
-  const reply = assistantTextEntry(assetEntry.id, "The SVG and video are ready.");
+  const reply = assistantTextEntry(
+    assetEntry.id,
+    "The SVG and video are ready. [Download SVG](./diagram.svg) · [Video](./clip.mp4) · [Missing file](./missing.svg)",
+  );
   const model = "claude-opus-" + "extended-model-identifier-".repeat(4) + "thinking";
   const modelReply = { ...reply.entry, message: { ...reply.entry.message, provider: "test", model } };
   const nextPrompt = {
@@ -1089,6 +1092,7 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
     join(cwd, "diagram.svg"),
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="steelblue"/></svg>',
   );
+  writeFileSync(join(cwd, "read-only.svg"), '<svg xmlns="http://www.w3.org/2000/svg"/>');
   const id = writeSession(
     sessionsDir,
     uniqueSessionName(testInfo, "gallery"),
@@ -1106,6 +1110,17 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
   await expect(gallery.locator("img.output-inline-preview")).toBeVisible();
   await expect(mediaReply.locator(".assistant-text + .output-gallery + .reply-footer")).toBeVisible();
   await expect(gallery.locator(".output-card")).toHaveCount(2);
+  await expect(gallery.getByText("read-only.svg")).toHaveCount(0);
+  const conversationURL = page.url();
+  const saving = page.waitForEvent("download");
+  await mediaReply.getByRole("button", { name: "Download SVG", exact: true }).click();
+  const saved = await saving;
+  expect(saved.suggestedFilename()).toBe("diagram.svg");
+  expect(readFileSync((await saved.path())!)).toEqual(readFileSync(join(cwd, "diagram.svg")));
+  await expect(page).toHaveURL(conversationURL);
+  await mediaReply.getByRole("button", { name: "Missing file", exact: true }).click();
+  await expect(page.locator("#session-file-download")).toContainText("This file is unavailable");
+  await expect(page).toHaveURL(conversationURL);
   await expect(page.locator(".assistant-message .output-gallery")).toHaveCount(1);
   await expect(page.locator(`#entry-${nextReply.id} .reply-footer`)).toBeVisible();
   await expect(mediaReply.locator(".reply-model")).toHaveText(model);

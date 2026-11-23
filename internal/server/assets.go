@@ -66,13 +66,27 @@ func allowedAssetPath(name string) bool {
 	return kind != ""
 }
 
-func referencedAssets(session *sessions.Session, cwd string) map[string]bool {
-	refs := make(map[string]bool)
+func referencedAssets(session *sessions.Session, cwd string) (refs, outputs map[string]bool) {
+	refs = make(map[string]bool)
+	outputs = make(map[string]bool)
+	completed := make(map[string]bool)
 	for _, entry := range session.Entries {
 		message, _ := entry["message"].(map[string]any)
+		if id, _ := message["toolCallId"].(string); id != "" && message["role"] == "toolResult" {
+			completed[id] = message["isError"] != true
+		}
+	}
+	for _, entry := range session.Entries {
+		message, _ := entry["message"].(map[string]any)
+		if message["role"] != "assistant" {
+			continue
+		}
 		blocks, _ := message["content"].([]any)
 		for _, value := range blocks {
 			block, _ := value.(map[string]any)
+			if block["type"] != "toolCall" {
+				continue
+			}
 			args, _ := block["arguments"].(map[string]any)
 			filePath, _ := args["path"].(string)
 			if filePath == "" {
@@ -91,15 +105,32 @@ func referencedAssets(session *sessions.Session, cwd string) map[string]bool {
 			filePath = filepath.ToSlash(filepath.Clean(filePath))
 			if allowedAssetPath(filePath) {
 				refs[filePath] = true
+				id, _ := block["id"].(string)
+				if completed[id] && (block["name"] == "write" || block["name"] == "edit") {
+					outputs[filePath] = true
+				}
 			}
 		}
 	}
-	return refs
+	return refs, outputs
 }
 
 func eligibleAsset(name string, info fs.FileInfo, since time.Time, refs map[string]bool) bool {
 	return allowedAssetPath(name) && info.Mode().IsRegular() && info.Size() <= 1<<30 &&
 		(refs[name] || (!since.IsZero() && !info.ModTime().Before(since.Add(-2*time.Second))))
+}
+
+func assetFileInfo(root *os.Root, name string) (fs.FileInfo, error) {
+	parts := strings.Split(name, "/")
+	parent := ""
+	for _, part := range parts[:len(parts)-1] {
+		parent = path.Join(parent, part)
+		info, err := root.Lstat(parent)
+		if err != nil || !info.IsDir() {
+			return nil, fs.ErrNotExist
+		}
+	}
+	return root.Lstat(name)
 }
 
 func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
@@ -120,44 +151,56 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 	defer root.Close()
 	stamp, _ := resolved.Session.Header["timestamp"].(string)
 	since, _ := time.Parse(time.RFC3339Nano, stamp)
-	refs := referencedAssets(&resolved.Session, cwd)
-	sessionOnly := r.URL.Query().Get("scope") == "session"
-	if sessionOnly && len(refs) == 0 {
-		writeJSON(w, 200, map[string]any{"assets": out})
-		return
-	}
-	visited := 0
-	_ = fs.WalkDir(root.FS(), ".", func(name string, entry fs.DirEntry, walkErr error) error {
-		visited++
-		if visited > 10000 {
-			return fs.SkipAll
-		}
-		if walkErr != nil {
-			return nil
-		}
-		if entry.IsDir() {
-			if name != "." && (strings.HasPrefix(entry.Name(), ".") || strings.Count(name, "/") >= 5) {
-				return fs.SkipDir
-			}
-			switch strings.ToLower(entry.Name()) {
-			case "node_modules", "vendor", "private", "secrets", "dist", "build":
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if entry.Type()&os.ModeSymlink != 0 || !allowedAssetPath(name) ||
-			(sessionOnly && !refs[name]) {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil || !eligibleAsset(name, info, since, refs) {
-			return nil
+	refs, outputs := referencedAssets(&resolved.Session, cwd)
+	add := func(name string, info fs.FileInfo) {
+		if !eligibleAsset(name, info, since, refs) {
+			return
 		}
 		kind, contentType := assetType(name)
 		out = append(out, workspaceAsset{Path: name, Name: path.Base(name), Kind: kind,
 			MIME: contentType, Size: info.Size(), Modified: info.ModTime()})
-		return nil
-	})
+	}
+	query := r.URL.Query()
+	if query.Get("scope") == "session" {
+		// An explicit reply link can request metadata for that exact file, using
+		// the same workspace and file eligibility checks as a download.
+		links := query["link"]
+		for _, name := range links[:min(len(links), 40)] {
+			if allowedAssetPath(name) {
+				outputs[name] = true
+			}
+		}
+		for name := range outputs {
+			if info, err := assetFileInfo(root, name); err == nil {
+				add(name, info)
+			}
+		}
+	} else {
+		visited := 0
+		_ = fs.WalkDir(root.FS(), ".", func(name string, entry fs.DirEntry, walkErr error) error {
+			visited++
+			if visited > 10000 {
+				return fs.SkipAll
+			}
+			if walkErr != nil {
+				return nil
+			}
+			if entry.IsDir() {
+				if name != "." && (strings.HasPrefix(entry.Name(), ".") || strings.Count(name, "/") >= 5) {
+					return fs.SkipDir
+				}
+				switch strings.ToLower(entry.Name()) {
+				case "node_modules", "vendor", "private", "secrets", "dist", "build":
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if info, err := entry.Info(); err == nil {
+				add(name, info)
+			}
+			return nil
+		})
+	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Modified.Equal(out[j].Modified) {
 			return out[i].Path < out[j].Path
@@ -167,6 +210,7 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 	if len(out) > 100 {
 		out = out[:100]
 	}
+	w.Header().Set("Cache-Control", "private, no-store")
 	writeJSON(w, 200, map[string]any{"assets": out})
 }
 
@@ -191,6 +235,11 @@ func (s *Server) handleAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer root.Close()
+	expected, err := assetFileInfo(root, name)
+	if err != nil || !expected.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
 	file, err := root.Open(name)
 	if err != nil {
 		http.NotFound(w, r)
@@ -200,7 +249,8 @@ func (s *Server) handleAsset(w http.ResponseWriter, r *http.Request) {
 	info, err := file.Stat()
 	stamp, _ := resolved.Session.Header["timestamp"].(string)
 	since, _ := time.Parse(time.RFC3339Nano, stamp)
-	if err != nil || !eligibleAsset(name, info, since, referencedAssets(&resolved.Session, cwd)) {
+	refs, _ := referencedAssets(&resolved.Session, cwd)
+	if err != nil || !os.SameFile(expected, info) || !eligibleAsset(name, info, since, refs) {
 		http.NotFound(w, r)
 		return
 	}

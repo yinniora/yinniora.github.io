@@ -39,10 +39,11 @@
     outputs,
     renderOutputs = null,
     onCompact = null,
+    cwd = '',
   } = $props();
 
   const ts = $derived(formatTimestamp(entry?.timestamp));
-  const md = (text) => safeMarkedParse(text, { marked });
+  const md = (text) => safeMarkedParse(text, { marked, workspaceCwd: live ? cwd : undefined });
 
   const msg = $derived(entry?.type === 'message' ? entry.message : null);
   const assistantContent = $derived(

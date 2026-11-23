@@ -49,6 +49,7 @@ func TestSessionCleanupOwnershipAndContainment(t *testing.T) {
 	for _, name := range []string{"owned.txt", "changed.txt", "failed.txt", "shared.txt", "link.txt", "../escape.txt"} {
 		calls = append(calls, map[string]any{"name": "write", "failed": name == "failed.txt", "arguments": map[string]any{"path": name, "content": "created"}})
 	}
+	calls = append(calls, map[string]any{"name": "read", "arguments": map[string]any{"path": "owned.txt"}})
 	cleanupSession(t, s, "owner.jsonl", cwd, start, calls...)
 	cleanupSession(t, s, "reader.jsonl", cwd, start, map[string]any{"name": "read", "arguments": map[string]any{"path": "shared.txt"}})
 	os.WriteFile(filepath.Join(cwd, "changed.txt"), []byte("changed later"), 0600)

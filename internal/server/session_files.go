@@ -100,7 +100,7 @@ func successfulWrites(session sessions.Session) map[string]string {
 		blocks, _ := msg["content"].([]any)
 		for _, value := range blocks {
 			call, _ := value.(map[string]any)
-			if call["type"] != "toolCall" {
+			if call["type"] != "toolCall" || call["name"] == "read" {
 				continue
 			}
 			args, _ := call["arguments"].(map[string]any)

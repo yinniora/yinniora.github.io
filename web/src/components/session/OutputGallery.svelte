@@ -4,27 +4,32 @@
   import { safeMarkedParse } from '../../session/render/markdown.js';
   import { icon, Download, ExternalLink, FileDiff, Play } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
+  import { showToast } from '../../shared/toast.js';
   import {
+    assetUrl,
     collectOutputs,
     outputDocument,
     svgPreviewURL,
     formatAssetSize,
+    sessionOutputReferences,
   } from '../../session/artifacts/outputs.js';
   import FullScreenSheet from './FullScreenSheet.svelte';
-  import { SvelteSet } from 'svelte/reactivity';
+  import { SvelteSet, SvelteURLSearchParams } from 'svelte/reactivity';
 
   let { model, sessionId = '', cwd = '', fetchImpl = null, children = null } = $props();
   let assets = $state([]);
   let assetsReady = $state(false);
   let assetRequest;
+  let downloadScope;
   let selected = $state(null);
   let previewOpen = $state(false);
   let previewText = $state('');
   let error = $state('');
   const failedVideos = new SvelteSet();
-  const outputs = $derived(
-    collectOutputs(model?.activePath || model?.entries, assets, cwd, sessionId),
-  );
+  const entries = $derived(model?.activePath || model?.entries || []);
+  const references = $derived(sessionOutputReferences(entries, cwd));
+  const outputs = $derived(collectOutputs(entries, assets, cwd, sessionId, references));
+  const downloadBufferLimit = 16 * 1024 * 1024;
 
   async function refresh() {
     if (!sessionId) return;
@@ -32,10 +37,14 @@
     const request = new AbortController();
     assetRequest = request;
     try {
-      const response = await (fetchImpl || fetch)(
-        `/api/assets?id=${encodeURIComponent(sessionId)}&scope=session`,
-        { signal: request.signal },
-      );
+      const query = new SvelteURLSearchParams({ id: sessionId, scope: 'session' });
+      for (const path of [...references.linked.keys()].slice(0, 40)) {
+        if (query.toString().length > 4096) break;
+        if (path.length <= 512) query.append('link', path);
+      }
+      const response = await (fetchImpl || fetch)(`/api/assets?${query}`, {
+        signal: request.signal,
+      });
       if (!response.ok) return;
       const data = await response.json();
       if (request.signal.aborted) return;
@@ -49,6 +58,9 @@
       assetsReady = true;
       await Promise.all(
         assets
+          .filter(
+            (asset) => references.written.has(asset.path) || references.linked.has(asset.path),
+          )
           .filter((asset) => asset.kind === 'svg' && !asset.content && asset.size < 512 * 1024)
           .slice(0, 20)
           .map(async (asset) => {
@@ -107,25 +119,77 @@
     }
   }
 
-  function download(output) {
-    if (output.href) {
-      const anchor = document.createElement('a');
-      anchor.href = output.href;
-      anchor.download = output.title;
-      anchor.click();
-      return;
-    }
-    const url = URL.createObjectURL(
-      new Blob([output.content || ''], { type: 'application/octet-stream' }),
-    );
+  function saveFile(href, filename) {
     const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = output.title;
+    anchor.href = href;
+    anchor.download = filename;
+    anchor.hidden = true;
+    document.body.appendChild(anchor);
     anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    anchor.remove();
+  }
+
+  const notifyDownload = (key) =>
+    showToast(t(key), { id: 'session-file-download', duration: 3500 });
+  async function download(output) {
+    const signal = downloadScope?.signal;
+    try {
+      let blob;
+      if (output.href) {
+        const method = output.size > downloadBufferLimit ? 'HEAD' : 'GET';
+        const response = await (fetchImpl || fetch)(output.href, { method, signal });
+        if ([400, 404, 410].includes(response.status)) {
+          await response.body?.cancel();
+          notifyDownload('outputs.fileUnavailable');
+          return;
+        }
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw new Error('download failed');
+        }
+        if (
+          method === 'HEAD' ||
+          Number(response.headers.get('content-length')) > downloadBufferLimit
+        ) {
+          // Use the browser's streaming download for large files after the
+          // host has confirmed the asset. Small downloads use the current
+          // authenticated fetch so Safari never has to navigate to a file.
+          await response.body?.cancel();
+          if (!signal?.aborted) saveFile(output.href, output.title);
+          return;
+        }
+        blob = await response.blob();
+      } else {
+        blob = new Blob([output.content || '']);
+      }
+      if (signal?.aborted) return;
+      const url = URL.createObjectURL(blob.slice(0, blob.size, 'application/octet-stream'));
+      saveFile(url, output.title);
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch {
+      if (!signal?.aborted) notifyDownload('outputs.downloadFailed');
+    }
   }
 
   onMount(() => {
+    downloadScope = new AbortController();
+    const transcript = document.getElementById('messages');
+    const onFileLink = (event) => {
+      const link = event.target.closest?.('button[data-session-file]');
+      if (!link) return;
+      const path = link.dataset.sessionFile;
+      if (!path || !sessionId) {
+        notifyDownload('outputs.fileUnavailable');
+        return;
+      }
+      const asset = assets.find((file) => file.path === path);
+      void download({
+        href: assetUrl(sessionId, path),
+        title: link.dataset.filename,
+        size: asset?.size,
+      });
+    };
+    transcript?.addEventListener('click', onFileLink);
     let timer;
     const reload = ({ detail }) => {
       if (detail?.sessionId !== sessionId) return;
@@ -135,6 +199,8 @@
     refresh();
     window.addEventListener('pi-session-entries-reconciled', reload);
     return () => {
+      downloadScope.abort();
+      transcript?.removeEventListener('click', onFileLink);
       assetRequest?.abort();
       clearTimeout(timer);
       window.removeEventListener('pi-session-entries-reconciled', reload);

@@ -1,3 +1,5 @@
+import { localOutputLink } from '../artifacts/outputs.js';
+
 export const strictStrikethroughRegex =
   /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
 
@@ -26,14 +28,29 @@ export function configureSessionMarkdown({ marked, hljs, escapeHtml }) {
     renderer: {
       link(token) {
         const href = (token.href || '').trim();
+        const label = this.parser.parseInline(token.tokens);
         if (/^\s*(javascript|vbscript|data):/i.test(href)) {
-          return this.parser.parseInline(token.tokens);
+          return label;
+        }
+        if (typeof this.options.workspaceCwd === 'string') {
+          const file = localOutputLink(href, this.options.workspaceCwd);
+          if (file) {
+            return (
+              '<button type="button" class="session-file-link" data-session-file="' +
+              escapeHtml(file.path) +
+              '" data-filename="' +
+              escapeHtml(file.title) +
+              '">' +
+              label +
+              '</button>'
+            );
+          }
         }
         let out = '<a href="' + escapeHtml(href) + '"';
         if (token.title) {
           out += ' title="' + escapeHtml(token.title) + '"';
         }
-        out += '>' + this.parser.parseInline(token.tokens) + '</a>';
+        out += '>' + label + '</a>';
         return out;
       },
       image(token) {
@@ -79,6 +96,6 @@ export function configureSessionMarkdown({ marked, hljs, escapeHtml }) {
   });
 }
 
-export function safeMarkedParse(text, { marked }) {
-  return marked.parse(text);
+export function safeMarkedParse(text, { marked, workspaceCwd }) {
+  return marked.parse(text, typeof workspaceCwd === 'string' ? { workspaceCwd } : undefined);
 }

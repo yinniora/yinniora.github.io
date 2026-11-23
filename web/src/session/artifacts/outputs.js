@@ -1,3 +1,4 @@
+import { marked } from 'marked';
 import { collectArtifacts } from './artifact-registry.js';
 
 export function assetUrl(sessionId, path, inline = false) {
@@ -6,24 +7,107 @@ export function assetUrl(sessionId, path, inline = false) {
   return `/api/asset?${query}`;
 }
 
-function workspacePathKey(path, cwd) {
+function relativeOutputPath(path, cwd) {
   const windows = /^[a-z]:[\\/]|^\\\\/i.test(cwd);
   if (windows) {
     path = path.replaceAll('\\', '/');
     cwd = cwd.replaceAll('\\', '/');
   }
+  if (!path || /[\\\p{Cc}]/u.test(path) || path.split('/').includes('..')) return '';
   const absolute = path.startsWith('/') || (windows && /^[a-z]:\//i.test(path));
-  const parts = [];
-  for (const part of (absolute ? path : `${cwd}/${path}`).split('/')) {
-    if (part === '..') parts.pop();
-    else if (part && part !== '.') parts.push(part);
+  if (absolute) {
+    const root = cwd.replace(/\/+$/, '') + '/';
+    const withinRoot = windows
+      ? path.toLowerCase().startsWith(root.toLowerCase())
+      : path.startsWith(root);
+    if (!cwd || !withinRoot) return '';
+    path = path.slice(root.length);
   }
-  return parts.join('/');
+  const parts = path.split('/').filter((part) => part && part !== '.');
+  return parts.some((part) => part.startsWith('.')) ? '' : parts.join('/');
 }
 
-export function collectOutputs(entries, assets = [], cwd = '', sessionId = '') {
+// Relative file destinations in a reply refer to the session workspace.
+// An empty path identifies an unavailable local file without a browser URL.
+export function localOutputLink(href, cwd) {
+  const fileScheme = /^(file|sandbox):/i.test(href);
+  const windowsPath = /^[a-z]:[\\/]/i.test(href);
+  if (!fileScheme && !windowsPath && /^(?:[a-z][a-z\d+.-]*:|\/\/|[?#])/i.test(href)) return null;
+  const rawPath = href.split(/[?#]/, 1)[0];
+  let name;
+  try {
+    if (/^file:/i.test(href)) {
+      const url = new URL(rawPath);
+      if (url.hostname || url.username || url.password) return { path: '', title: '' };
+      name = decodeURIComponent(url.pathname);
+      if (/^\/[a-z]:\//i.test(name)) name = name.slice(1);
+    } else {
+      name = decodeURIComponent(rawPath.replace(/^sandbox:/i, ''));
+    }
+  } catch {
+    return fileScheme || /\.[a-z\d]{1,16}$/i.test(rawPath) ? { path: '', title: '' } : null;
+  }
+  if (
+    !fileScheme &&
+    !windowsPath &&
+    (!/\.[a-z\d][a-z\d_-]{0,15}$/i.test(name) ||
+      /^\/?(?:api|assets|sounds)\//.test(name) ||
+      /^\/?index\.html$/i.test(name))
+  )
+    return null;
+  return {
+    path: name.startsWith('~/') ? '' : relativeOutputPath(name, cwd),
+    title: name.split(/[\\/]/).at(-1),
+  };
+}
+
+export function sessionOutputReferences(entries, cwd) {
+  const written = new Map();
+  const linked = new Map();
+  const results = new Map();
+  for (const entry of entries) {
+    const message = entry?.type === 'message' && entry.message;
+    if (message?.role === 'toolResult') results.set(message.toolCallId, message.isError !== true);
+  }
+  for (const entry of entries) {
+    const message = entry?.type === 'message' && entry.message;
+    if (message?.role !== 'assistant') continue;
+    const blocks =
+      typeof message.content === 'string'
+        ? [{ type: 'text', text: message.content }]
+        : message.content || [];
+    for (const block of blocks) {
+      if (
+        block?.type === 'toolCall' &&
+        ['write', 'edit'].includes(block.name) &&
+        results.get(block.id)
+      ) {
+        const path = block.arguments?.path || block.arguments?.file_path;
+        if (typeof path === 'string') {
+          const relative = relativeOutputPath(path, cwd);
+          if (relative) written.set(relative, entry.id);
+        }
+      }
+      if (block?.type !== 'text' || !block.text?.includes(']')) continue;
+      marked.walkTokens(marked.lexer(block.text), (token) => {
+        if (token.type !== 'link') return;
+        const link = localOutputLink(token.href.trim(), cwd);
+        if (link?.path && !linked.has(link.path)) linked.set(link.path, entry.id);
+      });
+    }
+  }
+  return { written, linked };
+}
+
+export function collectOutputs(
+  entries,
+  assets = [],
+  cwd = '',
+  sessionId = '',
+  references = sessionOutputReferences(entries || [], cwd),
+) {
   const pathEntries = Array.isArray(entries) ? entries : [];
-  const files = collectArtifacts(pathEntries)
+  const files = collectArtifacts(pathEntries, { confirmedWrites: true })
     .filter((artifact) => artifact.filePath || artifact.kind === 'preview')
     .map((artifact) => ({
       ...artifact,
@@ -33,22 +117,14 @@ export function collectOutputs(entries, assets = [], cwd = '', sessionId = '') {
   const filesByPath = new Map(
     files
       .filter((file) => file.filePath)
-      .map((file) => [workspacePathKey(file.filePath, cwd), file]),
+      .map((file) => [relativeOutputPath(file.filePath, cwd), file])
+      .filter(([path]) => path),
   );
-  const references = new Map();
-  for (const entry of pathEntries) {
-    const message = entry?.type === 'message' && entry.message;
-    if (message?.role !== 'assistant' || !Array.isArray(message.content)) continue;
-    for (const block of message.content) {
-      if (block?.type !== 'toolCall') continue;
-      const path = block.arguments?.path || block.arguments?.file_path;
-      if (typeof path === 'string' && path) references.set(workspacePathKey(path, cwd), entry.id);
-    }
-  }
   for (const asset of assets) {
     const fullPath = `${cwd.replace(/\/$/, '')}/${asset.path}`;
-    const key = workspacePathKey(asset.path, cwd);
-    const existing = filesByPath.get(key);
+    const existing = filesByPath.get(asset.path);
+    const entryId = references.written.get(asset.path) || references.linked.get(asset.path);
+    if (!existing && !entryId) continue;
     const href = assetUrl(sessionId, asset.path);
     if (existing) {
       existing.href = href;
@@ -64,7 +140,7 @@ export function collectOutputs(entries, assets = [], cwd = '', sessionId = '') {
         id: `workspace:${asset.path}`,
         title: asset.name,
         filePath: fullPath,
-        entryId: references.get(key),
+        entryId,
         href,
         previewUrl: assetUrl(sessionId, asset.path, true),
       });

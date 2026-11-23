@@ -287,6 +287,7 @@
      "message sent" listener is attached before the user can send. -->
 <LiveReload
   {sessionId}
+  {cwd}
   bind:thinkingPreviews
   onRefreshReady={(refresh) => (refreshTranscript = refresh)}
   {onTranscriptReconciled}
@@ -309,6 +310,7 @@
               {outputs}
               {renderOutputs}
               {outputsReady}
+              {cwd}
               {chatAvailable}
               {thinkingPreviews}
               onCompact={() => openPiTools('session')}

@@ -564,6 +564,19 @@
 #spa-root .assistant-message .output-gallery {
   padding: 12px 0 0;
 }
+#spa-root .markdown-content .session-file-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-align: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
 #spa-root .output-section-title {
   display: flex;
   gap: 8px;

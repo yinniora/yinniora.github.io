@@ -325,9 +325,10 @@ function* artifactsFromText(text, entry, blockIndex, minCodeBlockLines) {
  * @param {object} [opts]
  * @param {number} [opts.minCodeBlockLines=6]  minimum lines for a non-previewable
  *        fenced block to qualify as a snippet artifact
+ * @param {boolean} [opts.confirmedWrites=false] require a successful write/edit
  * @returns {Array<{id,kind,previewType,title,lang,content,filePath,entryId,anchorId,source}>}
  */
-export function collectArtifacts(entries, { minCodeBlockLines = 6 } = {}) {
+export function collectArtifacts(entries, { minCodeBlockLines = 6, confirmedWrites = false } = {}) {
   if (!Array.isArray(entries)) return [];
   const order = []; // file + snippet artifacts in first-seen order
   const byPath = new Map(); // current path -> file artifact
@@ -351,6 +352,12 @@ export function collectArtifacts(entries, { minCodeBlockLines = 6 } = {}) {
       const idx = blockIndex++;
       if (!block) continue;
       if (block.type === 'toolCall') {
+        if (
+          confirmedWrites &&
+          ['write', 'edit'].includes(block.name) &&
+          !toolSucceeded(block.id, results)
+        )
+          continue;
         applyFileToolCall(block, entry, order, byPath, results);
       } else if (block.type === 'text' && typeof block.text === 'string') {
         for (const a of artifactsFromText(block.text, entry, idx, minCodeBlockLines)) {

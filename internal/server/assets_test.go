@@ -23,8 +23,16 @@ func assetTestServer(t *testing.T) (*Server, string) {
 		t.Fatal(err)
 	}
 	header, _ := json.Marshal(map[string]any{"type": "session", "version": 3, "id": "asset-session", "cwd": cwd, "timestamp": time.Now().Add(-time.Hour).Format(time.RFC3339Nano)})
-	message, _ := json.Marshal(map[string]any{"type": "message", "id": "write-old", "message": map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "toolCall", "name": "write", "id": "w1", "arguments": map[string]any{"path": "old.svg", "content": "<svg/>"}}}}})
-	if err := os.WriteFile(filepath.Join(dir, "a.jsonl"), append(append(header, '\n'), append(message, '\n')...), 0600); err != nil {
+	transcript := append(header, '\n')
+	for _, line := range []string{
+		`{"type":"message","id":"writes","message":{"role":"assistant","content":[{"type":"toolCall","name":"write","id":"w1","arguments":{"path":"old.svg","content":"<svg/>"}},{"type":"toolCall","name":"write","id":"w2","arguments":{"path":"failed.svg","content":"<svg/>"}},{"type":"toolCall","name":"write","id":"w3","arguments":{"path":"pending.svg","content":"<svg/>"}},{"type":"toolCall","name":"read","id":"r1","arguments":{"path":"read-only.svg"}}]}}`,
+		`{"type":"message","id":"write-result","message":{"role":"toolResult","toolCallId":"w1","isError":false}}`,
+		`{"type":"message","id":"failed-result","message":{"role":"toolResult","toolCallId":"w2","isError":true}}`,
+		`{"type":"message","id":"read-result","message":{"role":"toolResult","toolCallId":"r1","isError":false}}`,
+	} {
+		transcript = append(append(transcript, line...), '\n')
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.jsonl"), transcript, 0600); err != nil {
 		t.Fatal(err)
 	}
 	return &Server{sessionsDir: root, cache: sessions.NewCache(), auth: auth.New("test-token")}, cwd
@@ -74,8 +82,9 @@ func TestAssetsListRecentFilesAndReferencedOlderFiles(t *testing.T) {
 
 func TestSessionGalleryExcludesUnrelatedRecentFiles(t *testing.T) {
 	s, cwd := assetTestServer(t)
-	createAsset(t, cwd, "old.svg")
-	createAsset(t, cwd, "from-another-conversation.svg")
+	for _, name := range []string{"old.svg", "read-only.svg", "failed.svg", "pending.svg", "from-another-conversation.svg"} {
+		createAsset(t, cwd, name)
+	}
 	w := httptest.NewRecorder()
 	s.handleAssets(w, httptest.NewRequest("GET", "/api/assets?id=a.jsonl&scope=session", nil))
 	var body struct {
@@ -86,6 +95,32 @@ func TestSessionGalleryExcludesUnrelatedRecentFiles(t *testing.T) {
 	}
 	if w.Code != http.StatusOK || len(body.Assets) != 1 || body.Assets[0].Path != "old.svg" {
 		t.Fatalf("session gallery listed an unrelated file: %d %+v", w.Code, body.Assets)
+	}
+}
+
+func TestSessionGalleryIncludesExplicitLinksToConfinedFiles(t *testing.T) {
+	s, cwd := assetTestServer(t)
+	createAsset(t, cwd, "nested/clip.mp4")
+	createAsset(t, cwd, "private/secret.svg")
+	if err := os.Symlink(filepath.Join(cwd, "private"), filepath.Join(cwd, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	query := url.Values{"id": {"a.jsonl"}, "scope": {"session"}, "link": {"nested/clip.mp4", "alias/secret.svg", "private/secret.svg"}}
+	w := httptest.NewRecorder()
+	s.handleAssets(w, httptest.NewRequest("GET", "/api/assets?"+query.Encode(), nil))
+	var body struct {
+		Assets []workspaceAsset `json:"assets"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || len(body.Assets) != 1 || body.Assets[0].Path != "nested/clip.mp4" {
+		t.Fatalf("unexpected linked assets: %d %+v", w.Code, body.Assets)
+	}
+	w = httptest.NewRecorder()
+	s.handleAsset(w, httptest.NewRequest("GET", "/api/asset?id=a.jsonl&path=alias/secret.svg", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatal("an in-workspace symlink bypassed path restrictions:", w.Code)
 	}
 }
 
