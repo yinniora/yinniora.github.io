@@ -1,9 +1,13 @@
 import { localOutputLink } from '../artifacts/outputs.js';
+import { escapeHtml as defaultEscapeHtml } from '../../shared/escape.js';
 
 export const strictStrikethroughRegex =
   /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
 
-export function configureSessionMarkdown({ marked, hljs, escapeHtml }) {
+const configured = new WeakSet();
+
+export function configureSessionMarkdown({ marked, hljs, escapeHtml = defaultEscapeHtml }) {
+  if (configured.has(marked)) return;
   marked.use({
     breaks: true,
     gfm: true,
@@ -94,8 +98,10 @@ export function configureSessionMarkdown({ marked, hljs, escapeHtml }) {
       },
     },
   });
+  configured.add(marked);
 }
 
 export function safeMarkedParse(text, { marked, workspaceCwd }) {
+  configureSessionMarkdown({ marked });
   return marked.parse(text, typeof workspaceCwd === 'string' ? { workspaceCwd } : undefined);
 }

@@ -87,9 +87,18 @@
     }
     return 0;
   });
-  const showOutputsCard = $derived(!sessionRunning && outputs.length > 0);
   const outputsBefore = $derived(
-    showOutputsCard ? sections.findLastIndex((section, i) => i >= latestFrom && section.final) : -1,
+    !sessionRunning && outputs.length
+      ? sections.findLastIndex((section, i) => i >= latestFrom && section.final)
+      : -1,
+  );
+  const collapsedOutputs = $derived(
+    sessionRunning
+      ? []
+      : [
+          ...(groups?.byEntry.get(sections[outputsBefore]?.item?.entry.id) || []),
+          ...(groups?.unassigned || []),
+        ],
   );
   function continueTask() {
     document
@@ -126,6 +135,7 @@
   },
   inActivity = false,
   latestTurn = false,
+  outputsCollapsed = false,
 )}
   {#if repeatedError || retried || autoContinued}
     <span id={`entry-${entry.id}`} hidden></span>
@@ -143,7 +153,7 @@
       latestTurn={latestTurn && sessionRunning === false}
       {skipActivity}
       outputs={inActivity ? undefined : groups?.byEntry.get(entry.id)}
-      {renderOutputs}
+      renderOutputs={outputsCollapsed ? null : renderOutputs}
       {onCompact}
       {cwd}
     />
@@ -152,13 +162,13 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: sanitized session markdown -->
 {#snippet outputsCard()}
-  <details class="outputs-card" data-output-count={outputs.length}>
+  <details class="outputs-card" data-output-count={collapsedOutputs.length}>
     <summary>
       <span class="outputs-card-chevron" aria-hidden="true"
         >{@html icon(ChevronRight, { size: 14 })}</span
-      >{t('outputs.title')} · {outputs.length}
+      >{t('outputs.title')} · {collapsedOutputs.length}
     </summary>
-    <div class="outputs-card-body">{@render renderOutputs?.(outputs)}</div>
+    <div class="outputs-card-body">{@render renderOutputs?.(collapsedOutputs)}</div>
   </details>
 {/snippet}
 
@@ -208,12 +218,13 @@
         {@render renderOutputs?.(section.outputs)}
       {/if}
     {:else}
-      {#if sectionIndex === outputsBefore}{@render outputsCard()}{/if}
-      {@render renderEntry(section.item, false, sectionIndex >= latestFrom)}
+      {@const outputsCollapsed = sectionIndex === outputsBefore && collapsedOutputs.length > 0}
+      {#if outputsCollapsed}{@render outputsCard()}{/if}
+      {@render renderEntry(section.item, false, sectionIndex >= latestFrom, outputsCollapsed)}
     {/if}
   {/each}
   {#if groups?.unassigned.length && sessionRunning}
     {@render renderOutputs?.(groups.unassigned)}
   {/if}
-  {#if showOutputsCard && outputsBefore === -1}{@render outputsCard()}{/if}
+  {#if collapsedOutputs.length && outputsBefore === -1}{@render outputsCard()}{/if}
 </div>

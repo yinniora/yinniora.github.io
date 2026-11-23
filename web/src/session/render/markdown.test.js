@@ -36,7 +36,6 @@ describe('session markdown', () => {
 
   it('keeps workspace downloads inside the live session and leaves export anchors alone', () => {
     const instance = new Marked();
-    configureSessionMarkdown({ marked: instance, escapeHtml: (text) => String(text) });
     const inputs =
       '[Download](./drawing%20test.svg) [Outside](../other.svg) [Website](https://example.com/a.svg) [Settings](/settings)';
     const html = safeMarkedParse(inputs, { marked: instance, workspaceCwd: '/work' });

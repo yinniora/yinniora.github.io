@@ -1240,6 +1240,63 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
   }
 });
 
+test("a finished turn shows one SVG and its link downloads on a cold session load", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  const cwd = realWorkingDir();
+  const { entries, lastId } = buildSession({ cwd });
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3"/></svg>';
+  const write = assistantTextEntry(lastId, "");
+  entries.push({
+    ...write.entry,
+    message: {
+      ...write.entry.message,
+      stopReason: "toolUse",
+      content: [
+        { type: "toolCall", id: "write-svg", name: "write", arguments: { path: "finished.svg", content: svg } },
+      ],
+    },
+  } as any);
+  entries.push({
+    type: "message",
+    id: "write-svg-result",
+    parentId: write.id,
+    timestamp: new Date().toISOString(),
+    message: {
+      role: "toolResult",
+      toolCallId: "write-svg",
+      toolName: "write",
+      content: [{ type: "text", text: "Wrote finished.svg" }],
+      isError: false,
+    },
+  } as any);
+  const reply = assistantTextEntry("write-svg-result", "[Download the SVG](./finished.svg)");
+  entries.push(reply.entry);
+  writeFileSync(join(cwd, "finished.svg"), svg);
+  const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "finished-gallery"), entries);
+  if (/Mobile Safari|iPad/.test(testInfo.project.name)) {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "standalone", { value: true });
+    });
+  }
+  await collapseScratchpad(page);
+  await page.goto("/session?id=" + encodeURIComponent(id));
+  const output = page.locator(".outputs-card");
+  await expect(output).toHaveCount(1);
+  await expect(output.locator(".output-file-name")).toHaveText("finished.svg");
+  await expect(page.locator(".output-file-name")).toHaveCount(1);
+  const assistant = page.locator(`#entry-${reply.id}`);
+  await expect(assistant.locator('a[href="./finished.svg"]')).toHaveCount(0);
+  const url = page.url();
+  const download = page.waitForEvent("download");
+  await assistant.getByRole("button", { name: "Download the SVG" }).click();
+  const saved = await download;
+  expect(saved.suggestedFilename()).toBe("finished.svg");
+  expect(readFileSync((await saved.path())!, "utf8")).toBe(svg);
+  await expect(page).toHaveURL(url);
+});
+
 test("all phone routes keep the outer page fixed and disable page zoom", async ({
   page,
 }) => {
