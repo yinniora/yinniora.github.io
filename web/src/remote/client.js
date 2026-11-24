@@ -27,6 +27,7 @@ export const SIGNAL_OPEN_TIMEOUT = 8000;
 export const ANSWER_TIMEOUT = 20000;
 export const CHANNEL_TIMEOUT = 20000;
 export const RESUME_PROBE_TIMEOUT = 1500;
+const PRIVATE_ROUTE_HEAD_START = 250;
 const DIRECT_FALLBACK_TIMEOUT = 5000;
 const routeFailures = new Set([
   'timeout',
@@ -192,13 +193,21 @@ export class RemoteClient extends EventTarget {
 
   async connect() {
     if (this.connecting) return this.connecting;
-    if (['failed', 'closed', 'disconnected'].includes(this.peer?.connectionState)) {
-      this.peer.close();
-      this.socket?.close();
-      this.authorized = false;
-    }
-    if (this.channel?.readyState === 'open' && this.authorized) return;
     if (this.blocked) throw new Error(t('remote.denied'));
+    if (navigator.onLine === false && !this.config.lanUrl && !this.config.directUrl)
+      throw connectionError('offline');
+    const state = this.peer?.connectionState;
+    if (
+      this.channel?.readyState === 'open' &&
+      this.authorized &&
+      !['failed', 'closed'].includes(state)
+    ) {
+      if (this.connection === 'disconnected') return this.resume();
+      return;
+    }
+    this.peer?.close();
+    this.socket?.close();
+    this.authorized = false;
     this.connection = this.everConnected ? 'reconnecting' : 'connecting';
     this.diagnostics = {
       clientVersion,
@@ -210,13 +219,14 @@ export class RemoteClient extends EventTarget {
     this.connecting = this.openConnection()
       .then(() => {
         this.phase('sync');
-        this.refreshRoutes(AbortSignal.timeout(5000)).catch(() => {});
+        this.refreshRoutes(AbortSignal.timeout(5000), true).catch(() => {});
         if (this.deviceIdentified) return;
         this.fetch('/api/devices', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'identify', features: deviceFeatures() }),
           signal: AbortSignal.timeout(8000),
+          priority: 'low',
         })
           .then(async (response) => {
             await response.arrayBuffer();
@@ -306,9 +316,24 @@ export class RemoteClient extends EventTarget {
 
   async openSignaling(routes, identity, signal, unavailable) {
     const attempts = routes.map(() => new AbortController());
-    signal.addEventListener('abort', () => attempts.forEach((attempt) => attempt.abort()), {
-      once: true,
-    });
+    let privatePending = routes.filter(({ kind }) => kind !== 'relay').length;
+    let startRelay;
+    let relayTimer;
+    const relayWait =
+      this.preference === 'auto' && privatePending && routes.some(({ kind }) => kind === 'relay')
+        ? new Promise((resolve) => {
+            startRelay = resolve;
+            relayTimer = setTimeout(resolve, PRIVATE_ROUTE_HEAD_START);
+          })
+        : null;
+    signal.addEventListener(
+      'abort',
+      () => {
+        attempts.forEach((attempt) => attempt.abort());
+        startRelay?.();
+      },
+      { once: true },
+    );
     try {
       const selected = await Promise.any(
         routes.map(async (route, index) => {
@@ -316,21 +341,19 @@ export class RemoteClient extends EventTarget {
             route.kind === 'lan'
               ? (url) => this.nativeLANSocket(url, this.config.fingerprint)
               : (url) => new WebSocket(url);
-          const socket = await openSignalSocket(
-            route.url,
-            attempts[index].signal,
-            unavailable,
-            createSocket,
-          );
-          if (route.kind === 'relay') {
-            try {
-              await authenticateRelay(socket, identity, this.config);
-            } catch (error) {
-              socket.close();
-              throw error;
-            }
+          const attempt = attempts[index].signal;
+          if (route.kind === 'relay' && relayWait) await relayWait;
+          attempt.throwIfAborted();
+          let socket;
+          try {
+            socket = await openSignalSocket(route.url, attempt, unavailable, createSocket);
+            if (route.kind === 'relay') await authenticateRelay(socket, identity, this.config);
+            return { socket, route, index };
+          } catch (error) {
+            socket?.close();
+            if (route.kind !== 'relay' && --privatePending === 0) startRelay?.();
+            throw error;
           }
-          return { socket, route, index };
         }),
       );
       attempts.forEach((attempt, index) => {
@@ -344,6 +367,9 @@ export class RemoteClient extends EventTarget {
       const failure = connectionError(code);
       failure.cause = error;
       throw failure;
+    } finally {
+      clearTimeout(relayTimer);
+      startRelay?.();
     }
   }
 
@@ -423,7 +449,13 @@ export class RemoteClient extends EventTarget {
         this.emitStatus();
       }
       if (peer.connectionState === 'failed') peer.close();
-      if (peer.connectionState === 'connected') this.updateTransport(peer);
+      if (peer.connectionState === 'connected') {
+        if (this.authorized) {
+          this.connection = 'connected';
+          this.emitStatus();
+        }
+        this.updateTransport(peer);
+      }
     };
     this.authorized = false;
     let answerTimer;
@@ -626,10 +658,12 @@ export class RemoteClient extends EventTarget {
     }
   }
 
-  async fetch(path, options = {}) {
+  async fetch(path, options = {}, reuseChannel = false) {
     const request = new Request(new URL(path, location.origin), options);
     request.signal.throwIfAborted();
-    await this.connect();
+    if (!reuseChannel) await this.connect();
+    if (this.blocked || !this.authorized || this.channel?.readyState !== 'open')
+      throw connectionError('disconnected');
     request.signal.throwIfAborted();
     const body = ['GET', 'HEAD'].includes(request.method)
       ? new Uint8Array()
@@ -654,7 +688,7 @@ export class RemoteClient extends EventTarget {
         reject,
         method: request.method,
         channel: this.channel,
-        loading: new URL(request.url).pathname !== '/events',
+        loading: options.priority !== 'low' && new URL(request.url).pathname !== '/events',
         removeAbortListener,
       }),
     );
@@ -691,10 +725,10 @@ export class RemoteClient extends EventTarget {
     return response;
   }
 
-  async refreshRoutes(signal) {
+  async refreshRoutes(signal, reuseChannel = false) {
     const peer = this.peer;
     const config = this.config;
-    const response = await this.fetch('/api/devices', { signal });
+    const response = await this.fetch('/api/devices', { signal, priority: 'low' }, reuseChannel);
     if (!response.ok) throw connectionError('disconnected');
     const { connection } = await response.json();
     if (this.peer === peer && this.config === config) this.updateConfiguration(connection);
@@ -708,25 +742,31 @@ export class RemoteClient extends EventTarget {
   }
 
   async verifyChannel() {
+    if (navigator.onLine === false && !this.config.lanUrl && !this.config.directUrl)
+      throw connectionError('offline');
     const peer = this.peer;
     if (
       !this.authorized ||
       this.channel?.readyState !== 'open' ||
-      peer?.connectionState !== 'connected'
+      ['failed', 'closed'].includes(peer?.connectionState)
     )
       return this.connect();
     try {
-      await this.refreshRoutes(AbortSignal.timeout(RESUME_PROBE_TIMEOUT));
+      await this.refreshRoutes(AbortSignal.timeout(RESUME_PROBE_TIMEOUT), true);
+      if (this.peer === peer && this.authorized) {
+        this.connection = 'connected';
+        this.emitStatus();
+      }
     } catch {
-      if (this.peer === peer) return this.reconnect(this.preference);
+      if (this.peer === peer) return this.reconnect(this.preference, { persist: false });
     }
   }
 
-  async reconnect(preference = 'all') {
+  async reconnect(preference = 'all', { persist = true } = {}) {
     if (this.connecting) await this.connecting.catch(() => {});
     this.preference = normalizeTransport(preference);
     try {
-      localStorage.setItem(TRANSPORT_KEY, this.preference);
+      if (persist) localStorage.setItem(TRANSPORT_KEY, this.preference);
     } catch {}
     this.authorized = false;
     this.peer?.close();

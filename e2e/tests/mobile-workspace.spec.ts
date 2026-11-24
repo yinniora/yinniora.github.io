@@ -89,6 +89,78 @@ test("leaving a running conversation isolates its completion from the next conve
   }
 });
 
+test("recent home and session views render before their update requests finish", async ({
+  page,
+  sessionsDir,
+}, testInfo) => {
+  if (testInfo.project.name === "Mobile Safari") {
+    await page.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true }));
+  }
+  await collapseScratchpad(page);
+  const { entries, lastId } = buildSession({ cwd: realWorkingDir() });
+  const name = uniqueSessionName(testInfo, "warm-navigation");
+  const id = writeSession(sessionsDir, name, entries);
+  const card = page.locator(`.mobile-home .session-card[data-session-id="${id}"]`);
+  let pauseHome = false;
+  let releaseHome!: () => void;
+  const homeGate = new Promise<void>((resolve) => (releaseHome = resolve));
+  let pauseSession = false;
+  let releaseSession!: () => void;
+  const sessionGate = new Promise<void>((resolve) => (releaseSession = resolve));
+  let observeSync!: (url: string) => void;
+  const syncRequested = new Promise<string>((resolve) => (observeSync = resolve));
+  await page.exposeFunction("pauseWorkspaceRead", async (address: string) => {
+    const url = new URL(address);
+    if (pauseHome && url.pathname === "/api/projects") await homeGate;
+    if (pauseSession && url.pathname === "/api/session" && url.searchParams.get("id") === id) {
+      observeSync(url.href);
+      await sessionGate;
+    }
+  });
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, options) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      if (["/api/projects", "/api/session"].includes(url.pathname) && (!options?.method || options.method === "GET")) {
+        await (window as any).pauseWorkspaceRead(url.href);
+      }
+      return original(input, options);
+    };
+  });
+  await page.goto("/");
+  test.skip(!(await isMobileLayout(page)), "mobile layout");
+  try {
+    const originalDocument = await page.evaluate(() => performance.timeOrigin);
+    await card.click();
+    await expect(page.locator("#messages")).toContainText("Initial reply.");
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(originalDocument);
+    pauseHome = true;
+    pauseSession = true;
+    await page.locator(".session-header-back").tap();
+    await expect(page.locator(".mobile-home")).toBeVisible();
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(originalDocument);
+    await expect(card).toBeVisible();
+    appendEntry(sessionsDir, name, assistantTextEntry(lastId, "Reply while away.").entry);
+    await card.click();
+    expect(new URL(await syncRequested).searchParams.has("revision")).toBe(true);
+    await expect(page.locator("#messages")).toContainText("Initial reply.");
+    await expect(page.locator("#messages")).not.toContainText("Reply while away.");
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(originalDocument);
+    const refresh = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/session" && url.searchParams.get("id") === id &&
+        url.searchParams.has("revision") && response.ok();
+    });
+    releaseHome();
+    releaseSession();
+    await expect(page.locator("#messages")).toContainText("Reply while away.");
+    expect(await (await refresh).json()).toMatchObject({ delta: true, entries: [expect.any(Object)] });
+  } finally {
+    releaseHome();
+    releaseSession();
+  }
+});
+
 test("an unseen completed reply keeps its dot until the conversation is opened", async ({
   page,
   sessionsDir,

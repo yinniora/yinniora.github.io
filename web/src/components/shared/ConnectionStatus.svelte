@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t } from '../../shared/i18n.js';
   import { backState, handleNavClick } from '../../shared/navigation.js';
   let {
@@ -7,8 +7,8 @@
     fallback = '',
     href = '',
   } = $props();
-  let current = $state('disconnected');
-  let transport = $state('');
+  let current = $state(untrack(() => client?.status || 'disconnected'));
+  let transport = $state(untrack(() => client?.transport || ''));
   let timer;
   const state = $derived(client ? current : fallback);
   const label = $derived(

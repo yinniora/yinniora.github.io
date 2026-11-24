@@ -2,7 +2,10 @@ package sessions
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -81,8 +84,37 @@ type SessionSummary struct {
 
 type Session struct {
 	SessionSummary
-	Header  map[string]any
-	Entries []map[string]any
+	Header     map[string]any
+	Entries    []map[string]any
+	boundaries []entryBoundary
+}
+
+type entryBoundary struct {
+	sum   [sha256.Size]byte
+	bytes int
+}
+
+// EntryRevision covers the complete prefix, including content changes that keep
+// the same entry IDs. The empty prefix has a stable revision as well.
+func (s Session) EntryRevision(count int) string {
+	if count == 0 {
+		return "empty"
+	}
+	if count < 0 || count > len(s.boundaries) {
+		return ""
+	}
+	return hex.EncodeToString(s.boundaries[count-1].sum[:])
+}
+
+func (s Session) EntryBytes(from, end int) int {
+	if end == from {
+		return 0
+	}
+	size := s.boundaries[end-1].bytes
+	if from > 0 {
+		size -= s.boundaries[from-1].bytes
+	}
+	return size
 }
 
 func SortSummariesByActivity(s []SessionSummary) {
@@ -533,6 +565,9 @@ func ParseFile(path, dirName, fileName string) (Session, error) {
 	s := newSessionSummary(dirName, fileName)
 
 	var entries []map[string]any
+	var boundaries []entryBoundary
+	var parsedBytes int
+	digest := sha256.New()
 	var header map[string]any
 	var headerName, sessionInfoName, firstUserText, headerCwd string
 	seenSessionHeaders := make(map[string]bool)
@@ -540,12 +575,12 @@ func ParseFile(path, dirName, fileName string) (Session, error) {
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, scanInitialBufferBytes), maxScanLineBytes)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
 			continue
 		}
 		var raw map[string]any
-		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+		if err := json.Unmarshal(line, &raw); err != nil {
 			continue
 		}
 		if raw["type"] == "session" {
@@ -558,6 +593,12 @@ func ParseFile(path, dirName, fileName string) (Session, error) {
 			}
 		}
 		entries = append(entries, raw)
+		_, _ = digest.Write(line)
+		_, _ = digest.Write([]byte{'\n'})
+		parsedBytes += len(line) + 1
+		boundary := entryBoundary{bytes: parsedBytes}
+		digest.Sum(boundary.sum[:0])
+		boundaries = append(boundaries, boundary)
 		switch raw["type"] {
 		case "session":
 			header = raw
@@ -631,7 +672,7 @@ func ParseFile(path, dirName, fileName string) (Session, error) {
 
 	applySummaryContext(&s, path, fileName, sessionInfoName, headerName, firstUserText, headerCwd)
 
-	return Session{SessionSummary: s, Header: header, Entries: entries}, nil
+	return Session{SessionSummary: s, Header: header, Entries: entries, boundaries: boundaries}, nil
 }
 
 func sessionHeaderKey(raw map[string]any) string {

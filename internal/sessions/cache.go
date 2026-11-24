@@ -15,7 +15,7 @@ type cacheEntry struct {
 }
 
 type sessionCacheEntry struct {
-	modTime time.Time
+	info    os.FileInfo
 	session Session
 }
 
@@ -227,13 +227,11 @@ func (c *Cache) Resolve(sessionsDir, id string) (ResolvedSession, error) {
 	if err != nil {
 		return ResolvedSession{}, err
 	}
-	modTime := info.ModTime()
-
 	c.mu.Lock()
 	ce, hasCached := c.sessionCache[path]
 	c.mu.Unlock()
 
-	if hasCached && ce.modTime.Equal(modTime) {
+	if hasCached && ce.info.ModTime().Equal(info.ModTime()) && ce.info.Size() == info.Size() && os.SameFile(ce.info, info) {
 		return ResolvedSession{Session: ce.session, Path: path}, nil
 	}
 
@@ -243,7 +241,7 @@ func (c *Cache) Resolve(sessionsDir, id string) (ResolvedSession, error) {
 	}
 
 	c.mu.Lock()
-	c.sessionCache[path] = sessionCacheEntry{modTime: modTime, session: sess}
+	c.sessionCache[path] = sessionCacheEntry{info: info, session: sess}
 	c.mu.Unlock()
 
 	return ResolvedSession{Session: sess, Path: path}, nil

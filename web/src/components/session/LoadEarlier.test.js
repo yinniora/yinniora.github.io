@@ -29,7 +29,9 @@ describe('LoadEarlier', () => {
     expect(screen.getByText('Showing latest 1 of 3 messages.')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Load 1 earlier' }));
 
-    expect(fetchImpl).toHaveBeenCalledWith('/api/session?id=s.jsonl&from=1&count=1');
+    expect(fetchImpl).toHaveBeenCalledWith('/api/session?id=s.jsonl&window=1&from=1&count=1', {
+      signal: expect.any(AbortSignal),
+    });
     await waitFor(() =>
       expect(model.reconcile).toHaveBeenCalledWith([
         { id: 'old' },

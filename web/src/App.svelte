@@ -13,6 +13,8 @@
   import { handleNavClick } from './shared/navigation.js';
   import { t } from './shared/i18n.js';
   import { initializeSessionCompletions } from './index/session-completions.js';
+  import { clearWorkspaceCache } from './shared/workspace-cache.js';
+  import { resetSessionPrefetch } from './routes/session-prefetch.js';
 
   let {
     path: initialPath = typeof window !== 'undefined' ? window.location.pathname : '/',
@@ -42,7 +44,17 @@
       event: 'remote-config',
       onEvent: (config) => window.__PI_REMOTE_CLIENT__?.updateConfiguration(config),
     });
-    if (window.__PI_REMOTE_CLIENT__) remoteEvents.connect();
+    const client = window.__PI_REMOTE_CLIENT__;
+    if (client) remoteEvents.connect();
+    const clearCachedLists = () => {
+      clearWorkspaceCache();
+      resetSessionPrefetch();
+    };
+    const onRemoteStatus = ({ detail }) => {
+      if (detail === 'blocked') clearCachedLists();
+    };
+    window.addEventListener('pi:hub-updated', clearCachedLists);
+    client?.addEventListener('status', onRemoteStatus);
     const syncPath = (event) => {
       const nextPath = window.location.pathname;
       const nextSessionId = new URLSearchParams(window.location.search).get('id') || '';
@@ -76,6 +88,8 @@
       if (root) delete root.dataset.routeMotion;
       stopViewport();
       remoteEvents.cleanup();
+      window.removeEventListener('pi:hub-updated', clearCachedLists);
+      client?.removeEventListener('status', onRemoteStatus);
       window.removeEventListener('popstate', syncPath);
       window.removeEventListener('pi:locationchange', syncPath);
       window.removeEventListener('pageshow', restorePath);

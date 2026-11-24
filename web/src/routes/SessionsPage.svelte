@@ -22,6 +22,7 @@
   } from '../shared/settings-store.js';
   import { navigate, backState, handleNavClick } from '../shared/navigation.js';
   import { getJSON } from '../shared/api.js';
+  import { readWorkspaceCache, writeWorkspaceCache } from '../shared/workspace-cache.js';
   import { t } from '../shared/i18n.js';
   import {
     icon,
@@ -47,12 +48,15 @@
   } from '../index/sessions.js';
 
   const PAGE_SIZE = 100;
+  const scope = new AbortController();
+  const cachedList = readWorkspaceCache('home:list');
+  const cachedProjects = readWorkspaceCache('home:projects');
 
-  let sessions = $state([]);
-  let total = $state(0);
+  let sessions = $state(cachedList?.sessions || []);
+  let total = $state(cachedList?.total || 0);
   let loadingMore = $state(false);
-  let loading = $state(true);
-  let layoutReady = $state(false);
+  let loading = $state(!cachedList);
+  let layoutReady = $state(!!cachedList);
   let layout = $state('timeline');
   const runningSessionIds = new SvelteSet();
   const runningStatuses = new SvelteMap();
@@ -63,13 +67,14 @@
   let newSessionError = $state('');
   let menuOpen = $state(false);
   let projectsOpen = $state(false);
-  let projects = $state([]);
-  let projectsFilterEnabled = $state(false);
+  let projects = $state(cachedProjects?.projects || []);
+  let projectsFilterEnabled = $state(!!cachedProjects?.filterEnabled);
+  let projectsReady = $state(!!cachedProjects);
   let projectsBusy = $state(false);
   let projectsError = $state('');
   let refreshInflight = false;
   let mobile = $state(window.matchMedia?.('(max-width: 900px)').matches || false);
-  let defaultWorkspace = $state('');
+  let defaultWorkspace = $state(cachedProjects?.defaultWorkspace || '');
   let homeRevision = $state(0);
   let projectsAddOnly = $state(false);
   let projectToDelete = $state(null);
@@ -139,9 +144,18 @@
     refreshInflight = true;
     try {
       const limit = preserveWindow ? Math.max(PAGE_SIZE, sessions.length) : PAGE_SIZE;
-      const response = await defaultFetchSessions({ limit });
-      sessions = (response.sessions || []).map(normalizeSession);
-      total = response.total ?? sessions.length;
+      const response = await defaultFetchSessions(
+        { limit },
+        {
+          signal: scope.signal,
+          priority: layoutReady ? 'low' : 'auto',
+        },
+      );
+      if (scope.signal.aborted) return;
+      const next = (response.sessions || []).map(normalizeSession);
+      sessions = next;
+      total = response.total ?? next.length;
+      writeWorkspaceCache('home:list', { sessions: next, total });
       await tick();
       refreshSessionPalette();
     } catch {
@@ -157,11 +171,16 @@
     if (loadingMore || refreshInflight) return;
     loadingMore = true;
     try {
-      const response = await defaultFetchSessions({ limit: PAGE_SIZE, offset: sessions.length });
+      const response = await defaultFetchSessions(
+        { limit: PAGE_SIZE, offset: sessions.length },
+        { signal: scope.signal },
+      );
+      if (scope.signal.aborted) return;
       const more = (response.sessions || []).map(normalizeSession);
       const seen = new Set(sessions.map((session) => session.id));
       sessions = [...sessions, ...more.filter((session) => !seen.has(session.id))];
       total = response.total ?? total;
+      writeWorkspaceCache('home:list', { sessions: sessions.slice(), total });
     } catch {
       // Leave the loaded list untouched if a page fails to load.
     } finally {
@@ -176,8 +195,8 @@
     if (newSessionOpen) return;
     reloadTimer = setTimeout(() => {
       reloadTimer = null;
-      refreshSessions({ preserveWindow: true });
-      if (mobile) homeRevision += 1;
+      if (mobile) refreshHome();
+      else refreshSessions({ preserveWindow: true });
     }, RELOAD_DEBOUNCE_MS);
   }
 
@@ -243,13 +262,37 @@
     projectsError = '';
     projectsBusy = true;
     try {
-      const response = await defaultFetchProjects();
+      const response = await defaultFetchProjects(
+        {},
+        {
+          signal: scope.signal,
+          priority: projectsReady ? 'low' : 'auto',
+        },
+      );
+      if (scope.signal.aborted) return;
       projects = Array.isArray(response.projects) ? response.projects : [];
       projectsFilterEnabled = !!response.filterEnabled;
+      defaultWorkspace = response.defaultWorkspace || defaultWorkspace;
+      if (!defaultWorkspace) {
+        // Older hosts provide the ordinary conversations path separately.
+        const connections = await getJSON('/api/connections', {
+          signal: scope.signal,
+          priority: 'low',
+        }).catch(() => null);
+        if (scope.signal.aborted) return;
+        defaultWorkspace = connections?.defaultWorkspace || '';
+      }
+      writeWorkspaceCache('home:projects', {
+        projects: projects.slice(),
+        filterEnabled: projectsFilterEnabled,
+        defaultWorkspace,
+      });
     } catch (error) {
-      projectsError = error.message || t('index.failedLoadProjects');
+      if (!scope.signal.aborted && (!projectsReady || projectsOpen))
+        projectsError = error.message || t('index.failedLoadProjects');
     } finally {
       projectsBusy = false;
+      projectsReady = true;
     }
   }
 
@@ -311,9 +354,12 @@
     }
   }
 
-  async function refreshHome() {
-    await Promise.all([refreshSessions({ preserveWindow: true }), refreshProjectsList()]);
-    homeRevision += 1;
+  async function refreshHome({ notify = true } = {}) {
+    await Promise.all([
+      mobile ? null : refreshSessions({ preserveWindow: true }),
+      refreshProjectsList(),
+    ]);
+    if (notify && !scope.signal.aborted) homeRevision += 1;
   }
 
   function openPalette() {
@@ -325,13 +371,9 @@
     const media = window.matchMedia?.('(max-width: 900px)');
     const resize = () => {
       mobile = !!media?.matches;
+      if (!mobile) refreshSessions({ preserveWindow: true });
     };
     media?.addEventListener('change', resize);
-    getJSON('/api/connections')
-      .then((data) => {
-        defaultWorkspace = data.defaultWorkspace || '';
-      })
-      .catch(() => {});
     const previousTitle = document.title;
     document.title = t('app.name');
     configureSettingsSync({ fetchImpl: window.fetch.bind(window) });
@@ -399,12 +441,13 @@
     const click = () => closeMenu();
     window.addEventListener('click', click);
 
-    refreshHome();
+    refreshHome({ notify: false });
     const hubUpdated = () => refreshHome();
     window.addEventListener('pi:hub-updated', hubUpdated);
 
     return () => {
       active = false;
+      scope.abort();
       media?.removeEventListener('change', resize);
       window.removeEventListener('pi:hub-updated', hubUpdated);
       document.title = previousTitle;
@@ -454,7 +497,7 @@
         {projects}
         {defaultWorkspace}
         revision={homeRevision}
-        loading={loading || projectsBusy}
+        loading={!projectsReady}
         error={homeError || projectsError}
         {creating}
         {menuOpen}

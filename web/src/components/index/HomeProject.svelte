@@ -9,6 +9,7 @@
     sessionsCountLabel,
   } from '../../index/sessions.js';
   import SessionCard from './SessionCard.svelte';
+  import { readWorkspaceCache, writeWorkspaceCache } from '../../shared/workspace-cache.js';
 
   let {
     project,
@@ -19,10 +20,13 @@
     onNewSession = () => {},
     onDeleteProject = () => {},
   } = $props();
+  const cacheKey = () => 'home:project:' + project.path;
+  const cached = untrack(() => readWorkspaceCache(cacheKey()));
+  const scope = new AbortController();
   let expanded = $state(false);
   let ready = $state(false);
-  let entries = $state([]);
-  let total = $state(0);
+  let entries = $state(cached?.entries || []);
+  let total = $state(cached?.total || 0);
   let loading = $state(false);
   let error = $state('');
   let menu = $state(null);
@@ -36,16 +40,16 @@
     loading = true;
     error = '';
     try {
-      const data = await defaultFetchSessions({
-        project: project.path,
-        limit,
-        offset: append ? entries.length : 0,
-      });
-      if (request !== generation) return;
+      const data = await defaultFetchSessions(
+        { project: project.path, limit, offset: append ? entries.length : 0 },
+        { signal: scope.signal, priority: !append && (entries.length || cached) ? 'low' : 'auto' },
+      );
+      if (request !== generation || scope.signal.aborted) return;
       const next = (data.sessions || []).map(normalizeSession);
       const seen = new Set(append ? entries.map((entry) => entry.id) : []);
       entries = [...(append ? entries : []), ...next.filter((entry) => !seen.has(entry.id))];
       total = data.total ?? entries.length;
+      writeWorkspaceCache(cacheKey(), { entries: entries.slice(), total });
     } catch {
       if (request === generation) error = t('mobile.loadSessionsFailed');
     } finally {
@@ -84,6 +88,7 @@
     ready = true;
     return () => {
       generation += 1;
+      scope.abort();
       window.removeEventListener('click', closeMenu);
     };
   });
@@ -142,7 +147,9 @@
       {#if error}<p class="home-inline-error" role="alert">
           {error}<button onclick={() => load()}>{t('common.retry')}</button>
         </p>
-      {:else if loading}<p class="home-list-hint" role="status">{t('index.loadingSessions')}</p>
+      {:else if loading && !entries.length && !cached}<p class="home-list-hint" role="status">
+          {t('index.loadingSessions')}
+        </p>
       {:else if !entries.length}<button
           class="home-empty-project"
           onclick={() => onNewSession(project.path)}

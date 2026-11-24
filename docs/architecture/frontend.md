@@ -142,11 +142,19 @@ The index route listens to `/events?id=__all__` for `new-session`, `status-snaps
 
 Leaving a session stops its worker-status poll and aborts pending transcript
 reloads. A session load has a deadline and keeps a way back to the index.
-If it fails, retry remounts only that session at the current URL.
-The initial transcript includes its current running status. On reconnect,
-the view reconciles saved entries before showing that a previously running
-turn stopped. The latest empty reply is checked against the output list
-before it shows recovery actions.
+Retry remounts the session at the current URL. Recent home lists and session
+tails can render from a bounded, three-minute memory cache before a background
+refresh. The mobile home refreshes the projects and their visible pages. The
+desktop timeline uses the general sessions list.
+
+The initial transcript includes its current running status and a recent window
+limited by both entry count and source bytes. Older entries load on demand.
+The live view sends the revision and length of its complete known prefix.
+The host returns appended entries and current status when that prefix matches.
+A changed prefix returns a fresh window. Links to a particular entry can load
+the older history. During reconnect the view reconciles saved entries before
+showing that a previously running turn stopped. The latest empty reply is checked
+against the output list before it shows recovery actions.
 Within the session a composer progress strip stays visible while Pi is working,
 even before any text arrives. Streaming thought blocks can be expanded
 independently. Consecutive tool-only entries use tighter rows and move message

@@ -52,7 +52,8 @@
     chatDisabledReason = '',
     modelLabel = '',
     initialSessionRunning = null,
-    dataEl = $bindable(null),
+    revalidate = false,
+    onSessionUnavailable = () => {},
   } = $props();
 
   // Manage-projects sheet, opened from the header. Enabling/disabling a project
@@ -169,7 +170,7 @@
   }
 
   function onTranscriptReconciled({ running }) {
-    if (currentSessionRunning === null && !idleReload) {
+    if (sessionRunning === null && !idleReload) {
       currentSessionRunning = running ?? false;
     }
   }
@@ -288,6 +289,8 @@
 <LiveReload
   {sessionId}
   {cwd}
+  {revalidate}
+  {onSessionUnavailable}
   bind:thinkingPreviews
   onRefreshReady={(refresh) => (refreshTranscript = refresh)}
   {onTranscriptReconciled}
@@ -299,7 +302,12 @@
   <div id="content-container" class="content-container">
     <main id="content" bind:this={transcript}>
       <div id="header-container"><SessionInfoHeader model={sessionModel} /></div>
-      <LoadEarlier model={sessionModel} {sessionId} navigateTo={runtime.navigateTo} />
+      <LoadEarlier
+        model={sessionModel}
+        {sessionId}
+        navigateTo={runtime.navigateTo}
+        onHistoryChanged={() => refreshTranscript?.()}
+      />
       <div id="messages">
         <ActivityControls />
         <OutputGallery model={sessionModel} {sessionId} {cwd}>
@@ -372,5 +380,3 @@
 <ShareDialog {sessionId} />
 <CatGatekeeper />
 <BtwPopup {cwd} parentId={sessionId} />
-<svelte:element this={"script"} id="session-data" type="application/json" bind:this={dataEl}
-></svelte:element>

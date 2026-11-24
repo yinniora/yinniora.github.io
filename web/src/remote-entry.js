@@ -6,6 +6,7 @@ import { mount, unmount } from 'svelte';
 import RemoteConnect from './components/shared/RemoteConnect.svelte';
 import { readRemoteStartup } from './remote/config.js';
 import { remoteEventSource } from './remote/event-source.js';
+import { prefetchSession } from './routes/session-prefetch.js';
 import '../../internal/ui/embedded/styles/theme.css';
 import '../../internal/ui/embedded/styles/index.css';
 import '../../internal/ui/embedded/styles/settings.css';
@@ -217,13 +218,18 @@ async function launchWorkspace(client) {
       if (event.persisted) resume();
     });
     window.addEventListener('offline', () => {
-      transportClient.peer?.close();
-      transportClient.socket?.close();
       transportClient.connection = 'disconnected';
       transportClient.emitStatus();
     });
   }
   window.__PI_REMOTE_CLIENT__ = client;
+  const route = new URL(location.href);
+  if (
+    route.pathname === '/session' &&
+    !route.searchParams.has('leafId') &&
+    !route.searchParams.has('targetId')
+  )
+    prefetchSession(route.searchParams.get('id'));
   client.setSyncing(true);
   const syncSettings = prepareStartupSettings({ fetchImpl: window.fetch });
   const [settings] = await Promise.all([syncSettings, waitForMediaBridge()]);

@@ -291,6 +291,7 @@ func (s *Server) handleApiProjects(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, 0, map[string]any{
 		"projects":             entries,
+		"defaultWorkspace":     s.defaultWorkspace(),
 		"total":                total,
 		"currentSessions":      currentSessions,
 		"currentSessionsTotal": currentSessionsTotal,

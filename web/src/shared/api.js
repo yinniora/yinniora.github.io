@@ -15,8 +15,8 @@ async function parseJSONResponse(response) {
   return payload;
 }
 
-export async function getJSON(url, { fetchImpl = fetch } = {}) {
-  const response = await fetchImpl(url, { headers: { Accept: 'application/json' } });
+export async function getJSON(url, { fetchImpl = fetch, ...options } = {}) {
+  const response = await fetchImpl(url, { ...options, headers: { Accept: 'application/json' } });
   return parseJSONResponse(response);
 }
 

@@ -105,8 +105,9 @@ SDP and DTLS ciphertext,
 Outer HTTPS certificates protect signaling availability and metadata; losing a
 VPS HTTPS key cannot impersonate the pinned inner DTLS identity.
 
-Automatic races the known private and public signaling routes. A relay must
-authorize its socket before it qualifies. When a private route wins, both ends
+Automatic starts configured Tailscale and native LAN signaling together. It
+starts public signaling after 250 milliseconds, or sooner if both private routes
+fail. A relay must authorize its socket before it qualifies. When a private route wins, both ends
 gather direct candidates immediately, independently of public TURN credentials.
 If signaling opens but the data channel cannot be established, Automatic
 can try another known route with the same device identity.
@@ -138,17 +139,21 @@ from the code. A LAN-only host requires the native app and a client on the
 local network.
 
 Public signaling and TURN discovery run concurrently when the public path is
-the only candidate. The installed web app coalesces
-foreground and network wakeups into one probe of its existing authenticated
-channel. If iOS discarded the process or the channel is stale, the previously
-approved device signs a fresh challenge. Startup synchronizes workspace settings
-once, while approved-device metadata updates in the background.
+the only candidate. Views share the same authenticated channel. The installed
+web app coalesces foreground and network wakeups into one probe, including while
+ICE reports a temporary disconnection. A responsive channel stays open. If iOS
+discarded the process or the channel is stale, the previously approved device
+signs a fresh challenge. Startup synchronizes workspace settings once, while
+approved-device metadata updates in the background.
 
 The independent client preloads the application bundle and precaches the versioned
 program shell. An active worker serves that shell immediately and checks for updates
 separately. When a new shell is ready, the next open uses it. The cache contains
-public program files only. Conversation data, media, enrollment and TURN credentials
-continue to travel through their live authenticated paths.
+public program files only. Recent conversation tails and home lists stay in a
+bounded page-memory cache while the authorized app is running. The memory cache
+checks authorization before reuse and is cleared when the host denies access or
+local trash changes. Conversation data, media, enrollment and TURN credentials continue to
+travel through their live authenticated paths.
 
 Do not forward a Mac HTTP listener through SSH or serve this client program
 from the VPS. Use a separately controlled HTTPS static host. Remove obsolete

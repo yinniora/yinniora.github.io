@@ -162,3 +162,69 @@ func TestHandleApiSession_InvalidParamsReturnFull(t *testing.T) {
 		t.Errorf("invalid params: got %d entries, want %d", len(resp.Entries), totalEntries)
 	}
 }
+
+func TestSessionWindowCapsInitialBytesAndReturnsOnlyNewEntries(t *testing.T) {
+	root := t.TempDir()
+	path := writeSessionWithNMessages(t, root, "proj", "s.jsonl", 1)
+	initial, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var content strings.Builder
+	content.Write(initial)
+	for i := range 16 {
+		fmt.Fprintf(&content, "{\"type\":\"message\",\"id\":\"large-%d\",\"message\":{\"role\":\"user\",\"content\":\"%s\"}}\n", i, strings.Repeat("x", 100*1024))
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{sessionsDir: root, cache: sessions.NewCache()}
+	get := func(params string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		s.handleApiSession(w, httptest.NewRequest(http.MethodGet, "/api/session?id=s.jsonl&window=1"+params, nil))
+		return w
+	}
+	type window struct {
+		Entries     []map[string]any `json:"entries"`
+		Total       int              `json:"total"`
+		From        int              `json:"from"`
+		Revision    string           `json:"revision"`
+		Delta       bool             `json:"delta"`
+		RecentBytes int              `json:"recentBytes"`
+	}
+	decode := func(w *httptest.ResponseRecorder) window {
+		var data window
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &data) != nil {
+			t.Fatal("invalid session window", w.Code)
+		}
+		return data
+	}
+	first := decode(get(""))
+	if first.Total != 18 || first.From == 0 || first.From+len(first.Entries) != first.Total || first.RecentBytes > sessionWindowBytes {
+		t.Fatal("cold transcript was not restricted to a recent byte window")
+	}
+	params := fmt.Sprintf("&known=%d&revision=%s", first.Total, first.Revision)
+	if next := decode(get(params)); !next.Delta || len(next.Entries) != 0 || next.Revision != first.Revision {
+		t.Fatal("unchanged transcript was retransmitted")
+	}
+	content.WriteString("{\"type\":\"session_info\",\"name\":\"Latest title\"}\n")
+	if err := os.WriteFile(path, []byte(content.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if next := decode(get(params)); !next.Delta || next.From != first.Total || len(next.Entries) != 1 || next.Revision == first.Revision {
+		t.Fatal("server did not return the single appended entry")
+	}
+	changed := strings.Replace(content.String(), "\"content\":\"m0\"", "\"content\":\"changed\"", 1)
+	if err := os.WriteFile(path, []byte(changed), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if next := decode(get(params)); next.Delta || next.From == 0 || next.Total != 19 {
+		t.Fatal("a rewritten prefix must refresh the recent window")
+	}
+	if w := get(params + "&from=0&count=2"); w.Code != http.StatusConflict {
+		t.Fatalf("an old revision must not prepend a rewritten history, got %d", w.Code)
+	}
+	if whole := decode(get("&full=1")); whole.From != 0 || len(whole.Entries) != whole.Total {
+		t.Fatal("a link to an older entry must be able to load its history")
+	}
+}

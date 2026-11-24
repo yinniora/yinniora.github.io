@@ -64,8 +64,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	// /api/session and /api/scratchpad. Empty when the id is missing/unresolved;
 	// the client then falls back to fetching (and shows a proper error).
 	bootstrap := ""
-	if id := r.URL.Query().Get("id"); id != "" {
-		bootstrap = s.sessionBootstrap(id)
+	q := r.URL.Query()
+	if id := q.Get("id"); id != "" {
+		bootstrap = s.sessionBootstrap(id, q.Get("leafId") != "" || q.Get("targetId") != "")
 	}
 	s.handleAppShell(w, r, bootstrap)
 }
@@ -248,27 +249,81 @@ func (s *Server) handleApiSession(w http.ResponseWriter, r *http.Request) {
 	total := len(entries)
 	from := 0
 	q := r.URL.Query()
+	windowed := q.Get("window") == "1"
+	w.Header().Set("Cache-Control", "private, no-store")
 	fromStr := q.Get("from")
 	countStr := q.Get("count")
+	known, errKnown := strconv.Atoi(q.Get("known"))
+	revision := q.Get("revision")
+	prefixMatches := windowed && errKnown == nil && known >= 0 && known <= total && revision != "" &&
+		revision == resolved.Session.EntryRevision(known)
+	delta := false
 	if fromStr != "" && countStr != "" {
+		if windowed && revision != "" && !prefixMatches {
+			writeJSONError(w, http.StatusConflict, "session history changed")
+			return
+		}
 		f, errF := strconv.Atoi(fromStr)
 		c, errC := strconv.Atoi(countStr)
 		if errF == nil && errC == nil && f >= 0 && c >= 0 {
-			if f > total {
-				f = total
-			}
-			end := f + c
-			if end > total {
-				end = total
+			f = min(f, total)
+			end := f + min(c, total-f)
+			if windowed {
+				f = fitSessionWindow(resolved.Session, f, end)
 			}
 			entries = entries[f:end]
 			from = f
 		}
+	} else if windowed {
+		if prefixMatches {
+			from = known
+			delta = true
+		} else if q.Get("full") != "1" {
+			from = recentSessionStart(resolved.Session)
+		}
+		entries = entries[from:]
 	} else if q.Get("paginate") == "1" {
 		entries, total, from = paginatedEntries(resolved.Session.Entries)
 	}
 
-	writeJSON(w, 0, s.sessionResponseMap(resolved.Session, entries, total, from))
+	data := s.sessionResponseMap(resolved.Session, entries, total, from)
+	if windowed {
+		addSessionWindowMetadata(data, resolved.Session)
+		if delta {
+			data["delta"] = true
+		}
+	}
+	writeJSON(w, 0, data)
+}
+
+const sessionRecentEntries = 180
+const sessionWindowBytes = 768 * 1024
+
+func fitSessionWindow(session sessions.Session, from, end int) int {
+	for from+1 < end && session.EntryBytes(from, end) > sessionWindowBytes {
+		from++
+	}
+	return from
+}
+
+func recentSessionStart(session sessions.Session) int {
+	total := len(session.Entries)
+	limit := max(1, min(sessionRecentEntries, ui.LargeSessionTailEntries))
+	from := fitSessionWindow(session, max(0, total-limit), total)
+	for i := total - 1; i >= 0; i-- {
+		if session.Entries[i]["type"] == "message" {
+			return min(from, i)
+		}
+	}
+	return from
+}
+
+func addSessionWindowMetadata(data map[string]any, session sessions.Session) {
+	total := len(session.Entries)
+	from := recentSessionStart(session)
+	data["revision"] = session.EntryRevision(total)
+	data["recentFrom"] = from
+	data["recentBytes"] = session.EntryBytes(from, total)
 }
 
 // paginatedEntries returns the tail window embedded on the initial session load
@@ -312,7 +367,7 @@ func (s *Server) sessionResponseMap(session sessions.Session, entries []map[stri
 // so the SPA can render its first paint without round-trips to /api/session and
 // /api/scratchpad. Returns "" when the id can't be resolved — the client then
 // falls back to fetching, which surfaces a proper 404/error state.
-func (s *Server) sessionBootstrap(id string) string {
+func (s *Server) sessionBootstrap(id string, full bool) string {
 	if s.cache == nil {
 		return ""
 	}
@@ -320,8 +375,12 @@ func (s *Server) sessionBootstrap(id string) string {
 	if err != nil {
 		return ""
 	}
-	entries, total, from := paginatedEntries(resolved.Session.Entries)
-	data := s.sessionResponseMap(resolved.Session, entries, total, from)
+	from := 0
+	if !full {
+		from = recentSessionStart(resolved.Session)
+	}
+	data := s.sessionResponseMap(resolved.Session, resolved.Session.Entries[from:], len(resolved.Session.Entries), from)
+	addSessionWindowMetadata(data, resolved.Session)
 
 	scratchpad := ""
 	if cwd, _ := resolved.Session.Header["cwd"].(string); cwd != "" {

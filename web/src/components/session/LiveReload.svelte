@@ -27,20 +27,28 @@
   import { updateStatsDom } from '../../session/live/live-stats.js';
   import { sessionRuntime } from '../../session/session-runtime.js';
   import { getSessionRuntime } from '../../session/session-runtime-context.js';
+  import {
+    cacheSession,
+    fetchSessionUpdate,
+    isSessionRoute,
+  } from '../../session/data/session-sync.js';
   import { setSessionTitle } from '../../session/session-title.svelte.js';
 
   let {
     sessionId,
     cwd = '',
     thinkingPreviews = $bindable([]),
+    revalidate = false,
     onRefreshReady = () => {},
     onTranscriptReconciled = () => {},
+    onSessionUnavailable = () => {},
   } = $props();
 
   onMount(() => {
     const scope = new AbortController();
     const documentImpl = document;
     const windowImpl = window;
+    const currentRoute = () => isSessionRoute(sessionId, windowImpl.location);
     const runtime = getSessionRuntime();
     const model = runtime.model;
     const reconcileEntries = runtime.reconcileEntries || (() => {});
@@ -293,7 +301,18 @@
       let running;
       const result = await handleSessionReload({
         sessionId,
-        fetchImpl,
+        loadData: async () => {
+          if (!currentRoute()) return null;
+          const data = await fetchSessionUpdate(sessionId, {
+            model,
+            fetchImpl,
+            signal: scope.signal,
+            onUnavailable: (status) => {
+              if (currentRoute()) onSessionUnavailable(status);
+            },
+          });
+          return currentRoute() ? data : null;
+        },
         signal: scope.signal,
         entryState: LIVE_ENTRY_STATE,
         clearChatPreview,
@@ -306,9 +325,18 @@
         incrementPending,
         showFollowButton,
         onReloaded: (data) => {
+          running = data.running;
+          model.revision = data.revision || '';
+          model.total = Number.isInteger(data.total) ? data.total : data.entries.length;
+          model.from = data.from || 0;
+          model.truncated = model.from > 0;
+          cacheSession(sessionId, data);
+          if (data.unchanged) {
+            onTranscriptReconciled(data);
+            return;
+          }
           persistedAssistantTimestamps = assistantTimestamps(data.entries);
           reconcileEntries(data.entries);
-          running = data.running;
           onTranscriptReconciled(data);
           windowImpl.dispatchEvent(
             new CustomEvent('pi-session-entries-reconciled', { detail: { sessionId } }),
@@ -327,6 +355,7 @@
       return result ? { running } : null;
     }
     function triggerReload() {
+      if (!currentRoute()) return Promise.resolve(null);
       reloadRequested = true;
       if (!reloadInFlight) {
         reloadInFlight = (async () => {
@@ -345,6 +374,7 @@
     onRefreshReady(triggerReload);
 
     on(windowImpl, 'pi-worker-done', () => {
+      if (!currentRoute()) return;
       // If the final filesystem reload is missed/delayed, don't leave the
       // streaming preview "working"; proactively reconcile from /api/session.
       if (pendingPreview) {
@@ -361,10 +391,13 @@
       windowImpl,
       sessionId,
       onReload: triggerReload,
-      onChatPreview: renderChatPreview,
+      onChatPreview: (payload) => {
+        if (currentRoute()) renderChatPreview(payload);
+      },
       onAnnotations: (list) => sessionRuntime.annotations?.setAnnotations(list),
     });
     liveConnection.connect();
+    if (revalidate) triggerReload();
     cleanups.push(liveConnection.dispose);
 
     return () => {

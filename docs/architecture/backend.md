@@ -479,7 +479,7 @@ and creating a single child folder.
 | `/` | GET | `handleIndex` | Render SPA shell for the sessions route |
 | `/session` | GET | `handleSession` | Render SPA shell for the session route |
 | `/settings` | GET | `handleSettingsPage` | Render SPA shell for the settings route |
-| `/api/session` | GET | `handleApiSession` | JSON session data |
+| `/api/session` | GET | `handleApiSession` | JSON session data, with opt-in recent windows and incremental synchronization |
 | `/api/sessions` | GET | `handleApiSessions` | JSON list of session summaries |
 | `/api/chat` | POST | `handleChat` | Send chat message (multipart) |
 | `/api/chat/cancel` | POST | `handleCancelChat` | Abort running chat worker |

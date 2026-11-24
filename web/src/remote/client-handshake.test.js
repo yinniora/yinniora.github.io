@@ -170,10 +170,10 @@ it('connects using the direct route when the faster relay socket refuses its cap
   const { client, offers, sockets } = await setup({
     preference: 'auto',
     routes: { directUrl, relayTicket },
-    directOpenDelay: 20,
+    directOpenDelay: 300,
   });
   const result = client.openConnection();
-  await vi.advanceTimersByTimeAsync(20);
+  await vi.advanceTimersByTimeAsync(300);
   await result;
   expect(client.socket.url).toBe(directUrl);
   const relaySocket = sockets.find((socket) => socket.url === config.signalUrl);
@@ -187,18 +187,18 @@ it('connects using the direct route when the faster relay socket refuses its cap
   expect(readRemoteConfig()).not.toHaveProperty('ticket');
 });
 
-it('starts the encrypted private session without waiting for a slow public relay', async () => {
+it('gives a configured private route a head start without opening the public relay', async () => {
   const directUrl = 'wss://host.tail.example/remote-signal';
-  authenticateRelay.mockImplementationOnce(() => new Promise(() => {}));
   const { client, sockets, getPeer } = await setup({
     preference: 'auto',
     routes: { directUrl },
+    directOpenDelay: 200,
   });
   const result = client.openConnection();
-  await vi.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(200);
   await result;
   expect(client.socket.url).toBe(directUrl);
-  expect(sockets.find((socket) => socket.url === config.signalUrl).closed).toBe(true);
+  expect(sockets.some((socket) => socket.url === config.signalUrl)).toBe(false);
   expect(getPeer().options.iceServers).toEqual([]);
   expect(fetch).not.toHaveBeenCalled();
 });

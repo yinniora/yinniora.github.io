@@ -1,19 +1,9 @@
-import { createSessionDataModel, decodeBase64JSON } from '../data/session-data.js';
+import { createSessionDataModel } from '../data/session-data.js';
 import { createSessionNavigator } from '../navigation/session-navigation.js';
 import { setSessionRuntime } from '../session-runtime-context.js';
 
-export function hydrateSessionModel({
-  sessionModel,
-  payloadBase64,
-  locationSearch = '',
-  windowImpl = window,
-} = {}) {
-  sessionModel.load(
-    createSessionDataModel(
-      decodeBase64JSON(payloadBase64, { atobImpl: windowImpl.atob?.bind(windowImpl) }),
-      new URLSearchParams(locationSearch),
-    ),
-  );
+export function hydrateSessionModel({ sessionModel, payload, locationSearch = '' } = {}) {
+  sessionModel.load(createSessionDataModel(payload, new URLSearchParams(locationSearch)));
   return sessionModel;
 }
 

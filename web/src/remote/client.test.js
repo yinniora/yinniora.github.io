@@ -32,7 +32,7 @@ it.each([
   [
     'auto',
     'wss://mac.tail.example/remote-signal',
-    ['wss://mac.tail.example/remote-signal', 'wss://relay.example/signal'],
+    ['wss://mac.tail.example/remote-signal'],
     'all',
     false,
   ],
@@ -165,6 +165,10 @@ it('reports loading for finite requests without treating the event stream as per
   client.receive({ type: 'end', id });
   await response.arrayBuffer();
   expect(client.status).toBe('connected');
+  const background = await client.fetch('/api/projects', { priority: 'low' });
+  expect(client.status).toBe('connected');
+  client.receive({ type: 'end', id: packets.findLast((p) => p.type === 'request').id });
+  await background.arrayBuffer();
   client.setSyncing(true);
   expect(client.status).toBe('syncing');
   client.setSyncing(false);
@@ -187,7 +191,11 @@ it('reuses a working authenticated channel when the app returns to the foregroun
     .mockRejectedValueOnce(new Error('stale channel'));
   client.reconnect = vi.fn().mockResolvedValue(undefined);
   await client.resume();
-  expect(client.fetch).toHaveBeenCalledWith('/api/devices', { signal: expect.anything() });
+  expect(client.fetch).toHaveBeenCalledWith(
+    '/api/devices',
+    { signal: expect.anything(), priority: 'low' },
+    true,
+  );
   expect(client.reconnect).not.toHaveBeenCalled();
   await client.resume();
   expect(client.reconnect).toHaveBeenCalledOnce();
@@ -215,6 +223,22 @@ it('learns a new route over an approved connection without replacing its channel
     directUrl: 'wss://other.example/remote-signal',
   });
   expect(readRemoteConfig().directUrl).toBe(directUrl);
+});
+
+it('checks a temporarily disconnected channel once and reuses it after it answers', async () => {
+  const { RemoteClient } = await import('./client.js');
+  const client = new RemoteClient(config);
+  const peer = { connectionState: 'disconnected', close: vi.fn() };
+  client.peer = peer;
+  client.channel = { readyState: 'open' };
+  client.authorized = true;
+  client.fetch = vi.fn(async () => Response.json({}));
+  await Promise.all([client.connect(), client.connect(), client.resume()]);
+  await client.connect();
+  expect(client.fetch).toHaveBeenCalledOnce();
+  expect(client.peer).toBe(peer);
+  expect(peer.close).not.toHaveBeenCalled();
+  expect(client.status).toBe('connected');
 });
 
 it('shares a single channel check across concurrent resume events', async () => {

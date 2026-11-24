@@ -4,6 +4,7 @@
   import { applyLazyHighlighting } from '../session/lazy-highlight.js';
   import { loadSessionPageState } from './session-page-data.js';
   import { SessionDataModel } from '../session/data/session-data.svelte.js';
+  import { isSessionRoute } from '../session/data/session-sync.js';
   import {
     hydrateSessionModel,
     createLiveSessionRuntime,
@@ -41,18 +42,26 @@
   let sessionId = $state('');
   let sessionUUID = $state('');
   let title = $state('Session');
-  let payloadBase64 = $state('');
   let scratchpad = $state('');
   let cwd = $state('');
   let chatAvailable = $state(true);
   let chatDisabledReason = $state('');
   let modelLabel = $state('');
   let initialSessionRunning = $state(null);
-  let dataEl = $state(null);
+  let revalidate = $state(false);
   let visible = $state(false);
+  let disposeRuntime;
+
+  function onSessionUnavailable(status) {
+    disposeRuntime?.();
+    disposeRuntime = null;
+    error = t(status === 404 || status === 410 ? 'session.notFound' : 'session.loadFailed');
+  }
 
   $effect(() => {
-    if (visible && !loading && !error) markSessionCompletionSeen(sessionId, sessionModel.entries);
+    if (visible && !loading && !error && isSessionRoute(sessionId)) {
+      markSessionCompletionSeen(sessionId, sessionModel.entries);
+    }
   });
 
   onMount(() => {
@@ -63,7 +72,6 @@
     const locationSearch = routeSearch;
     const request = new AbortController();
     let active = true;
-    let disposeRuntime = null;
     const disposeBodyClasses = applySessionPageBodyClasses({ documentImpl: document });
     applyStoredSessionLayout({
       documentImpl: document,
@@ -96,26 +104,22 @@
         document.title = title;
         cwd = state.cwd;
         scratchpad = state.scratchpad;
-        payloadBase64 = state.payloadBase64;
         chatAvailable = state.chatAvailable;
         chatDisabledReason = state.chatDisabledReason;
         modelLabel = state.modelLabel;
-        initialSessionRunning = state.running;
+        revalidate = state.cached;
+        initialSessionRunning = state.cached && !state.running ? null : state.running;
         hydrateSessionModel({
           sessionModel,
-          payloadBase64,
+          payload: state.payload,
           locationSearch,
-          windowImpl: window,
         });
         createLiveSessionRuntime({ sessionModel, contentRuntime, documentImpl: document });
         loading = false;
         clearTimeout(loadingTimer);
         clearTimeout(timeout);
         await tick();
-        if (!active) return;
-        // Svelte does not interpolate mustache tags inside a <script> raw-text
-        // element, so the embedded session payload must be assigned directly.
-        if (dataEl) dataEl.textContent = payloadBase64;
+        if (!active || error) return;
         disposeRuntime = startSessionPageRuntime({
           sessionId,
           applyLazyHighlighting,
@@ -179,6 +183,7 @@
     {chatDisabledReason}
     {modelLabel}
     {initialSessionRunning}
-    bind:dataEl
+    {revalidate}
+    {onSessionUnavailable}
   />
 {/if}

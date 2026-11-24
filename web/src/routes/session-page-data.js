@@ -1,6 +1,7 @@
 import { decodeBase64JSON } from '../session/data/session-data.js';
 import { t } from '../shared/i18n.js';
 import { consumeSessionPrefetch } from './session-prefetch.js';
+import { cachedSession, cacheSession, sessionWindowURL } from '../session/data/session-sync.js';
 
 // The session route's HTML shell embeds the session payload (and scratchpad) in
 // a <script id="pi-session-bootstrap"> so the first paint needs no round-trip to
@@ -16,17 +17,6 @@ export function readSessionBootstrap({ documentImpl, atobImpl, TextDecoderImpl }
   } catch {
     return null;
   }
-}
-
-export function encodePayload(
-  payload,
-  { btoaImpl = globalThis.btoa, TextEncoderImpl = globalThis.TextEncoder } = {},
-) {
-  const json = JSON.stringify(payload);
-  const bytes = new TextEncoderImpl().encode(json);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoaImpl(binary);
 }
 
 export function newestLeaf(entries = []) {
@@ -66,13 +56,7 @@ export async function loadScratchpad(projectPath, { fetchImpl = fetch } = {}) {
   }
 }
 
-export function buildSessionPageState({
-  sessionId,
-  data,
-  scratchpad = '',
-  btoaImpl,
-  TextEncoderImpl,
-} = {}) {
+export function buildSessionPageState({ sessionId, data, scratchpad = '', cached = false } = {}) {
   const entries = Array.isArray(data?.entries) ? data.entries : [];
   const header = data?.header || {};
   const cwd = header.cwd || '';
@@ -100,21 +84,8 @@ export function buildSessionPageState({
     chatDisabledReason,
     modelLabel: model && provider ? `${model} @ ${provider}` : model,
     running: typeof data?.running === 'boolean' ? data.running : null,
-    payloadBase64: encodePayload(
-      {
-        header,
-        entries,
-        name: title,
-        leafId,
-        systemPrompt: null,
-        tools: null,
-        renderedTools: null,
-        total,
-        from,
-        truncated: entries.length < total,
-      },
-      { btoaImpl, TextEncoderImpl },
-    ),
+    cached,
+    payload: { header, entries, name: title, leafId, total, from, revision: data?.revision },
   };
 }
 
@@ -122,8 +93,6 @@ export async function loadSessionPageState({
   locationSearch = '',
   fetchImpl = fetch,
   signal,
-  btoaImpl,
-  TextEncoderImpl,
   documentImpl,
   atobImpl,
   TextDecoderImpl,
@@ -131,6 +100,8 @@ export async function loadSessionPageState({
   const params = new URLSearchParams(locationSearch);
   const sessionId = params.get('id') || '';
   if (!sessionId) throw new Error(t('session.missingId'));
+  signal?.throwIfAborted();
+  const full = Boolean(params.get('leafId') || params.get('targetId'));
 
   // Prefer the payload embedded in the page shell — no fetch on first paint.
   const boot = readSessionBootstrap({ documentImpl, atobImpl, TextDecoderImpl });
@@ -139,19 +110,21 @@ export async function loadSessionPageState({
     boot.data &&
     (!boot.data.sessionId || boot.data.sessionId === sessionId)
   ) {
+    cacheSession(sessionId, boot.data);
     return buildSessionPageState({
       sessionId,
       data: boot.data,
       scratchpad: boot.scratchpad || '',
-      btoaImpl,
-      TextEncoderImpl,
     });
   }
+
+  const cached = !full && cachedSession(sessionId);
+  if (cached) return buildSessionPageState({ sessionId, data: cached, cached: true });
 
   // If SessionCard prefetched on hover, the response is already in-flight; reuse
   // it instead of starting a duplicate request. A rejected prefetch falls
   // through to a fresh fetch so a transient failure doesn't poison the view.
-  const prefetched = consumeSessionPrefetch(sessionId);
+  const prefetched = !full && consumeSessionPrefetch(sessionId);
   let data;
   if (prefetched) {
     try {
@@ -163,17 +136,19 @@ export async function loadSessionPageState({
   if (data?.sessionId && data.sessionId !== sessionId) data = null;
   signal?.throwIfAborted();
   if (!data) {
-    const resp = await fetchImpl(`/api/session?id=${encodeURIComponent(sessionId)}&paginate=1`, {
+    const resp = await fetchImpl(sessionWindowURL(sessionId, { full }), {
       headers: { Accept: 'application/json' },
       ...(signal ? { signal } : {}),
     });
     if (!resp.ok)
       throw new Error(resp.status === 404 ? t('session.notFound') : t('session.loadFailed'));
     data = await resp.json();
+    signal?.throwIfAborted();
     if (data?.sessionId && data.sessionId !== sessionId) throw new Error(t('session.loadFailed'));
   }
   // Scratchpad is sidebar content, not on the first-paint path: returning ''
   // here lets the session render as soon as /api/session resolves, and
   // RightSidebar fetches the scratchpad itself when the prop is empty.
-  return buildSessionPageState({ sessionId, data, scratchpad: '', btoaImpl, TextEncoderImpl });
+  cacheSession(sessionId, data);
+  return buildSessionPageState({ sessionId, data });
 }

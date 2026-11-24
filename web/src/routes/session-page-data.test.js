@@ -9,9 +9,6 @@ import { prefetchSession, resetSessionPrefetch } from './session-prefetch.js';
 
 afterEach(() => resetSessionPrefetch());
 
-const btoaImpl = (value) => Buffer.from(value, 'binary').toString('base64');
-const decodePayload = (encoded) => JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
-
 describe('session-page-data', () => {
   it('finds the newest entry id', () => {
     expect(newestLeaf([{ id: 'a' }, {}, { id: 'b' }])).toBe('b');
@@ -32,11 +29,10 @@ describe('session-page-data', () => {
     expect(html).not.toContain('<hello>');
   });
 
-  it('builds state and encoded payload from API data', () => {
+  it('builds state and object payload from API data', () => {
     const state = buildSessionPageState({
       sessionId: 's.jsonl',
       scratchpad: 'notes',
-      btoaImpl,
       data: {
         name: 'Title',
         header: { cwd: '/tmp/project', id: '019-session-uuid' },
@@ -58,12 +54,11 @@ describe('session-page-data', () => {
     expect(state.running).toBe(false);
     expect(state.chatDisabledReason).toContain('chat is disabled');
     expect(state.modelLabel).toBe('sonnet @ anthropic');
-    expect(decodePayload(state.payloadBase64)).toMatchObject({
+    expect(state.payload).toMatchObject({
       name: 'Title',
       leafId: 'b',
       total: 5,
       from: 3,
-      truncated: true,
     });
   });
 
@@ -83,12 +78,11 @@ describe('session-page-data', () => {
     const state = await loadSessionPageState({
       locationSearch: '?id=s.jsonl',
       fetchImpl,
-      btoaImpl,
     });
 
     expect(state.title).toBe('Loaded');
     expect(state.scratchpad).toBe('');
-    expect(seen).toEqual(['/api/session?id=s.jsonl&paginate=1']);
+    expect(seen).toEqual(['/api/session?id=s.jsonl&window=1&paginate=1']);
   });
 
   it('uses the embedded bootstrap once and fetches fresh data when reopening the session', async () => {
@@ -121,7 +115,6 @@ describe('session-page-data', () => {
     const state = await loadSessionPageState({
       locationSearch: '?id=s.jsonl',
       fetchImpl,
-      btoaImpl,
       documentImpl,
     });
 
@@ -133,7 +126,6 @@ describe('session-page-data', () => {
     const reopened = await loadSessionPageState({
       locationSearch: '?id=s.jsonl',
       fetchImpl,
-      btoaImpl,
       documentImpl,
     });
     expect(reopened.title).toBe('Fresh transcript');
@@ -154,12 +146,11 @@ describe('session-page-data', () => {
     const state = await loadSessionPageState({
       locationSearch: '?id=s.jsonl',
       fetchImpl,
-      btoaImpl,
     });
 
     expect(state.title).toBe('Prefetched');
     // Only one /api/session call total, the one started by prefetchSession.
-    expect(calls).toEqual(['/api/session?id=s.jsonl&paginate=1']);
+    expect(calls).toEqual(['/api/session?id=s.jsonl&window=1&paginate=1']);
   });
 
   it('falls back to a fresh fetch when the prefetch rejects', async () => {
@@ -177,7 +168,6 @@ describe('session-page-data', () => {
     const state = await loadSessionPageState({
       locationSearch: '?id=s.jsonl',
       fetchImpl,
-      btoaImpl,
     });
 
     expect(state.title).toBe('Recovered');
@@ -191,7 +181,6 @@ describe('session-page-data', () => {
     const state = await loadSessionPageState({
       locationSearch: '?id=new.jsonl',
       fetchImpl: async () => new Response(JSON.stringify({ sessionId: 'new.jsonl', name: 'New' })),
-      btoaImpl,
     });
     expect(state.title).toBe('New');
   });
@@ -216,7 +205,6 @@ describe('session-page-data', () => {
     const state = await loadSessionPageState({
       locationSearch: '?id=s.jsonl',
       fetchImpl,
-      btoaImpl,
       documentImpl,
     });
 

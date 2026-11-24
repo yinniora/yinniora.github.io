@@ -89,6 +89,7 @@ export function createSessionDataModel(payload, params = new URLSearchParams()) 
     systemPrompt: payload?.systemPrompt ?? null,
     tools: payload?.tools ?? null,
     renderedTools: payload?.renderedTools ?? null,
+    revision: payload?.revision || '',
     total,
     from,
     truncated,

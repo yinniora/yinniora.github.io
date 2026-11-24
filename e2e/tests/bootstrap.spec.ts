@@ -1,4 +1,4 @@
-import { test, expect, openSessionOutline } from "../lib/test";
+import { test, expect } from "../lib/test";
 import {
   buildSession,
   realWorkingDir,
@@ -22,15 +22,10 @@ test.describe("session bootstrap (embedded payload)", () => {
       if (u.pathname === "/api/session") apiSessionCalls.push(u.search);
     });
 
-    await page.goto(`/session?id=${encodeURIComponent(id)}`);
+    const response = await page.goto(`/session?id=${encodeURIComponent(id)}`);
+    expect(await response!.text()).toMatch(/id="pi-session-bootstrap"[^>]*>\s*[A-Za-z0-9+/=]+/);
     await expect(page.locator("#messages")).toContainText("Initial");
-    await openSessionOutline(page);
-    await expect(page.locator("#tree-container .tree-node").first()).toBeVisible();
-
-    const hasBootstrap = await page.evaluate(
-      () => !!document.getElementById("pi-session-bootstrap")?.textContent,
-    );
-    expect(hasBootstrap).toBe(true);
+    await expect(page.locator("#tree-container .tree-node").first()).toBeAttached();
     // Initial paint comes from the embed — no /api/session GET on load.
     expect(apiSessionCalls).toEqual([]);
   });
