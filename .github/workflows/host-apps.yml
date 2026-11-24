@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: macos-15, platform: darwin, arch: arm64, goarch: arm64 }
+          - { runner: "${{ vars.YUGO_MACOS_ARM64_RUNNER || 'macos-26' }}", platform: darwin, arch: arm64, goarch: arm64 }
           - { runner: macos-15-intel, platform: darwin, arch: x64, goarch: amd64 }
           - { runner: ubuntu-24.04, platform: linux, arch: x64, goarch: amd64 }
           - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64, goarch: arm64 }
