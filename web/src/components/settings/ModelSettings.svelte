@@ -12,11 +12,25 @@
     parseTokenLimit,
     MAX_TOKEN_LIMIT,
   } from '../../settings/model-token-limits.js';
-  import { icon, Gauge, Image, Pencil, Search, Trash2 } from '../../shared/icons.js';
-  const openAIBaseURL = 'https://api.openai.com/v1';
+  import { icon, Image, Pencil, RotateCcw, Search, Trash2 } from '../../shared/icons.js';
+  const endpointPresets = [
+    { name: 'OpenAI', url: 'https://api.openai.com/v1' },
+    { name: 'Anthropic Claude', url: 'https://api.anthropic.com' },
+    { name: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta' },
+    { name: 'DeepSeek', url: 'https://api.deepseek.com/v1' },
+    { name: 'Kimi', region: 'models.presetChina', url: 'https://api.moonshot.cn/v1' },
+    { name: 'Kimi', region: 'models.presetInternational', url: 'https://api.moonshot.ai/v1' },
+    {
+      name: 'Qwen',
+      region: 'models.presetChina',
+      url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    },
+    { name: 'Zhipu GLM', url: 'https://open.bigmodel.cn/api/paas/v4' },
+    { name: 'xAI Grok', url: 'https://api.x.ai/v1' },
+    { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
+  ];
   const catalogFilters = [
     { id: 'all', label: 'session.filterAll' },
-    { id: 'reasoning', label: 'models.effortAvailable', icon: Gauge },
     { id: 'vision', label: 'models.vision', icon: Image },
     { id: 'applied', label: 'models.inUse' },
   ];
@@ -39,6 +53,7 @@
     label = $state(''),
     baseUrl = $state(''),
     key = $state('');
+  let endpointField;
   let query = $state(''),
     catalogFilter = $state('all'),
     selected = $state([]);
@@ -52,6 +67,9 @@
   let limitEditor = $state(null);
   const prefix = $props.id();
   const active = $derived(profiles.find((p) => p.id === activeID));
+  const selectedEndpoint = $derived(
+    endpointPresets.find((preset) => preset.url === baseUrl.trim().replace(/\/+$/, ''))?.url || '',
+  );
   const catalogAPIs = $derived([
     ...new Set((active?.available || []).map((model) => model.api).filter(Boolean)),
   ]);
@@ -64,13 +82,16 @@
     }
   });
   const appliedIDs = $derived(new Set(active?.applied?.map((m) => m.id) || []));
+  const keyRequired = $derived(keyFormMode === 'add' || newServer);
+  const keySaveDisabled = $derived(
+    busy || (keyRequired && !key.trim()) || !label.trim() || !baseUrl.trim(),
+  );
   const selectedIDs = $derived(new Set(selected));
   const filtered = $derived.by(() => {
     const terms = query.toLowerCase().trim().split(/\s+/);
     return (active?.available || []).filter((model) => {
       const searchable = `${model.name || ''} ${model.id}`.toLowerCase();
       if (!terms.every((term) => searchable.includes(term))) return false;
-      if (catalogFilter === 'reasoning') return supportedThinkingLevels(model).length > 1;
       if (catalogFilter === 'vision') return model.input?.includes('image');
       if (catalogFilter === 'applied') return appliedIDs.has(model.id);
       return true;
@@ -176,12 +197,21 @@
     if (wasOpen) return;
     keyFormMode = mode;
     label = profile?.label || '';
-    baseUrl = profile?.baseUrl || openAIBaseURL;
+    baseUrl = profile?.baseUrl || endpointPresets[0].url;
     status = '';
   }
-  async function saveKey(event) {
+  function setEndpoint(event) {
+    const next = event.currentTarget.value;
+    if (next !== selectedEndpoint) key = '';
+    baseUrl = next;
+  }
+  function saveOnEnter(event) {
+    if (event.key !== 'Enter' || event.isComposing) return;
     event.preventDefault();
-    if (busy) return;
+    void saveKey();
+  }
+  async function saveKey() {
+    if (keySaveDisabled || !endpointField?.reportValidity()) return;
     const editing = keyFormMode === 'edit';
     const source = active;
     const replacement = !editing || replacingKey || newServer || !source?.hasKey ? key.trim() : '';
@@ -204,19 +234,6 @@
   }
   async function refresh() {
     if (await action({ action: 'refresh', id: activeID })) status = t('models.refreshed');
-  }
-  async function checkAPI(profile) {
-    if (
-      await action({
-        action: 'edit',
-        id: profile.id,
-        label: profile.label,
-        baseUrl: profile.baseUrl,
-        checkApi: true,
-      })
-    ) {
-      status = t('models.apiChecked');
-    }
   }
   async function apply() {
     const context = parseTokenLimit(contextWindow, MAX_TOKEN_LIMIT);
@@ -288,50 +305,66 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted Lucide icons -->
 {#snippet keyForm(editing)}
-  {@const keyRequired = !editing || newServer}
-  <form onsubmit={saveKey} class="model-key-form" autocomplete="off">
+  <div class="model-key-form">
     <label for={prefix + '-label'}>{t('models.label')}</label><input
       id={prefix + '-label'}
       bind:value={label}
       required
       maxlength="100"
       disabled={busy}
+      autocomplete="off"
+      onkeydown={saveOnEnter}
     />
     <div class="model-endpoint-label">
       <label for={prefix + '-url'}>{t('models.baseUrl')}</label>
-      <button
-        type="button"
-        aria-pressed={baseUrl.trim() === openAIBaseURL}
+      <select
+        aria-label={t('models.endpointPreset')}
+        value={selectedEndpoint}
         disabled={busy}
-        onclick={() => (baseUrl = openAIBaseURL)}>OpenAI</button
+        onchange={setEndpoint}
       >
+        <option value="">{t('models.customAddress')}</option>
+        {#each endpointPresets as preset (preset.url)}
+          <option value={preset.url}
+            >{preset.region ? t(preset.region, { provider: preset.name }) : preset.name}</option
+          >
+        {/each}
+      </select>
     </div>
     <input
       id={prefix + '-url'}
       type="url"
+      bind:this={endpointField}
       bind:value={baseUrl}
       placeholder="https://api.example.com/v1"
       required
       disabled={busy}
+      autocomplete="off"
       autocapitalize="none"
       spellcheck={false}
+      onkeydown={saveOnEnter}
     />
     {#if keyRequired || replacingKey || !active?.hasKey}
       <label for={prefix + '-token-entry'}>{t('models.key')}</label>
-      <input
-        id={prefix + '-token-entry'}
-        class="pi-secret-token"
-        type="text"
-        bind:value={key}
-        required={keyRequired}
-        disabled={busy}
-        maxlength="8192"
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="none"
-        spellcheck={false}
-        aria-describedby={prefix + '-key-hint'}
-      />
+      <div class="model-token-entry">
+        <textarea
+          id={prefix + '-token-entry'}
+          rows="1"
+          wrap="off"
+          bind:value={key}
+          required={keyRequired}
+          disabled={busy}
+          maxlength="8192"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="none"
+          spellcheck={false}
+          aria-describedby={prefix + '-key-hint'}
+          enterkeyhint="done"
+          onkeydown={saveOnEnter}
+        ></textarea>
+        <span aria-hidden="true">{'•'.repeat(Math.min(32, key.length))}</span>
+      </div>
       <p id={prefix + '-key-hint'}>
         {#if editing}
           {t(newServer ? 'models.newServerKey' : 'models.keyPrivacy')}
@@ -357,14 +390,11 @@
     {/if}
     <div class="model-key-actions">
       <button type="button" disabled={busy} onclick={closeKeyForm}>{t('common.cancel')}</button>
-      <button
-        type="submit"
-        class="primary"
-        disabled={busy || (keyRequired && !key.trim()) || !label.trim() || !baseUrl.trim()}
+      <button type="button" class="primary" disabled={keySaveDisabled} onclick={saveKey}
         >{t(busy ? 'models.saving' : editing ? 'common.save' : 'models.saveKey')}</button
       >
     </div>
-  </form>
+  </div>
 {/snippet}
 
 <section class="model-settings">
@@ -419,9 +449,6 @@
                 >{@html icon(Pencil, { size: 15 })}{t('models.editKey')}</button
               >
             {/if}
-            <button type="button" disabled={busy || !active.hasKey} onclick={refresh}
-              >{t(busy ? 'models.working' : 'models.refresh')}</button
-            >
             <button
               type="button"
               class="danger-button"
@@ -432,36 +459,37 @@
           </div>
         </div>
         <p class="model-endpoint">{active.baseUrl}</p>
-        {#if active.api}
-          <div class="model-protocol">
-            <div>
+        <div class="model-protocol">
+          <div>
+            {#if active.api}
               <strong
                 >{t('models.apiType', {
                   api: apiLabels[active.api] ? t(apiLabels[active.api]) : active.api,
                 })}</strong
               >
-              {#if active.catalogVerified}
-                <small
-                  >{t('models.catalogVerified', { count: active.available?.length || 0 })}</small
-                >
-                {#if catalogAPIs.length > 1}
-                  <small>
-                    {t('models.catalogProtocols', {
-                      apis: catalogAPIs
-                        .map((api) => (apiLabels[api] ? t(apiLabels[api]) : api))
-                        .join(' / '),
-                    })}
-                  </small>
-                {/if}
+            {/if}
+            {#if active.catalogVerified}
+              <small>{t('models.catalogVerified', { count: active.available?.length || 0 })}</small>
+              {#if catalogAPIs.length > 1}
+                <small>
+                  {t('models.catalogProtocols', {
+                    apis: catalogAPIs
+                      .map((api) => (apiLabels[api] ? t(apiLabels[api]) : api))
+                      .join(' / '),
+                  })}
+                </small>
               {/if}
-            </div>
-            <button
-              type="button"
-              disabled={busy || !active.hasKey || keyFormMode !== ''}
-              onclick={() => checkAPI(active)}>{t('models.checkApi')}</button
-            >
+            {/if}
           </div>
-        {/if}
+          <button
+            type="button"
+            disabled={busy || !active.hasKey || keyFormMode !== ''}
+            onclick={refresh}
+            >{@html icon(RotateCcw, { size: 15 })}{t(
+              busy ? 'models.working' : 'models.refresh',
+            )}</button
+          >
+        </div>
         {#if keyFormMode === 'edit'}{@render keyForm(true)}{/if}
         <div class="model-search">
           <span aria-hidden="true">{@html icon(Search, { size: 17 })}</span>
@@ -747,7 +775,9 @@
     margin: 8px 0;
   }
   button,
-  input {
+  input,
+  textarea,
+  .model-endpoint-label select {
     font: inherit;
     box-sizing: border-box;
   }
@@ -768,7 +798,8 @@
     background: var(--text);
     color: var(--body-bg);
   }
-  input:not([type='checkbox']) {
+  input:not([type='checkbox']),
+  .model-token-entry textarea {
     width: 100%;
     min-width: 0;
     padding: 10px;
@@ -816,7 +847,45 @@
     margin: 12px 0 6px;
     font-size: 13px;
   }
-  .model-endpoint-label button,
+  .model-endpoint-label select {
+    max-width: 62%;
+    min-height: 40px;
+    padding: 6px;
+    border: 1px solid var(--dim);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 16px;
+  }
+  .model-token-entry {
+    position: relative;
+  }
+  .model-token-entry textarea {
+    display: block;
+    height: 44px;
+    resize: none;
+    overflow: hidden;
+    white-space: pre;
+    color: transparent;
+    caret-color: var(--text);
+  }
+  .model-token-entry textarea::selection {
+    color: transparent;
+  }
+  .model-token-entry textarea,
+  .model-token-entry span {
+    font-family: ui-monospace, monospace;
+    line-height: 22px;
+  }
+  .model-token-entry span {
+    position: absolute;
+    inset: 11px 11px auto;
+    overflow: hidden;
+    white-space: nowrap;
+    pointer-events: none;
+    font-size: 16px;
+    color: var(--text);
+  }
   .model-filters button {
     display: inline-flex;
     align-items: center;
@@ -828,7 +897,6 @@
     border-radius: 8px;
     font-size: 12px;
   }
-  .model-endpoint-label button[aria-pressed='true'],
   .model-filters button[aria-pressed='true'] {
     background: var(--surface-2);
     border-color: var(--accent);
@@ -914,6 +982,9 @@
     font-size: 12px;
   }
   .model-protocol button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     flex: none;
     font-size: 12px;
   }

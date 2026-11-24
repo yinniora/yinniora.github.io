@@ -330,9 +330,11 @@ a different future official commit shows a new reminder.
 
 Settings → Models is shared by desktop and mobile. `ModelSettings` groups keys
 by user labels and refreshes one provider at a time. The catalog combines search
-with filters for effort controls, image input and applied models. Selections
-survive search and filter changes and are applied explicitly. New keys start
-with the official OpenAI URL, which remains editable for other providers. The
+with filters for image input and applied models. Selections survive search and
+filter changes and are applied explicitly. A dropdown fills documented provider
+addresses, and the URL remains editable. The key editor masks the token in a
+standalone text control and saves through the app's API. Refresh detects API
+compatibility and loads the catalog in the same action. The
 backend uses Responses for automatic official OpenAI setup, detects other formats
 from their catalog and keeps model IDs intact. Advertised effort capability and available
 levels drive the conversation effort picker. A custom model can also

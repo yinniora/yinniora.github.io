@@ -100,6 +100,7 @@ func TestDetectNativeRoutesForPlainGatewayCatalog(t *testing.T) {
 		if r.Method == http.MethodGet && r.URL.Path == "/mount/v1/models" {
 			_, _ = io.WriteString(w, `{"data":[
 				{"id":"claude-opus-5-5"},
+				{"id":"claude-sonnet-5-5"},
 				{"id":"gpt-5.4"},
 				{"id":"gpt-chat-only","supported_endpoint_types":["openai"]},
 				{"id":"gemini-3-pro-preview"},
@@ -108,7 +109,7 @@ func TestDetectNativeRoutesForPlainGatewayCatalog(t *testing.T) {
 			return
 		}
 		body, _ := io.ReadAll(r.Body)
-		if r.Method != http.MethodPost || string(body) != "{}" {
+		if r.Method != http.MethodPost || (r.URL.Path != "/mount/v1/messages" && string(body) != "{}") {
 			t.Errorf("unexpected probe request on %s", r.URL.Path)
 			http.NotFound(w, r)
 			return
@@ -118,8 +119,17 @@ func TestDetectNativeRoutesForPlainGatewayCatalog(t *testing.T) {
 			if r.Header.Get("x-api-key") != "fixture" || r.Header.Get("anthropic-version") == "" {
 				t.Error("Claude probe used incorrect credentials")
 			}
-			w.WriteHeader(400)
-			_, _ = io.WriteString(w, `{"error":{"type":"invalid_request","message":"模型不能为空 (model)"}}`)
+			switch string(body) {
+			case `{"model":"claude-opus-5-5"}`:
+				w.WriteHeader(400)
+				_, _ = io.WriteString(w, `{"error":{"type":"invalid_request","message":"messages is required"}}`)
+			case `{"model":"claude-sonnet-5-5"}`:
+				w.WriteHeader(404)
+				_, _ = io.WriteString(w, `{"error":{"type":"not_found_error","message":"no provider serves the requested model","code":10002}}`)
+			default:
+				t.Error("Claude probe must send exactly the model without any input")
+				w.WriteHeader(500)
+			}
 		case "/mount/v1/responses":
 			if r.Header.Get("Authorization") != "Bearer fixture" {
 				t.Error("Responses probe used incorrect credentials")
@@ -140,11 +150,12 @@ func TestDetectNativeRoutesForPlainGatewayCatalog(t *testing.T) {
 	defer provider.Close()
 	base := provider.URL + "/mount/v1"
 	detection, err := (&Server{}).detectModelProtocol(context.Background(), base, "fixture", "", "")
-	if err != nil || detection.API != apiChat || detection.BearerAuth || len(detection.Models) != 5 {
+	if err != nil || detection.API != apiChat || detection.BearerAuth || len(detection.Models) != 6 {
 		t.Fatalf("unexpected detection: %+v, %v", detection, err)
 	}
 	want := map[string][2]string{
 		"claude-opus-5-5":      {apiAnthropic, provider.URL + "/mount"},
+		"claude-sonnet-5-5":    {apiChat, ""},
 		"gpt-5.4":              {apiResponses, base},
 		"gpt-chat-only":        {apiChat, ""},
 		"gemini-3-pro-preview": {apiGemini, provider.URL + "/mount/v1beta"},
@@ -158,7 +169,7 @@ func TestDetectNativeRoutesForPlainGatewayCatalog(t *testing.T) {
 		}
 	}
 	locked, err := (&Server{}).detectModelProtocol(context.Background(), base+"/chat/completions", "fixture", "", "")
-	if err != nil || locked.API != apiChat || len(locked.Models) != 5 {
+	if err != nil || locked.API != apiChat || len(locked.Models) != 6 {
 		t.Fatalf("explicit Chat Completions route was changed: %+v %v", locked, err)
 	}
 	for _, model := range locked.Models {
@@ -176,6 +187,7 @@ func TestNativeRouteValidationRequiresProtocolEvidence(t *testing.T) {
 		{200, `{"error":{"type":"invalid_request","message":"model is required"}}`},
 		{400, `{"error":{"type":"invalid_request_error","message":"this group does not support model traffic"}}`},
 		{400, `{"error":{"type":"invalid_request_error","message":"model is not supported"}}`},
+		{400, `{"error":{"type":"invalid_request","message":"model is required"}}`},
 		{400, `{"message":"model is required"}`},
 		{401, `{"error":{"type":"invalid_request","message":"model is required"}}`},
 		{404, `{"error":{"type":"invalid_request","message":"model is required"}}`},

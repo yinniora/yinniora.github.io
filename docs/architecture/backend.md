@@ -32,10 +32,12 @@ Endpoint or key edits verify the model catalog before writing. The API check
 prefers Claude Messages, OpenAI Responses, and Gemini's native API for their
 models. It uses per-model endpoint declarations from gateways such as New API.
 Gateways with plain catalogs, including Sub2API deployments, can be checked
-with bounded empty-body validation requests. These probes contain no prompts
-or conversation history. Missing routes, rejected credentials, and ambiguous
-responses retain the existing or advertised compatible protocol.
-Profiles can recheck their endpoint from Settings to upgrade applied models.
+with bounded validation requests. Claude probes include the exact model ID and
+omit all conversation input. Claude and Gemini validation is scoped to the
+individual model. Missing routes, rejected credentials, and ambiguous responses
+retain the existing or advertised compatible protocol. Model refresh rechecks
+protocol compatibility and updates applied routes when the catalog advertises
+the route or validation confirms it with the saved authentication method.
 An explicit operation URL pins the chosen protocol.
 
 The Anthropic SDK appends `/v1/messages` to the model's runtime base. YuGo

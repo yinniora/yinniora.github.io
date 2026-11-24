@@ -283,6 +283,7 @@ func TestWorkerRetriesTimeoutsAndOverloadButNotBillingOrUserAbort(t *testing.T) 
 		"401 Unauthorized",
 		"invalid api key",
 		`503 {"error":{"type":"model_not_found"}}`,
+		`502 {"error":{"type":"not_found_error","message":"no provider serves the requested model","code":10002}}`,
 		"Request aborted by user",
 		"Request aborted by user: stream disconnected before completion",
 		"Insufficient credit: upstream_stream_read_error",

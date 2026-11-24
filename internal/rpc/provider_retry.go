@@ -13,7 +13,7 @@ var (
 	timeoutErrorPattern      = regexp.MustCompile(`(?i)timed? out|timeout|\b(?:504|524)\b`)
 	transportErrorPattern    = regexp.MustCompile(`(?i)\b(?:ECONNRESET|ETIMEDOUT|EPIPE|UND_ERR_SOCKET)\b|socket hang up|socket disconnected|socket connection was closed|network socket|connection (?:error|lost)|network error|fetch failed|other side closed|reset before headers`)
 	retryableProviderPattern = regexp.MustCompile(`(?i)overloaded|rate.?limit|too many requests|server_busy|temporarily unavailable|\b(?:429|500|502|503|520)\b`)
-	terminalProviderPattern  = regexp.MustCompile(`(?i)insufficient|quota|balance|billing|payment|no credit|unauthorized|forbidden|invalid api key|model_not_found|not found|aborted|abort|cancell?ed|authentication|user interrupt|interrupted by (?:the )?user|request (?:was )?interrupted`)
+	terminalProviderPattern  = regexp.MustCompile(`(?i)insufficient|quota|balance|billing|payment|no credit|unauthorized|forbidden|invalid api key|model_not_found|model_not_allowed|no provider serves (?:the )?requested model|no available channel for model|not found|aborted|abort|cancell?ed|authentication|user interrupt|interrupted by (?:the )?user|request (?:was )?interrupted`)
 )
 
 // A generic reset or timeout does not establish whether the provider accepted

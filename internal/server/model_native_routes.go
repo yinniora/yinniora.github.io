@@ -69,18 +69,20 @@ func advertisedModelProtocol(types map[string]bool, id, fallback string) string 
 	return fallback
 }
 
-// Probe only with an empty request: generation endpoints require input and
-// Claude/Responses also require a model. Route-specific validation supplies
-// evidence even on gateways that omit a native catalog or token-count route.
+// Probe without conversation input. Claude needs an exact model to distinguish
+// its route validation from a gateway's generic "missing model" response.
 // A successful status, HTML, generic errors and redirects do not prove a route.
 func probeNativeModelRoute(ctx context.Context, client *http.Client, base, api, id, key string) string {
 	u, err := nativeModelBase(base, api)
 	if err != nil {
 		return ""
 	}
+	payload := "{}"
 	switch api {
 	case apiAnthropic:
 		u.Path += "/v1/messages"
+		data, _ := json.Marshal(map[string]string{"model": id})
+		payload = string(data)
 	case apiResponses:
 		u.Path += "/responses"
 	case apiGemini:
@@ -94,7 +96,7 @@ func probeNativeModelRoute(ctx context.Context, client *http.Client, base, api, 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	for _, bearer := range []bool{false, true} {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader("{}"))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(payload))
 		if err != nil {
 			return ""
 		}
@@ -159,7 +161,7 @@ func nativeRouteValidation(status int, body []byte, api string) bool {
 	switch api {
 	case apiAnthropic:
 		return missing && (detail.Type == "invalid_request_error" || detail.Type == "invalid_request") &&
-			(strings.Contains(msg, "model") || strings.Contains(msg, "messages") || strings.Contains(msg, "模型"))
+			(strings.Contains(msg, "messages") || strings.Contains(msg, "max_tokens") || strings.Contains(msg, "消息"))
 	case apiResponses:
 		// Responses also returns invalid_request_error with param=input or model.
 		return detail.Type == "invalid_request_error" && (detail.Param == "input" || detail.Param == "model" ||

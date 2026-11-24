@@ -376,11 +376,18 @@ func applyDetectedModelRoutes(profile map[string]any, models []map[string]any, p
 		newAPI, _ := match["api"].(string)
 		if upgradeOnly {
 			if newAPI == "" || newAPI == apiChat || newAPI == oldAPI || model["headers"] != nil ||
+				(match["nativeAuth"] == nil && match["advertisedRoute"] != true) ||
 				(oldAPI != apiChat && newAPI != nativeModelProtocol(id)) {
 				continue
 			}
 			if custom, _ := model["baseUrl"].(string); custom != "" && custom != base {
 				continue
+			}
+			if newAPI == apiAnthropic {
+				bearer := profile["authHeader"] == true
+				if (match["nativeAuth"] == "bearer" && !bearer) || (match["nativeAuth"] == "standard" && bearer) {
+					continue
+				}
 			}
 		}
 		if newAPI == "" {
@@ -524,10 +531,14 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 			} else if p["preferNative"] == true && len(catalogStrings(raw["supported_endpoint_types"])) == 0 {
 				native := nativeModelProtocol(id)
 				if native != "" && native != catalogAPI {
-					if _, checked := probed[native]; !checked {
-						probed[native] = probeNativeModelRoute(ctx, client, base, native, id, key)
+					probe := native
+					if native != apiResponses {
+						probe += ":" + id
 					}
-					if nativeAuth = probed[native]; nativeAuth != "" {
+					if _, checked := probed[probe]; !checked && len(probed) < 4 {
+						probed[probe] = probeNativeModelRoute(ctx, client, base, native, id, key)
+					}
+					if nativeAuth = probed[probe]; nativeAuth != "" {
 						if route, err := nativeModelBase(base, native); err == nil {
 							catalogAPI, modelBase = native, route.String()
 							m["baseUrl"] = modelBase
@@ -537,6 +548,9 @@ func (s *Server) discoverModels(ctx context.Context, p map[string]any, key strin
 				}
 			}
 			describeCatalogModel(m, raw, id, catalogAPI, modelBase)
+			if advertised := advertisedModelProtocol(catalogStrings(raw["supported_endpoint_types"]), id, ""); advertised != "" && advertised == m["api"] {
+				m["advertisedRoute"] = true
+			}
 			if m["contextWindow"] == nil || m["maxTokens"] == nil {
 				limits := s.nativeModelLimits.lookup(ctx, id)
 				for i, field := range modelLimitFields {
@@ -1034,22 +1048,11 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 		defer cancel()
 		signature := profileSignature(p, key)
+		base, _ := p["baseUrl"].(string)
+		api, _ := p["api"].(string)
+		pinned, _ := p["yugoProtocol"].(string)
 		s.modelConfigMu.Unlock()
-		var models []map[string]any
-		if p["api"] == apiAnthropic {
-			// Some dual-protocol services only attach capability metadata to
-			// their Bearer catalog. Keep the saved execution API as fallback.
-			models, _ = s.discoverModels(ctx, map[string]any{
-				"api": apiChat, "baseUrl": p["baseUrl"], "catalogFallbackAPI": apiAnthropic, "yugoProtocol": p["yugoProtocol"],
-				"preferNative": p["yugoProtocol"] == nil,
-			}, key)
-		}
-		var e error
-		if models == nil {
-			models, e = s.discoverModels(ctx, map[string]any{
-				"api": p["api"], "baseUrl": p["baseUrl"], "yugoProtocol": p["yugoProtocol"], "preferNative": p["yugoProtocol"] == nil,
-			}, key)
-		}
+		detection, e := s.detectModelProtocol(ctx, base, key, api, pinned)
 		s.modelConfigMu.Lock()
 		if e != nil {
 			writeJSONError(w, 400, e.Error())
@@ -1064,12 +1067,15 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		if s.modelCatalogs == nil {
 			s.modelCatalogs = map[string]modelCatalog{}
 		}
-		s.modelCatalogs[request.ID] = modelCatalog{Signature: signature, Models: models}
+		models := detection.Models
 		detected := map[string]map[string]any{}
 		for _, m := range models {
 			detected[m["id"].(string)] = m
 		}
 		changed := false
+		if pinned == "" {
+			changed = applyDetectedModelRoutes(current, models, api, api, true)
+		}
 		for _, m := range configuredModels(current) {
 			id, _ := m["id"].(string)
 			detection := detected[id]
@@ -1100,6 +1106,7 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			}
 			_, _, revision, _ = readModelConfig(s.agentDir)
 		}
+		s.modelCatalogs[request.ID] = modelCatalog{Signature: profileSignature(current, key), Models: models}
 		writeJSON(w, 200, map[string]any{"profiles": s.modelProfiles(providers), "revision": revision})
 		return
 	case "apply":
@@ -1144,6 +1151,7 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			}
 			delete(next, "supportsTools")
 			delete(next, "nativeAuth")
+			delete(next, "advertisedRoute")
 			if next["api"] == apiAnthropic && m["nativeAuth"] == "bearer" && canInferBearerAuth(p) {
 				p["authHeader"] = true
 				configAffectsResources = true

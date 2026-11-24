@@ -37,4 +37,23 @@ describe('ReplyError', () => {
     await fireEvent.click(getByRole('button', { name: 'Continue' }));
     expect(onContinue).toHaveBeenCalledTimes(1);
   });
+
+  it('shows a provider model rejection and prioritizes choosing another model', async () => {
+    const onChooseModel = vi.fn();
+    const { getByText, getByRole, container } = render(ReplyError, {
+      props: {
+        error:
+          '404 {"error":{"type":"not_found_error","message":"no provider serves the requested model","code":10002}}',
+        model: 'claude-opus-5-5',
+        onChooseModel,
+        onRetry: vi.fn(),
+      },
+    });
+    expect(getByText('Model unavailable from this provider')).toBeInTheDocument();
+    expect(container.querySelector('details')).not.toHaveAttribute('open');
+    const choose = getByRole('button', { name: 'Switch model' });
+    expect(choose).toHaveClass('reply-action-primary');
+    await fireEvent.click(choose);
+    expect(onChooseModel).toHaveBeenCalledOnce();
+  });
 });

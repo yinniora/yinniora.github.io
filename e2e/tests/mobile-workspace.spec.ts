@@ -355,17 +355,30 @@ test("model settings refresh labeled keys and explicitly apply and remove multip
     await page.goto("/settings?section=models");
     await page.getByRole("button", { name: "Add key", exact: true }).click();
     await page.getByLabel("Key label", { exact: true }).fill(label);
+    const presets = page.getByRole("combobox", { name: "Common API addresses" });
+    await presets.selectOption({ label: "Google Gemini" });
+    await expect(page.getByLabel("API base URL", { exact: true })).toHaveValue(
+      "https://generativelanguage.googleapis.com/v1beta",
+    );
     await page
       .getByLabel("API base URL", { exact: true })
       .fill(`http://127.0.0.1:${port}`);
-    await page
-      .getByLabel("API key", { exact: true })
-      .fill("fixture-e2e-key-only");
+    const token = page.getByLabel("API key", { exact: true });
+    await token.fill("fixture-e2e-key-only");
+    expect(await token.evaluate((node: HTMLTextAreaElement) => ({
+      tag: node.tagName,
+      insideForm: Boolean(node.form),
+      textSecurity: getComputedStyle(node).getPropertyValue("-webkit-text-security") || "none",
+    }))).toEqual({ tag: "TEXTAREA", insideForm: false, textSecurity: "none" });
+    await expect(token).toHaveCSS("color", "rgba(0, 0, 0, 0)");
     await page.getByRole("button", { name: "Save key", exact: true }).click();
     await expect(page.getByLabel("API key", { exact: true })).toHaveCount(0);
     await page
+      .locator(".model-protocol")
       .getByRole("button", { name: "Refresh models", exact: true })
       .click();
+    await expect(page.getByRole("button", { name: "Check API", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Adjustable reasoning effort", exact: true })).toHaveCount(0);
     await expect(
       page.getByText("Model list refreshed. Select models, then apply them."),
     ).toBeVisible();
@@ -926,10 +939,11 @@ test("a failed turn has a single expandable error and can copy or retry its prom
   await expect(page.locator("html")).toHaveAttribute("data-copied", "Initial prompt.");
   await expect(page.locator(".reply-error")).toHaveCount(1);
   const failed = page.locator(`#entry-${last.id}`);
+  await expect(failed.locator(".reply-error-title")).toHaveText("Model unavailable from this provider");
   await expect(failed.locator(".reply-error-detail")).toBeHidden();
   await failed.locator(".reply-error summary").click();
   await expect(failed.locator(".reply-error-detail")).toContainText("No available channel 1");
-  await failed.getByRole("button", { name: "Models", exact: true }).click();
+  await failed.getByRole("button", { name: "Switch model", exact: true }).click();
   await page.getByRole("button", { name: "Working model", exact: true }).click();
   await expect(page.locator("#pi-chat-model-label")).toHaveAccessibleName("Working model @ fixture");
   await expect(page.locator("html")).toHaveAttribute("data-selected-model", "replacement");

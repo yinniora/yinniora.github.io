@@ -1,7 +1,13 @@
 const transportError =
   /\b(?:ECONNRESET|ECONNREFUSED|EPIPE|ENETUNREACH|EHOSTUNREACH|EAI_AGAIN|UND_ERR_[A-Z_]+)\b|socket hang up|socket disconnected|fetch failed|connection error/i;
 const terminalError =
-  /quota|billing|balance|permission|unauthorized|forbidden|invalid api key|unsupported_compat_parameter|model_not_found|model_not_allowed|\baborted\b|\bcancell?ed\b/i;
+  /quota|billing|balance|permission|unauthorized|forbidden|invalid api key|unsupported_compat_parameter|\baborted\b|\bcancell?ed\b/i;
+const modelRejection =
+  /\bmodel_not_(?:found|allowed)\b|no provider serves (?:the )?requested model|no available channel for model/i;
+
+export function providerModelUnavailable(rawError) {
+  return modelRejection.test(String(rawError || ''));
+}
 
 const providerFailureLabels = {
   tls: 'activity.modelTlsFailed',
@@ -17,7 +23,7 @@ export function providerFailureLabelKey(stage) {
 
 export function providerNetworkFailure(rawError) {
   const error = String(rawError || '');
-  if (terminalError.test(error)) return '';
+  if (terminalError.test(error) || providerModelUnavailable(error)) return '';
   if (
     /before (?:a )?secure TLS connection was established|TLS handshake (?:timed out|timeout)/i.test(
       error,
@@ -110,6 +116,7 @@ function retriedErrors(entries, running) {
       if (
         providerNetworkFailure(error) ||
         (!terminalError.test(error) &&
+          !providerModelUnavailable(error) &&
           /overloaded|rate.?limit|\b(408|429|500|502|503|504|529)\b/i.test(error))
       )
         pending.push(entry.id);
@@ -145,8 +152,9 @@ export function entriesWithReplyDetails(entries, { running = false } = {}) {
     const error = message?.errorMessage || '';
     const rejection =
       message?.role === 'assistant' && message.stopReason === 'error'
-        ? /"(?:type|code)"\s*:\s*"(model_not_found|model_not_allowed)"/.exec(error)?.[1] ||
-          providerNetworkFailure(error)
+        ? providerModelUnavailable(error)
+          ? 'model-unavailable'
+          : providerNetworkFailure(error)
         : '';
     const key = rejection && `${message.provider}/${message.model}/${rejection}`;
     if (key && key === nextError) repeatedErrors.add(entry.id);

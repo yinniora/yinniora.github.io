@@ -103,11 +103,18 @@ it('keeps keys out of browser storage, refreshes without applying, and applies m
     }),
   );
   const view = render(ModelSettings);
-  await fireEvent.click(await view.findByRole('button', { name: 'Refresh models' }));
+  const refresh = await view.findByRole('button', { name: 'Refresh models' });
+  expect(refresh.closest('.model-protocol')).toBeInTheDocument();
+  expect(view.queryByRole('button', { name: 'Check API' })).not.toBeInTheDocument();
+  await fireEvent.click(refresh);
   await view.findByText('Chat One');
   expect(calls.some((c) => c.action === 'apply')).toBe(false);
-  await fireEvent.click(view.getByRole('button', { name: 'Adjustable reasoning effort' }));
-  expect(view.queryByRole('checkbox', { name: /Chat Two/ })).not.toBeInTheDocument();
+  expect(
+    view.queryByRole('button', { name: 'Adjustable reasoning effort' }),
+  ).not.toBeInTheDocument();
+  await fireEvent.input(view.getByRole('searchbox', { name: 'Search models' }), {
+    target: { value: 'Chat One' },
+  });
   await fireEvent.click(view.getByRole('button', { name: 'Select search results' }));
   await fireEvent.click(view.getByRole('button', { name: 'Accepts images' }));
   await fireEvent.input(view.getByRole('searchbox', { name: 'Search models' }), {
@@ -124,7 +131,7 @@ it('keeps keys out of browser storage, refreshes without applying, and applies m
   expect(localStorage.length).toBe(0);
 });
 
-it('sends a newly entered key once and clears the form after saving', async () => {
+it('fills provider presets and saves a masked key without a browser sign-in form', async () => {
   const fetchImpl = vi.fn(
     async (_url, options) =>
       new Response(
@@ -142,19 +149,34 @@ it('sends a newly entered key once and clears the form after saving', async () =
   await view.findByText('No models applied yet.');
   await fireEvent.click(view.getByRole('button', { name: 'Add key' }));
   expect(view.getByLabelText('API base URL')).toHaveValue('https://api.openai.com/v1');
-  expect(view.getByRole('button', { name: 'OpenAI', pressed: true })).toBeInTheDocument();
+  const presets = view.getByRole('combobox', { name: 'Common API addresses' });
+  expect(presets.selectedOptions[0]).toHaveTextContent('OpenAI');
+  await fireEvent.change(presets, { target: { value: 'https://api.anthropic.com' } });
+  expect(view.getByLabelText('API base URL')).toHaveValue('https://api.anthropic.com');
+  expect(within(presets).getByRole('option', { name: 'Kimi · China' })).toHaveValue(
+    'https://api.moonshot.cn/v1',
+  );
   await fireEvent.input(view.getByLabelText('Key label'), { target: { value: 'Home' } });
   await fireEvent.input(view.getByLabelText('API base URL'), {
     target: { value: 'https://example.invalid/v1' },
   });
-  await fireEvent.input(view.getByLabelText('API key'), {
+  expect(presets.selectedOptions[0]).toHaveTextContent('Custom address');
+  const token = view.getByLabelText('API key');
+  expect(token.tagName).toBe('TEXTAREA');
+  expect(token.form).toBeNull();
+  await fireEvent.input(token, {
     target: { value: 'fixture-secret-only' },
   });
-  await fireEvent.click(view.getByRole('button', { name: 'Save key' }));
+  await fireEvent.keyDown(token, { key: 'Enter' });
   await view.findByText('Key saved. Refresh its models to choose what to apply.');
   expect(view.queryByLabelText('API key')).not.toBeInTheDocument();
   await fireEvent.click(view.getByRole('button', { name: 'Add key' }));
   expect(view.getByLabelText('API key').value).toBe('');
   expect(localStorage.length).toBe(0);
   expect(fetchImpl.mock.calls.filter(([, opts]) => opts?.method === 'POST')).toHaveLength(1);
+  const [, options] = fetchImpl.mock.calls.find(([, opts]) => opts?.method === 'POST');
+  expect(JSON.parse(options.body)).toMatchObject({
+    baseUrl: 'https://example.invalid/v1',
+    key: 'fixture-secret-only',
+  });
 });

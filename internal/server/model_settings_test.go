@@ -139,6 +139,45 @@ func TestModelKeysRefreshMultiApplyRemoveAndPrivacy(t *testing.T) {
 	}
 }
 
+func TestModelRefreshRechecksAppliedRoutesWithPerModelEvidence(t *testing.T) {
+	s := newTestServer(t)
+	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/models" {
+			t.Error("the advertised routes should not require an inference probe")
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"claude-opus-5-5","supported_endpoint_types":["anthropic"]},{"id":"chat-one"},{"id":"not-applied"}]}`))
+	}))
+	defer service.Close()
+	profile := map[string]any{
+		"api": apiChat, "baseUrl": service.URL + "/v1", "apiKey": "fixture",
+		"models": []map[string]any{
+			{"id": "claude-opus-5-5", "contextWindow": 200000},
+			{"id": "chat-one"},
+		},
+	}
+	if err := writeModelConfig(s.agentDir, map[string]any{"providers": map[string]any{"provider": profile}}); err != nil {
+		t.Fatal(err)
+	}
+	_, data, _ := modelSettingsCall(t, s, nil)
+	code, data, _ := modelSettingsCall(t, s, map[string]any{"action": "refresh", "revision": data["revision"], "id": "provider"})
+	if code != http.StatusOK {
+		t.Fatal("refresh rejected", code, data)
+	}
+	stored := data["profiles"].([]any)[0].(map[string]any)
+	if len(stored["available"].([]any)) != 3 || len(stored["applied"].([]any)) != 2 {
+		t.Fatal("refresh must update the catalog without applying additional models")
+	}
+	models := stored["applied"].([]any)
+	if model := models[0].(map[string]any); model["api"] != apiAnthropic || model["contextWindow"] != float64(200000) {
+		t.Fatal("refresh did not merge the confirmed route while preserving limits", model)
+	}
+	if model := models[1].(map[string]any); model["api"] != apiChat {
+		t.Fatal("an unrelated model's execution format changed", model)
+	}
+}
+
 func TestModelDiscoveryDoesNotForwardKeysThroughRedirects(t *testing.T) {
 	s := newTestServer(t)
 	received := false
@@ -159,8 +198,12 @@ func TestModelRecheckUpgradesOnlyVerifiedNativeRoutes(t *testing.T) {
 		case "/v1/models":
 			w.Write([]byte(`{"data":[{"id":"claude-opus-5-5"},{"id":"gpt-5.4"},{"id":"other-chat"}]}`))
 		case "/v1/messages":
+			var request map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || len(request) != 1 || request["model"] != "claude-opus-5-5" {
+				t.Error("Claude route validation must send only the exact model")
+			}
 			w.WriteHeader(400)
-			w.Write([]byte(`{"error":{"type":"invalid_request","message":"missing model"}}`))
+			w.Write([]byte(`{"error":{"type":"invalid_request","message":"missing messages"}}`))
 		case "/v1/responses":
 			http.NotFound(w, r)
 		default:

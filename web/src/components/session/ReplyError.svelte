@@ -12,6 +12,7 @@
   import { t } from '../../shared/i18n.js';
   import {
     providerFailureLabelKey,
+    providerModelUnavailable,
     providerNetworkFailure,
   } from '../../session/render/reply-details.js';
 
@@ -27,11 +28,14 @@
     onContinue = null,
     actionsOnly = false,
   } = $props();
+  const modelUnavailable = $derived(providerModelUnavailable(error));
   const errorLabelKey = $derived(
     labelKey ||
       (interrupted
         ? 'activity.interrupted'
-        : providerFailureLabelKey(providerNetworkFailure(error)) || 'activity.failed'),
+        : modelUnavailable
+          ? 'activity.modelUnavailable'
+          : providerFailureLabelKey(providerNetworkFailure(error)) || 'activity.failed'),
   );
   const hasActions = $derived(onChooseModel || onRetry || onCompact || onContinue);
 </script>
@@ -47,23 +51,34 @@
   </span>
 {/snippet}
 
+{#snippet chooseModel(primary = false)}
+  <button
+    type="button"
+    class:reply-action-primary={primary}
+    title={t('activity.switchModel')}
+    onclick={onChooseModel}
+    >{@html icon(Layers, { size: 15 })}<span
+      >{t(primary ? 'activity.switchModel' : 'models.title')}</span
+    ></button
+  >
+{/snippet}
+
 {#snippet actions(standalone = false)}
   <div class="reply-error-actions" class:reply-error-actions-standalone={standalone}>
     {#if onContinue}<button class="reply-action-primary" type="button" onclick={onContinue}
         >{@html icon(Play, { size: 15 })}<span>{t('activity.continue')}</span></button
       >{/if}
-    {#if onRetry}<button class:reply-action-primary={!onContinue} type="button" onclick={onRetry}
+    {#if modelUnavailable && onChooseModel}{@render chooseModel(true)}{/if}
+    {#if onRetry}<button
+        class:reply-action-primary={!onContinue && !(modelUnavailable && onChooseModel)}
+        type="button"
+        onclick={onRetry}
         >{@html icon(RotateCcw, { size: 15 })}<span>{t(retryLabelKey)}</span></button
       >{/if}
     {#if onCompact}<button type="button" onclick={onCompact}
         >{@html icon(Minimize, { size: 15 })}<span>{t('piSession.compact')}</span></button
       >{/if}
-    {#if onChooseModel}<button
-        type="button"
-        title={t('activity.switchModel')}
-        onclick={onChooseModel}
-        >{@html icon(Layers, { size: 15 })}<span>{t('models.title')}</span></button
-      >{/if}
+    {#if onChooseModel && !modelUnavailable}{@render chooseModel()}{/if}
   </div>
 {/snippet}
 
