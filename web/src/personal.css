@@ -720,11 +720,66 @@
   font-size: 12px;
 }
 #spa-root .tool-image-strip {
-  margin: 5px 0 14px;
+  min-width: 0;
+}
+#spa-root .activity-group .tool-image-strip {
+  margin: 0 0 7px;
+}
+#spa-root .activity-group .tool-image-reference {
+  margin-block: 0;
+}
+#spa-root .tool-image-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 550;
+}
+#spa-root .tool-image-label > span[aria-hidden] {
+  display: flex;
+  flex-shrink: 0;
+}
+#spa-root .tool-image-label > :nth-child(2) {
+  white-space: nowrap;
+}
+#spa-root .tool-image-operation {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#spa-root .tool-image-operation::before {
+  content: '·';
+  margin-inline-end: 7px;
+}
+#spa-root .activity-disclosure[data-display-kind='image-summary'] {
+  margin-block: 5px 12px;
+  border-color: var(--dim);
+  background: var(--surface);
+}
+#spa-root .activity-disclosure[data-display-kind='image-summary'] > summary {
+  gap: 8px;
+  min-height: 36px;
+  padding-inline: 11px;
+}
+#spa-root .activity-disclosure[data-display-kind='image-summary'] > summary .activity-chevron {
+  margin-inline-start: auto;
+}
+#spa-root .activity-disclosure[data-display-kind='image-summary'] > .activity-body {
+  display: grid;
+  gap: 8px;
+  padding: 4px 10px 10px;
+}
+#spa-root .activity-disclosure[data-display-kind='image-summary']:not([open]) > .activity-body {
+  display: none;
 }
 #spa-root .tool-image-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 112px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 94px), 1fr));
   gap: 8px;
   max-width: 680px;
 }
@@ -741,7 +796,7 @@
   place-items: center;
   gap: 4px;
   width: 100%;
-  max-height: 118px;
+  max-height: 98px;
   aspect-ratio: 4 / 3;
   padding: 0;
   border: 1px solid var(--dim);
@@ -773,7 +828,8 @@
   border-radius: 6px;
 }
 #spa-root .tool-preview figcaption,
-#spa-root .tool-preview-status {
+#spa-root .tool-preview-status,
+#spa-root .tool-preview-origin {
   font-size: 11px;
   line-height: 1.4;
   color: var(--text-soft);
@@ -785,6 +841,10 @@
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+#spa-root .tool-preview-origin {
+  display: block;
+  font-size: 10px;
 }
 #spa-root .output-action:focus-visible,
 #spa-root .output-image-button:focus-visible,
@@ -2397,7 +2457,11 @@ body .pi-btw-input {
   padding: 0;
 }
 #spa-root .assistant-message > .assistant-text + .assistant-text,
-#spa-root .activity-group + .assistant-message .assistant-text {
+#spa-root .activity-group + .assistant-message .assistant-text,
+#spa-root
+  .activity-disclosure[data-display-kind='image-summary']
+  + .assistant-message
+  .assistant-text {
   padding-top: 2px;
 }
 #spa-root .markdown-content ul,

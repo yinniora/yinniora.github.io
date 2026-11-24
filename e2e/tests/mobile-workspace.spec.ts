@@ -1,5 +1,5 @@
-import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { createServer } from "node:http";
 import { test, expect, collapseScratchpad, isMobileLayout } from "../lib/test";
 import {
@@ -1243,7 +1243,7 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
   }
 });
 
-test("a finished turn previews tool images and shows its downloadable SVG after the reply", async ({
+test("image operations follow tool results, then fold above the completed reply", async ({
   page,
   sessionsDir,
 }, testInfo) => {
@@ -1251,130 +1251,156 @@ test("a finished turn previews tool images and shows its downloadable SVG after 
   const { entries, lastId } = buildSession({ cwd });
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3"/></svg>';
-  const read = assistantTextEntry(lastId, "");
-  entries.push({
-    ...read.entry,
-    message: {
-      ...read.entry.message,
-      stopReason: "toolUse",
-      content: [
-        { type: "toolCall", id: "read-svg", name: "read", arguments: { path: "./reviewed.svg" } },
-        { type: "toolCall", id: "read-png", name: "read", arguments: { path: "/tmp/check.png" } },
-      ],
-    },
-  } as any);
-  entries.push({
-    type: "message",
-    id: "read-svg-result",
-    parentId: read.id,
-    timestamp: new Date().toISOString(),
-    message: {
-      role: "toolResult",
-      toolCallId: "read-svg",
-      toolName: "read",
-      content: [
-        {
-          type: "text",
-          text: '<svg xmlns="http://www.w3.org/2000/svg">\n[3 more lines in file. Use offset=2 to continue.]',
-        },
-      ],
-      isError: false,
-    },
-  } as any);
-  entries.push({
-    type: "message",
-    id: "read-png-result",
-    parentId: "read-svg-result",
-    timestamp: new Date().toISOString(),
-    message: {
-      role: "toolResult",
-      toolCallId: "read-png",
-      toolName: "read",
-      content: [{ type: "image", mimeType: "image/png", data: SAMPLE_PNG }],
-      isError: false,
-    },
-  } as any);
-  const write = assistantTextEntry("read-png-result", "");
-  entries.push({
-    ...write.entry,
-    message: {
-      ...write.entry.message,
-      stopReason: "toolUse",
-      content: [
-        {
-          type: "toolCall",
-          id: "write-svg",
-          name: "write",
-          arguments: { path: "finished.svg", content: svg },
-        },
-      ],
-    },
-  } as any);
-  entries.push({
-    type: "message",
-    id: "write-svg-result",
-    parentId: write.id,
-    timestamp: new Date().toISOString(),
-    message: {
-      role: "toolResult",
-      toolCallId: "write-svg",
-      toolName: "write",
-      content: [{ type: "text", text: "Wrote finished.svg" }],
-      isError: false,
-    },
-  } as any);
+  const png = { type: "image", mimeType: "image/png", data: SAMPLE_PNG };
+  let parentId = lastId;
+  function recordTool(key: string, name: string, path: string, result: object, thinking = "") {
+    const assistant = assistantTextEntry(parentId, "");
+    const call = { type: "toolCall", id: key, name, arguments: { path } };
+    entries.push({
+      ...assistant.entry,
+      message: {
+        ...assistant.entry.message,
+        stopReason: "toolUse",
+        content: thinking ? [{ type: "thinking", thinking }, call] : [call],
+      },
+    } as any);
+    parentId = key + "-result";
+    entries.push({
+      type: "message",
+      id: parentId,
+      parentId: assistant.id,
+      timestamp: new Date().toISOString(),
+      message: {
+        role: "toolResult",
+        toolCallId: key,
+        toolName: name,
+        content: [result],
+        isError: false,
+      },
+    } as any);
+  }
+  recordTool("read-svg", "read", "./reviewed.svg", {
+    type: "text",
+    text: '<svg xmlns="http://www.w3.org/2000/svg">\n[3 more lines in file. Use offset=2 to continue.]',
+  });
+  recordTool("read-png", "read", "/tmp/check.png", png);
+  const initial = entries.length;
+  recordTool("edit-svg", "edit", "edited.svg", { type: "text", text: "Updated edited.svg" },
+    "Adjust the circle.");
+  recordTool("screenshot", "mcp__browser__screenshot", "/tmp/capture.png", png);
+  recordTool("recheck", "view_image", "/tmp/rechecked.png", png);
+  recordTool("write-svg", "write", "finished.svg", { type: "text", text: "Wrote finished.svg" });
   const reply = assistantTextEntry(
-    "write-svg-result",
+    parentId,
     "[Download the SVG](./finished.svg) · [Documentation](https://example.test/docs)",
   );
-  entries.push(reply.entry);
-  writeFileSync(join(cwd, "finished.svg"), svg);
-  writeFileSync(join(cwd, "reviewed.svg"), svg);
-  const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "finished-gallery"), entries);
+  for (const file of ["reviewed.svg", "edited.svg", "finished.svg"]) {
+    writeFileSync(join(cwd, file), svg);
+  }
+
+  const name = uniqueSessionName(testInfo, "image-operations");
+  const id = writeSession(sessionsDir, name, entries.slice(0, initial));
+  const statusFile = join(dirname(sessionsDir), "session-status", id);
+  const summary = page.locator('details[data-display-kind="image-summary"]');
+  const activity = page.locator(".activity-group").last();
+  const files = ["reviewed.svg", "check.png", "edited.svg", "capture.png", "rechecked.png"];
+  let svgRequests = 0;
+
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/asset" && url.searchParams.get("path") === "reviewed.svg") {
+      svgRequests++;
+    }
+  });
   if (/Mobile Safari|iPad/.test(testInfo.project.name)) {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "standalone", { value: true });
     });
   }
   await collapseScratchpad(page);
-  await page.goto("/session?id=" + encodeURIComponent(id));
-  const assistant = page.locator(`#entry-${reply.id}`);
-  const output = assistant.getByRole("region", { name: "Outputs", exact: true });
-  const previews = page.getByRole("region", { name: "Images from tools", exact: true });
-  await expect(assistant.locator(".assistant-text + .output-gallery + .reply-footer")).toBeVisible();
-  await expect(output.locator(".output-file-name")).toHaveText("finished.svg");
-  await expect(page.locator(".output-file-name")).toHaveCount(1);
-  await expect(page.locator(".activity-group[open]")).toHaveCount(0);
-  await expect(previews.locator("figcaption")).toHaveText(["reviewed.svg", "check.png"]);
-  await previews.scrollIntoViewIfNeeded();
-  await expect(previews.locator("img")).toHaveCount(2);
-  for (const [name, source] of [
-    ["reviewed.svg", /^data:image\/svg\+xml/],
-    ["check.png", /^data:image\/png/],
-  ] as const) {
-    await previews.getByRole("button", { name: `Enlarge ${name}`, exact: true }).click();
-    await expect(page.locator("#modal-image")).toHaveAttribute("src", source);
-    await expect.poll(() => page.locator("#modal-image").evaluate(
-      (image) => (image as HTMLImageElement).naturalWidth,
-    )).toBeGreaterThan(0);
-    await page.locator("#image-modal").getByRole("button", { name: "Close", exact: true }).click();
+  try {
+    writeFileSync(statusFile, JSON.stringify({ state: "running", updatedAt: new Date().toISOString() }));
+    await page.goto("/session?id=" + encodeURIComponent(id));
+    await expect(activity).toHaveAttribute("data-running", "true");
+    await expect(summary).toHaveCount(0);
+    await expect(activity.locator("figcaption")).toHaveText(files.slice(0, 2));
+    const firstPreview = activity.getByRole("button", { name: "Enlarge reviewed.svg" });
+    await firstPreview.scrollIntoViewIfNeeded();
+    await expect(firstPreview.locator("img")).toHaveAttribute("decoding", "async");
+    expect(svgRequests).toBe(1);
+
+    const composer = page.locator("#pi-chat-message");
+    await composer.fill("未发出的草稿");
+    for (const entry of entries.slice(initial)) appendEntry(sessionsDir, name, entry);
+    await expect(activity.locator("figcaption")).toHaveText(files);
+    await expect(activity.locator(".activity-thinking")).toBeVisible();
+    expect(await activity.evaluate((group) => Array.from(group.querySelectorAll(
+      ".activity-thinking, .tool-image-strip",
+    )).map((row) => row.getAttribute("aria-label") || "thinking")))
+      .toEqual(["Viewed images", "Viewed images", "thinking", "Edited images", "Other operations", "Viewed images"]);
+    await expect(composer).toBeFocused();
+    await expect(composer).toHaveValue("未发出的草稿");
+    await expect(summary).toHaveCount(0);
+
+    appendEntry(sessionsDir, name, reply.entry);
+    await expect(summary).toHaveAttribute("open", "");
+    await expect(summary.locator("figcaption")).toHaveText(files);
+    await expect(summary.locator(".activity-label")).toHaveText("Image operations");
+    await expect(summary.locator(".activity-count")).toHaveText("5");
+    const orderedActions = await summary.locator(".tool-image-strip").evaluateAll((rows) =>
+      rows.map((row) => row.getAttribute("aria-label")),
+    );
+    expect(orderedActions).toEqual(["Viewed images", "Edited images", "Other operations", "Viewed images"]);
+    await expect(activity.locator(".tool-image-reference")).toHaveCount(5);
+    await expect(activity.locator(".tool-preview")).toHaveCount(0);
+
+    const assistant = page.locator("#entry-" + reply.id);
+    const output = assistant.getByRole("region", { name: "Outputs", exact: true });
+    expect(await assistant.evaluate((reply) => reply.previousElementSibling?.getAttribute("data-display-kind")))
+      .toBe("image-summary");
+    await expect(assistant.locator(".assistant-text + .output-gallery + .reply-footer")).toBeVisible();
+    await expect(output.locator(".output-file-name").getByText("finished.svg", { exact: true })).toHaveCount(1);
+    await expect(output.locator(".output-file-name").getByText("edited.svg", { exact: true })).toHaveCount(1);
+    await expect(page.locator(".output-file-name")).toHaveCount(2);
+
+    const heading = summary.locator(":scope > summary");
+    await heading.click();
+    await expect(summary.locator(".tool-preview")).toHaveCount(0);
+    await heading.click();
+    for (const [filename, source] of [
+      ["reviewed.svg", /^data:image\/svg\+xml/],
+      ["check.png", /^data:image\/png/],
+      ["edited.svg", /^data:image\/svg\+xml/],
+    ] as const) {
+      const thumbnail = summary.getByRole("button", { name: "Enlarge " + filename, exact: true });
+      await thumbnail.scrollIntoViewIfNeeded();
+      await thumbnail.click();
+      await expect(page.locator("#modal-image")).toHaveAttribute("src", source);
+      await expect.poll(() => page.locator("#modal-image").evaluate(
+        (image) => (image as HTMLImageElement).naturalWidth,
+      )).toBeGreaterThan(0);
+      await page.locator("#image-modal").getByRole("button", { name: "Close", exact: true }).click();
+    }
+    expect(svgRequests).toBe(1);
+    const linkColors = await assistant.evaluate((element) =>
+      [".session-file-link", "a", ".output-download"].map((selector) =>
+        getComputedStyle(element.querySelector(selector)!).color,
+      ),
+    );
+    expect(linkColors).toEqual([linkColors[0], linkColors[0], linkColors[0]]);
+    const [red, green, blue] = linkColors[0].match(/\d+/g)!.map(Number);
+    expect(blue).toBeGreaterThan(Math.max(red, green));
+    await expect(assistant.locator('a[href="./finished.svg"]')).toHaveCount(0);
+    const url = page.url();
+    const download = page.waitForEvent("download");
+    await assistant.getByRole("button", { name: "Download the SVG" }).click();
+    const saved = await download;
+    expect(saved.suggestedFilename()).toBe("finished.svg");
+    expect(readFileSync((await saved.path())!, "utf8")).toBe(svg);
+    await expect(page).toHaveURL(url);
+  } finally {
+    rmSync(statusFile, { force: true });
   }
-  const linkColors = await assistant.evaluate((element) =>
-    [".session-file-link", "a", ".output-download"].map((selector) =>
-      getComputedStyle(element.querySelector(selector)!).color,
-    ),
-  );
-  expect(linkColors).toEqual([linkColors[0], linkColors[0], linkColors[0]]);
-  const [red, green, blue] = linkColors[0].match(/\d+/g)!.map(Number);
-  expect(blue).toBeGreaterThan(Math.max(red, green));
-  await expect(assistant.locator('a[href="./finished.svg"]')).toHaveCount(0);
-  const url = page.url();
-  const download = page.waitForEvent("download");
-  await assistant.getByRole("button", { name: "Download the SVG" }).click();
-  const saved = await download;
-  expect(saved.suggestedFilename()).toBe("finished.svg");
-  expect(readFileSync((await saved.path())!, "utf8")).toBe(svg);
-  await expect(page).toHaveURL(url);
 });
 
 test("all phone routes keep the outer page fixed and disable page zoom", async ({

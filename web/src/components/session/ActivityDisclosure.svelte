@@ -33,6 +33,7 @@
   };
   const indicator = $derived(indicators[status]);
   let element;
+  let expanded = $state(true);
   function setOpen(open) {
     element.open = open;
     sessionRuntime.toggleState?.setDisclosure?.(id, open, { transient: running });
@@ -64,7 +65,10 @@
   data-requires-response={required ? 'true' : undefined}
   data-running={running ? 'true' : undefined}
   data-unfinished={unfinished ? 'true' : undefined}
-  open={required || running}
+  open={required || running || kind === 'image-summary'}
+  ontoggle={(event) => {
+    if (kind === 'image-summary') expanded = event.currentTarget.open;
+  }}
 >
   <summary onclick={toggle}>
     {#if glyph}<span class="activity-glyph" aria-hidden="true"
@@ -87,16 +91,18 @@
         {t(indicator.label)}
       </span>{/if}
   </summary>
-  <div class="activity-body">
-    {@render children()}
-    {#if kind === 'group'}
-      <button
-        type="button"
-        class="activity-collapse-end"
-        aria-label={t('activity.collapse', { name: label })}
-        onclick={collapseFromEnd}
-        >{@html icon(ChevronUp, { size: 15 })}<span>{t('activity.collapseShort')}</span></button
-      >
-    {/if}
-  </div>
+  {#if kind !== 'image-summary' || expanded}
+    <div class="activity-body">
+      {@render children()}
+      {#if kind === 'group'}
+        <button
+          type="button"
+          class="activity-collapse-end"
+          aria-label={t('activity.collapse', { name: label })}
+          onclick={collapseFromEnd}
+          >{@html icon(ChevronUp, { size: 15 })}<span>{t('activity.collapseShort')}</span></button
+        >
+      {/if}
+    </div>
+  {/if}
 </details>

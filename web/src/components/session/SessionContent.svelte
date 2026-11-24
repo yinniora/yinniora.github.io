@@ -20,6 +20,7 @@
   import { collectToolImagePreviews } from '../../session/artifacts/tool-images.js';
   import { groupConversationActivity } from '../../session/render/conversation-activity.js';
   import { t } from '../../shared/i18n.js';
+  import { Image } from '../../shared/icons.js';
   import { formatElapsed } from '../../session/render/entry-format.js';
 
   function activityText(section) {
@@ -78,6 +79,7 @@
   const toolImages = $derived(
     live ? collectToolImagePreviews(model.activePath, cwd, sessionId) : null,
   );
+  const workspacePreviews = new Map();
   const sections = $derived(
     live
       ? groupConversationActivity(
@@ -191,14 +193,13 @@
             />
           {:else if step.kind === 'question'}
             <ToolCall call={step.call} {model} live />
+          {:else if step.kind === 'images'}
+            <ToolImageStrip group={step} {workspacePreviews} />
           {:else}
             <ToolRun run={step} {model} />
           {/if}
         {/each}
       </ActivityDisclosure>
-      {#if section.imagePreviews.length}
-        <ToolImageStrip images={section.imagePreviews} />
-      {/if}
       {#if section.unfinished && chatAvailable && sessionRunning === false && sectionIndex >= latestFrom}
         <ReplyError actionsOnly onContinue={continueTask} onChooseModel={chooseModel} />
       {/if}
@@ -206,6 +207,19 @@
         {@render renderOutputs?.(section.outputs)}
       {/if}
     {:else}
+      {#if section.imageGroups}
+        <ActivityDisclosure
+          kind="image-summary"
+          id={`image-summary:${section.key}`}
+          label={t('toolImages.title')}
+          count={section.imageGroups.reduce((count, group) => count + group.images.length, 0)}
+          glyph={Image}
+        >
+          {#each section.imageGroups as group (group.key)}
+            <ToolImageStrip {group} {workspacePreviews} />
+          {/each}
+        </ActivityDisclosure>
+      {/if}
       {@render renderEntry(section.item, sectionIndex >= latestFrom)}
     {/if}
   {/each}

@@ -100,9 +100,10 @@ export function applyToggleStateToNode(node, state, overrides = {}, running = {}
       el.dataset.requiresResponse === 'true' ||
       (key in overrides
         ? overrides[key]
-        : kind !== 'group' &&
-          !inGroup &&
-          (kind === 'thinking' ? state.thinkingExpanded : state.toolsVisible));
+        : kind === 'image-summary' ||
+          (kind !== 'group' &&
+            !inGroup &&
+            (kind === 'thinking' ? state.thinkingExpanded : state.toolsVisible)));
   });
   node.querySelectorAll('.thinking-text').forEach((el) => {
     el.style.display = state.thinkingExpanded ? '' : 'none';

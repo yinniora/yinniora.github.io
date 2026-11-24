@@ -98,12 +98,34 @@ function isSteer(before, entry) {
   return Number.isFinite(gap) && gap >= 0 && gap <= STEER_GAP_MS;
 }
 
+function summarizeImages(steps) {
+  const groups = [];
+  for (const step of steps) {
+    step.summarized = true;
+    const previous = groups.at(-1);
+    if (
+      previous?.action === step.action &&
+      (step.action !== 'other' || previous.tool === step.tool)
+    ) {
+      previous.images.push(...step.images);
+    } else {
+      groups.push({
+        key: step.key,
+        action: step.action,
+        tool: step.tool,
+        images: [...step.images],
+      });
+    }
+  }
+  return groups;
+}
+
 export function groupConversationActivity(
   entries,
   outputsByEntry,
   running = false,
   thinkingPreviews = [],
-  toolImagesByCall,
+  toolImagesByResult,
 ) {
   const results = new Map();
   for (const { entry } of entries) {
@@ -114,6 +136,7 @@ export function groupConversationActivity(
   const sections = [];
   let activity = null;
   let turnStartedAt = 0;
+  let turnImageSteps = [];
   function addActivity(item, thoughts, tools) {
     if (!activity) {
       activity = {
@@ -125,7 +148,6 @@ export function groupConversationActivity(
         retries: 0,
         latestTool: '',
         outputs: [],
-        imagePreviews: [],
         timeline: [],
         needsResponse: false,
         questionOutcome: '',
@@ -142,8 +164,6 @@ export function groupConversationActivity(
     for (const tool of tools) {
       activity.latestTool = tool.name;
       if (results.get(tool.id)?.isError) activity.failures++;
-      const previews = toolImagesByCall?.get(tool.id);
-      if (previews) activity.imagePreviews.push(...previews);
     }
   }
 
@@ -176,8 +196,18 @@ export function groupConversationActivity(
       sections.push({ key: entry.id, item: { ...item, retried: true } });
       continue;
     }
+    if (message?.role === 'toolResult') {
+      const images = toolImagesByResult?.get(entry.id);
+      if (images) {
+        if (!activity) addActivity({ entry, blocks: [] }, 0, []);
+        const step = { kind: 'images', key: `images:${entry.id}`, ...images };
+        activity.timeline.push(step);
+        activity.endedAt = Math.max(activity.endedAt, entryTime(entry));
+        turnImageSteps.push(step);
+      }
+      continue;
+    }
     if (
-      message?.role === 'toolResult' ||
       entry.type === 'thinking_level_change' ||
       entry.type === 'session_info' ||
       (entry.type === 'model_change' && entry.implicit)
@@ -188,10 +218,12 @@ export function groupConversationActivity(
       // lost its runner. Say so instead of looking finished.
       // A message steered into a running turn lands right after a tool result
       // (or Pi's between-turn compaction): the turn went on, it did not stop.
+      const steering = isSteer(before, entry);
       if (activity) {
-        if (isSteer(before, entry)) activity.steered = true;
+        if (steering) activity.steered = true;
         else if (!activity.needsResponse) activity.unfinished = true;
       }
+      if (!steering) turnImageSteps = [];
       activity = null;
       turnStartedAt = entryTime(entry);
     }
@@ -226,11 +258,17 @@ export function groupConversationActivity(
       // The turn ends with this reply; count its time in the activity duration.
       if (activity) activity.endedAt = Math.max(activity.endedAt, entryTime(entry));
       activity = null;
+      const completed =
+        !item.emptyReply &&
+        !['aborted', 'error', 'length'].includes(message.stopReason) &&
+        Boolean(item.reply || message.stopReason === 'stop');
       sections.push({
         key: entry.id,
         item,
         final: Boolean(final || message.stopReason === 'stop'),
+        imageGroups: completed && turnImageSteps.length ? summarizeImages(turnImageSteps) : null,
       });
+      turnImageSteps = [];
       continue;
     }
     sections.push({ key: entry.id, item });

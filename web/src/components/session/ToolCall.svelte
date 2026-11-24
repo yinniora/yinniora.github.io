@@ -83,7 +83,7 @@
         >
       </div>
       {#if result}
-        {#if resultImages.length > 0}<div class="tool-images">
+        {#if !live && resultImages.length > 0}<div class="tool-images">
             {#each resultImages as img, imgIndex (imgIndex)}<img
                 src={`data:${img.mimeType || 'image/png'};base64,${img.data}`}
                 class="tool-image"

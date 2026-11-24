@@ -866,7 +866,11 @@ export default {
   // ── Artifacts panel actions ──
   'artifact.copy': 'Copy',
   'outputs.title': 'Outputs',
-  'toolImages.title': 'Images from tools',
+  'toolImages.title': 'Image operations',
+  'toolImages.view': 'Viewed images',
+  'toolImages.edit': 'Edited images',
+  'toolImages.other': 'Other operations',
+  'toolImages.workspaceFile': 'Workspace file',
   'toolImages.loadingPreview': 'Loading preview…',
   'toolImages.previewUnavailable': 'Preview unavailable',
   'home.navigation': 'Workspace navigation',
