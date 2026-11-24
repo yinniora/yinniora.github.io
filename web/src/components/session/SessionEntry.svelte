@@ -7,7 +7,7 @@
   import { marked } from 'marked';
   import { icon, Ellipsis, GitFork, Link2, Tag } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
-  import { safeMarkedParse } from '../../session/render/markdown.js';
+  import { replyMarkdownParts, safeMarkedParse } from '../../session/render/markdown.js';
   import {
     formatTimestamp,
     formatShortTime,
@@ -37,6 +37,7 @@
     latestTurn = false,
     skipActivity = false,
     outputs,
+    replyFileIndex = null,
     renderOutputs = null,
     onCompact = null,
     cwd = '',
@@ -49,6 +50,15 @@
   const assistantContent = $derived(
     typeof msg?.content === 'string' ? [{ type: 'text', text: msg.content }] : msg?.content || [],
   );
+  const renderedReply = $derived.by(() => {
+    if (!replyFileIndex || msg?.role !== 'assistant') return [];
+    const seen = new Set();
+    return assistantContent.map((block) =>
+      block.type === 'text' && block.text.trim()
+        ? replyMarkdownParts(block.text, { marked, cwd, fileIndex: replyFileIndex }, seen)
+        : [],
+    );
+  });
   const activityOnly = $derived(
     live &&
       !reply &&
@@ -154,9 +164,16 @@
     {#if !live}{@render actions(entry.id)}{/if}
     {#if !reply}{@render timestamp()}{/if}
     {#each assistantContent as block, blockIndex (blockIndex)}
-      {#if block.type === 'text' && block.text.trim()}<div class="assistant-text markdown-content">
-          {@html md(block.text)}
-        </div>{:else if !skipActivity && block.type === 'thinking' && block.thinking?.trim()}
+      {#if block.type === 'text' && block.text.trim()}
+        {#if replyFileIndex}
+          {#each renderedReply[blockIndex] || [] as part, partIndex (partIndex)}
+            {#if part.html}<div class="assistant-text markdown-content">{@html part.html}</div>{/if}
+            {#if part.files.length}{@render renderOutputs?.(part.files)}{/if}
+          {/each}
+        {:else}
+          <div class="assistant-text markdown-content">{@html md(block.text)}</div>
+        {/if}
+      {:else if !skipActivity && block.type === 'thinking' && block.thinking?.trim()}
         <AssistantThinking id={`thinking:${entry.id}:${blockIndex}`} text={block.thinking} {live} />
       {/if}
     {/each}
@@ -213,9 +230,6 @@
       {:else}
         <div class="error-text">Error: {msg.errorMessage || 'Unknown error'}</div>
       {/if}
-    {/if}
-    {#if outputs?.length}
-      {@render renderOutputs?.(outputs)}
     {/if}
     {#if reply}
       <ReplyFooter {...reply}>

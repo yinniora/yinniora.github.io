@@ -10,16 +10,14 @@ it('uses the same open activity and thought keys before and after a streamed mes
   const user = msg('user', 0, { role: 'user', content: 'go' });
   const timestamp = Date.parse(at(1));
   const live = [{ messageTimestamp: timestamp, thinkingIndex: 0, thinking: 'still streaming' }];
-  const [before] = groupConversationActivity([user], new Map(), true, live).filter((s) => s.items);
+  const [before] = groupConversationActivity([user], true, live).filter((s) => s.items);
   const assistant = msg('saved', 1, {
     role: 'assistant',
     timestamp,
     stopReason: 'toolUse',
     content: [{ type: 'thinking', thinking: 'still streaming but now recorded' }],
   });
-  const [after] = groupConversationActivity([user, assistant], new Map(), true, live).filter(
-    (s) => s.items,
-  );
+  const [after] = groupConversationActivity([user, assistant], true, live).filter((s) => s.items);
   expect(before.running).toBe(true);
   expect(after.running).toBe(true);
   expect(after.key).toBe(before.key);
@@ -39,7 +37,7 @@ describe('conversation activity duration', () => {
       content: [{ type: 'thinking', thinking: 'A thought without a reply.' }],
     });
     const entries = entriesWithReplyDetails([user.entry, empty.entry]);
-    const sections = groupConversationActivity(entries, new Map());
+    const sections = groupConversationActivity(entries);
     expect(sections.at(-1).item).toMatchObject({ emptyReply: true, retryContent: 'go' });
   });
   it('measures a turn from the prompt to its final reply', () => {
@@ -57,10 +55,10 @@ describe('conversation activity duration', () => {
         content: [{ type: 'text', text: 'done' }],
       }),
     ].map((item) => ({ ...item, reply: null }));
-    const [, activity] = groupConversationActivity(entries, new Map());
+    const [, activity] = groupConversationActivity(entries);
     expect(activity.toolCount).toBe(1);
     expect(activity.durationMs).toBe(72000);
-    const [, finishedWhileStatusUpdates] = groupConversationActivity(entries, new Map(), true);
+    const [, finishedWhileStatusUpdates] = groupConversationActivity(entries, true);
     expect(finishedWhileStatusUpdates.running).toBeFalsy();
   });
 
@@ -74,7 +72,7 @@ describe('conversation activity duration', () => {
     const result = (id, s) =>
       msg(id, s, { role: 'toolResult', toolCallId: 't' + id[1], content: [] });
     const activity = (entries) =>
-      groupConversationActivity(entries, new Map(), true).filter((section) => section.items)[0];
+      groupConversationActivity(entries, true).filter((section) => section.items)[0];
     const start = [msg('u', 0, { role: 'user', content: 'go' }), tool('a', 1), result('ra', 2)];
 
     const steered = activity([
@@ -108,47 +106,52 @@ describe('conversation activity duration', () => {
     });
     const turn = [msg('u', 0, { role: 'user', content: 'go' }), tool('a', 1)];
     const groups = (entries, running) =>
-      groupConversationActivity(entries, new Map(), running).filter((section) => section.items);
+      groupConversationActivity(entries, running).filter((section) => section.items);
 
     expect(groups(turn, true)[0]).toMatchObject({ running: true });
     expect(groups(turn, true)[0].unfinished).toBeFalsy();
     expect(groups(turn, null)[0].unfinished).toBeFalsy();
     expect(groups(turn, false)[0].unfinished).toBe(true);
-    const [, activity, truncated] = groupConversationActivity([...turn, cut], new Map());
+    const [, activity, truncated] = groupConversationActivity([...turn, cut]);
     expect(activity.toolCount).toBe(1);
     expect(truncated.item).toMatchObject({ entry: cut.entry, skipActivity: true });
   });
 
-  it('collects image results across a steer and only summarizes a completed reply', () => {
-    const batch = (id, action) => [id, { action, images: [{ id }] }];
-    const images = new Map([batch('read-result', 'view'), batch('edit-result', 'edit')]);
-    const call = (id) => ({ type: 'toolCall', id, name: 'image_' + id, arguments: {} });
+  it('keeps file steps in time order through streaming and a finished turn', () => {
+    const read = { action: 'view', images: [{ id: 'preview' }], resultId: 'read-result' };
+    const edit = { action: 'edit', files: [{ id: 'source' }], resultId: 'edit-result' };
+    const files = new Map([
+      ['read', read],
+      ['edit', edit],
+    ]);
+    const call = (id) => ({ type: 'toolCall', id, name: id, arguments: {} });
     const entries = [
       msg('u', 0, { role: 'user', content: 'go' }),
       msg('a', 1, { role: 'assistant', stopReason: 'toolUse', content: [call('read')] }),
       msg('read-result', 2, { role: 'toolResult', toolCallId: 'read', content: [] }),
-      msg('s', 3, { role: 'user', content: 'adjust the color' }),
-      msg('b', 4, { role: 'assistant', stopReason: 'toolUse', content: [call('edit')] }),
+      msg('b', 4, {
+        role: 'assistant',
+        stopReason: 'toolUse',
+        content: [{ type: 'thinking', thinking: 'Adjust the file.' }, call('edit')],
+      }),
       msg('edit-result', 5, { role: 'toolResult', toolCallId: 'edit', content: [] }),
     ];
-    const build = (end, running) =>
-      groupConversationActivity([...entries, end], new Map(), running, [], images);
 
-    const failed = build(msg('failed', 6, { role: 'assistant', stopReason: 'error' }), false);
-    expect(failed.at(-1).imageGroups).toBeNull();
-    expect(
-      failed.filter((section) => section.items).map((section) => section.timeline.at(-1)),
-    ).toMatchObject([{ action: 'view' }, { action: 'edit' }]);
-    expect(failed.some((section) => section.timeline?.some((step) => step.summarized))).toBe(false);
-
-    const done = build(
-      msg('done', 6, { role: 'assistant', stopReason: 'stop', content: 'OK' }),
-      true,
+    const [, running] = groupConversationActivity(entries, true, [], files);
+    const snapshot = [
+      { kind: 'files', operation: read, anchors: ['a'] },
+      { kind: 'thinking' },
+      { kind: 'files', operation: edit },
+    ];
+    expect(running.timeline).toMatchObject(snapshot);
+    const [, finished, reply] = groupConversationActivity(
+      [...entries, msg('done', 6, { role: 'assistant', content: 'OK', stopReason: 'stop' })],
+      false,
+      [],
+      files,
     );
-    expect(done.at(-1).imageGroups.map((group) => group.action)).toEqual(['view', 'edit']);
-    expect(
-      done.filter((section) => section.items).map((section) => section.timeline.at(-1)),
-    ).toMatchObject([{ summarized: true }, { summarized: true }]);
+    expect(finished.timeline).toMatchObject(snapshot);
+    expect(reply.key).toBe('done');
   });
 
   it('keeps one turn when the server continued after an empty reply', () => {
@@ -177,7 +180,6 @@ describe('conversation activity duration', () => {
           done,
         ].map((item) => item.entry),
       ),
-      new Map(),
     );
     const groups = sections.filter((section) => section.items);
     expect(groups).toHaveLength(1);

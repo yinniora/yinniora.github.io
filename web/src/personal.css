@@ -564,7 +564,10 @@
   min-width: 0;
 }
 #spa-root .assistant-message .output-gallery {
-  margin-block: 12px;
+  margin-block: 10px;
+}
+#spa-root .activity-disclosure[data-display-kind='file'] > .activity-body .output-gallery {
+  margin-block: 0 7px;
 }
 #spa-root .markdown-content a {
   color: var(--workspace-link);
@@ -582,12 +585,6 @@
   text-underline-offset: 0.15em;
   overflow-wrap: anywhere;
   cursor: pointer;
-}
-#spa-root .output-section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-soft);
-  margin-bottom: 7px;
 }
 #spa-root .output-grid {
   display: grid;
@@ -620,6 +617,30 @@
 }
 #spa-root .output-file-details {
   flex: 1;
+  min-width: 0;
+}
+#spa-root .output-file-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+#spa-root .output-file-open:hover {
+  background: var(--hover);
+}
+#spa-root .output-file-open > [aria-hidden='true'] {
+  display: flex;
+  color: var(--workspace-link);
+}
+#spa-root .output-file-label {
   min-width: 0;
 }
 #spa-root .output-file-name {
@@ -671,7 +692,7 @@
   padding: 0;
   width: 100%;
   aspect-ratio: 16 / 10;
-  max-height: 400px;
+  max-height: 280px;
   border: 0;
   border-radius: 0;
   background: var(--chrome-bg);
@@ -719,69 +740,11 @@
   color: var(--text-soft);
   font-size: 12px;
 }
-#spa-root .tool-image-strip {
-  min-width: 0;
-}
-#spa-root .activity-group .tool-image-strip {
-  margin: 0 0 7px;
-}
-#spa-root .activity-group .tool-image-reference {
-  margin-block: 0;
-}
-#spa-root .tool-image-label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 28px;
-  color: var(--text-soft);
-  font-size: 12px;
-  font-weight: 550;
-}
-#spa-root .tool-image-label > span[aria-hidden] {
-  display: flex;
-  flex-shrink: 0;
-}
-#spa-root .tool-image-label > :nth-child(2) {
-  white-space: nowrap;
-}
-#spa-root .tool-image-operation {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 400;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#spa-root .tool-image-operation::before {
-  content: '·';
-  margin-inline-end: 7px;
-}
-#spa-root .activity-disclosure[data-display-kind='image-summary'] {
-  margin-block: 5px 12px;
-  border-color: var(--dim);
-  background: var(--surface);
-}
-#spa-root .activity-disclosure[data-display-kind='image-summary'] > summary {
-  gap: 8px;
-  min-height: 36px;
-  padding-inline: 11px;
-}
-#spa-root .activity-disclosure[data-display-kind='image-summary'] > summary .activity-chevron {
-  margin-inline-start: auto;
-}
-#spa-root .activity-disclosure[data-display-kind='image-summary'] > .activity-body {
-  display: grid;
-  gap: 8px;
-  padding: 4px 10px 10px;
-}
-#spa-root .activity-disclosure[data-display-kind='image-summary']:not([open]) > .activity-body {
-  display: none;
-}
 #spa-root .tool-image-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 94px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 105px), 130px));
   gap: 8px;
-  max-width: 680px;
+  margin-block: 0 6px;
 }
 #spa-root .tool-preview {
   min-width: 0;
@@ -835,8 +798,10 @@
   color: var(--text-soft);
 }
 #spa-root .tool-preview figcaption {
-  display: -webkit-box;
   margin-top: 4px;
+}
+#spa-root .tool-preview-name {
+  display: -webkit-box;
   overflow: hidden;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
@@ -847,6 +812,7 @@
   font-size: 10px;
 }
 #spa-root .output-action:focus-visible,
+#spa-root .output-file-open:focus-visible,
 #spa-root .output-image-button:focus-visible,
 #spa-root .tool-preview-thumb:focus-visible,
 #spa-root .session-file-link:focus-visible {
@@ -1333,12 +1299,6 @@
 #spa-root .activity-group > summary .activity-label {
   max-width: none;
   flex: 0 1 auto;
-}
-#spa-root .activity-count {
-  flex: none;
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
 }
 #spa-root .activity-group:not([open]) > summary .activity-status:not(.failed, .pending) {
   display: none;
@@ -2457,11 +2417,7 @@ body .pi-btw-input {
   padding: 0;
 }
 #spa-root .assistant-message > .assistant-text + .assistant-text,
-#spa-root .activity-group + .assistant-message .assistant-text,
-#spa-root
-  .activity-disclosure[data-display-kind='image-summary']
-  + .assistant-message
-  .assistant-text {
+#spa-root .activity-group + .assistant-message .assistant-text {
   padding-top: 2px;
 }
 #spa-root .markdown-content ul,

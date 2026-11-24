@@ -38,7 +38,7 @@ export function toolKind(name) {
 // The activity in reading order: text and thinking as written, consecutive
 // tool calls merged into one run (one summary line), and questions on their
 // own so they stay visible.
-function appendTimeline(timeline, item, results) {
+function appendTimeline(timeline, item, results, toolFilesByCall) {
   const id = item.entry.id;
   const start = timeline.length;
   const blocks =
@@ -58,6 +58,14 @@ function appendTimeline(timeline, item, results) {
       });
     } else if (block.type === 'toolCall' && isQuestionTool(block.name)) {
       timeline.push({ kind: 'question', key, call: block });
+    } else if (block.type === 'toolCall' && toolFilesByCall?.has(block.id)) {
+      const operation = toolFilesByCall.get(block.id);
+      timeline.push({
+        kind: 'files',
+        key: 'files:' + key,
+        call: block,
+        operation,
+      });
     } else if (block.type === 'toolCall') {
       let run = timeline.at(-1);
       if (run?.kind !== 'tools') {
@@ -98,34 +106,11 @@ function isSteer(before, entry) {
   return Number.isFinite(gap) && gap >= 0 && gap <= STEER_GAP_MS;
 }
 
-function summarizeImages(steps) {
-  const groups = [];
-  for (const step of steps) {
-    step.summarized = true;
-    const previous = groups.at(-1);
-    if (
-      previous?.action === step.action &&
-      (step.action !== 'other' || previous.tool === step.tool)
-    ) {
-      previous.images.push(...step.images);
-    } else {
-      groups.push({
-        key: step.key,
-        action: step.action,
-        tool: step.tool,
-        images: [...step.images],
-      });
-    }
-  }
-  return groups;
-}
-
 export function groupConversationActivity(
   entries,
-  outputsByEntry,
   running = false,
   thinkingPreviews = [],
-  toolImagesByResult,
+  toolFilesByCall,
 ) {
   const results = new Map();
   for (const { entry } of entries) {
@@ -136,7 +121,6 @@ export function groupConversationActivity(
   const sections = [];
   let activity = null;
   let turnStartedAt = 0;
-  let turnImageSteps = [];
   function addActivity(item, thoughts, tools) {
     if (!activity) {
       activity = {
@@ -147,7 +131,6 @@ export function groupConversationActivity(
         failures: 0,
         retries: 0,
         latestTool: '',
-        outputs: [],
         timeline: [],
         needsResponse: false,
         questionOutcome: '',
@@ -157,7 +140,7 @@ export function groupConversationActivity(
       sections.push(activity);
     }
     activity.items.push(item);
-    appendTimeline(activity.timeline, item, results);
+    appendTimeline(activity.timeline, item, results, toolFilesByCall);
     activity.endedAt = Math.max(activity.endedAt, entryTime(item.entry));
     activity.thinking += thoughts;
     activity.toolCount += tools.length;
@@ -196,18 +179,8 @@ export function groupConversationActivity(
       sections.push({ key: entry.id, item: { ...item, retried: true } });
       continue;
     }
-    if (message?.role === 'toolResult') {
-      const images = toolImagesByResult?.get(entry.id);
-      if (images) {
-        if (!activity) addActivity({ entry, blocks: [] }, 0, []);
-        const step = { kind: 'images', key: `images:${entry.id}`, ...images };
-        activity.timeline.push(step);
-        activity.endedAt = Math.max(activity.endedAt, entryTime(entry));
-        turnImageSteps.push(step);
-      }
-      continue;
-    }
     if (
+      message?.role === 'toolResult' ||
       entry.type === 'thinking_level_change' ||
       entry.type === 'session_info' ||
       (entry.type === 'model_change' && entry.implicit)
@@ -223,7 +196,6 @@ export function groupConversationActivity(
         if (steering) activity.steered = true;
         else if (!activity.needsResponse) activity.unfinished = true;
       }
-      if (!steering) turnImageSteps = [];
       activity = null;
       turnStartedAt = entryTime(entry);
     }
@@ -239,7 +211,6 @@ export function groupConversationActivity(
         ['aborted', 'error', 'length'].includes(message.stopReason);
       if (!final && (tools.length || thoughtCount || message.stopReason === 'toolUse')) {
         addActivity(item, thoughtCount, tools);
-        activity.outputs.push(...(outputsByEntry?.get(entry.id) || []));
         for (const tool of tools) {
           if (!isQuestionTool(tool.name)) continue;
           const result = results.get(tool.id);
@@ -258,17 +229,11 @@ export function groupConversationActivity(
       // The turn ends with this reply; count its time in the activity duration.
       if (activity) activity.endedAt = Math.max(activity.endedAt, entryTime(entry));
       activity = null;
-      const completed =
-        !item.emptyReply &&
-        !['aborted', 'error', 'length'].includes(message.stopReason) &&
-        Boolean(item.reply || message.stopReason === 'stop');
       sections.push({
         key: entry.id,
         item,
         final: Boolean(final || message.stopReason === 'stop'),
-        imageGroups: completed && turnImageSteps.length ? summarizeImages(turnImageSteps) : null,
       });
-      turnImageSteps = [];
       continue;
     }
     sections.push({ key: entry.id, item });

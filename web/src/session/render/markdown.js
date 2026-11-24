@@ -1,4 +1,4 @@
-import { localOutputLink } from '../artifacts/outputs.js';
+import { localOutputLink, mentionedOutputPaths } from '../artifacts/outputs.js';
 import { escapeHtml as defaultEscapeHtml } from '../../shared/escape.js';
 
 export const strictStrikethroughRegex =
@@ -9,6 +9,14 @@ const rasterDataImage = /^data:image\/(?:png|jpe?g|gif|webp|avif|bmp);base64,[a-
 
 export function configureSessionMarkdown({ marked, hljs, escapeHtml = defaultEscapeHtml }) {
   if (configured.has(marked)) return;
+  const fileButton = (file, label) =>
+    '<button type="button" class="session-file-link" data-session-file="' +
+    escapeHtml(file.path) +
+    '" data-filename="' +
+    escapeHtml(file.title) +
+    '">' +
+    label +
+    '</button>';
   marked.use({
     breaks: true,
     gfm: true,
@@ -39,17 +47,7 @@ export function configureSessionMarkdown({ marked, hljs, escapeHtml = defaultEsc
         }
         if (typeof this.options.workspaceCwd === 'string') {
           const file = localOutputLink(href, this.options.workspaceCwd);
-          if (file) {
-            return (
-              '<button type="button" class="session-file-link" data-session-file="' +
-              escapeHtml(file.path) +
-              '" data-filename="' +
-              escapeHtml(file.title) +
-              '">' +
-              label +
-              '</button>'
-            );
-          }
+          if (file) return fileButton(file, label);
         }
         let out = '<a href="' + escapeHtml(href) + '"';
         if (token.title) {
@@ -65,6 +63,10 @@ export function configureSessionMarkdown({ marked, hljs, escapeHtml = defaultEsc
           (/^data:/i.test(href) && !rasterDataImage.test(href))
         ) {
           return escapeHtml(token.text || '');
+        }
+        if (typeof this.options.workspaceCwd === 'string') {
+          const file = localOutputLink(href, this.options.workspaceCwd);
+          if (file) return fileButton(file, escapeHtml(token.text || file.title));
         }
         let out = '<img src="' + escapeHtml(href) + '" alt="' + escapeHtml(token.text || '') + '"';
         if (token.title) {
@@ -108,4 +110,31 @@ export function configureSessionMarkdown({ marked, hljs, escapeHtml = defaultEsc
 export function safeMarkedParse(text, { marked, workspaceCwd }) {
   configureSessionMarkdown({ marked });
   return marked.parse(text, typeof workspaceCwd === 'string' ? { workspaceCwd } : undefined);
+}
+
+export function replyMarkdownParts(text, { marked, cwd, fileIndex }, seen) {
+  const options = { marked, workspaceCwd: cwd };
+  if (!fileIndex?.paths.size || !/[.`[]/.test(text)) {
+    return [{ html: safeMarkedParse(text, options), files: [] }];
+  }
+  configureSessionMarkdown({ marked });
+  const parserOptions = { ...marked.defaults, workspaceCwd: cwd };
+  const result = [];
+  let pending = [];
+  const flush = (files) => {
+    result.push({ html: marked.parser(pending, parserOptions), files });
+    pending = [];
+  };
+  for (const token of marked.lexer(text)) {
+    pending.push(token);
+    const files = [];
+    for (const path of mentionedOutputPaths([token], fileIndex, cwd)) {
+      if (seen.has(path)) continue;
+      seen.add(path);
+      files.push(fileIndex.paths.get(path));
+    }
+    if (files.length) flush(files);
+  }
+  if (pending.length) flush([]);
+  return result;
 }

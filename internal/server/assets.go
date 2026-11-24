@@ -38,8 +38,16 @@ func assetType(name string) (string, string) {
 		kind = "audio"
 	case ".pdf":
 		return "pdf", "application/pdf"
+	case ".c", ".cc", ".cpp", ".cs", ".css", ".go", ".h", ".hpp", ".ini", ".java", ".js", ".jsx",
+		".kt", ".lua", ".mjs", ".php", ".ps1", ".py", ".rb", ".rs", ".sh", ".sql", ".svelte",
+		".swift", ".toml", ".ts", ".tsx", ".vue", ".xml", ".yaml", ".yml":
+		return "source", "text/plain; charset=utf-8"
 	case ".md", ".txt", ".csv", ".json", ".html", ".htm", ".zip", ".docx", ".xlsx", ".pptx":
 	default:
+		switch strings.ToLower(path.Base(name)) {
+		case "dockerfile", "makefile", "license", "readme":
+			return "source", "text/plain; charset=utf-8"
+		}
 		return "", ""
 	}
 	contentType := mime.TypeByExtension(ext)
@@ -104,9 +112,19 @@ func referencedAssets(session *sessions.Session, cwd string) (refs, outputs map[
 			}
 			filePath = filepath.ToSlash(filepath.Clean(filePath))
 			if allowedAssetPath(filePath) {
-				refs[filePath] = true
 				id, _ := block["id"].(string)
-				if completed[id] && (block["name"] == "write" || block["name"] == "edit") {
+				name, _ := block["name"].(string)
+				if i := strings.LastIndex(name, "__"); i >= 0 {
+					name = name[i+2:]
+				}
+				kind, _ := assetType(filePath)
+				recordedFileOp := completed[id] && (name == "read" || name == "read_file" ||
+					name == "view" || name == "cat" || name == "write" || name == "edit" || name == "create_file" ||
+					name == "str_replace" || name == "multi_edit" || name == "apply_patch")
+				if kind != "source" || recordedFileOp {
+					refs[filePath] = true
+				}
+				if completed[id] && (name == "write" || name == "edit") {
 					outputs[filePath] = true
 				}
 			}
@@ -116,8 +134,11 @@ func referencedAssets(session *sessions.Session, cwd string) (refs, outputs map[
 }
 
 func eligibleAsset(name string, info fs.FileInfo, since time.Time, refs map[string]bool) bool {
-	return allowedAssetPath(name) && info.Mode().IsRegular() && info.Size() <= 1<<30 &&
-		(refs[name] || (!since.IsZero() && !info.ModTime().Before(since.Add(-2*time.Second))))
+	if !allowedAssetPath(name) || !info.Mode().IsRegular() || info.Size() > 1<<30 {
+		return false
+	}
+	kind, _ := assetType(name)
+	return refs[name] || (kind != "source" && !since.IsZero() && !info.ModTime().Before(since.Add(-2*time.Second)))
 }
 
 func assetFileInfo(root *os.Root, name string) (fs.FileInfo, error) {

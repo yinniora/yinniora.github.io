@@ -50,7 +50,8 @@ export function localOutputLink(href, cwd) {
   if (
     !fileScheme &&
     !windowsPath &&
-    (!/\.[a-z\d][a-z\d_-]{0,15}$/i.test(name) ||
+    ((!/\.[a-z\d][a-z\d_-]{0,15}$/i.test(name) &&
+      !/(?:^|\/)(?:dockerfile|makefile|license|readme)$/i.test(name)) ||
       /^\/?(?:api|assets|sounds)\//.test(name) ||
       /^\/?index\.html$/i.test(name))
   )
@@ -61,9 +62,60 @@ export function localOutputLink(href, cwd) {
   };
 }
 
+export function indexOutputFiles(files, cwd) {
+  const paths = new Map();
+  const names = new Map();
+  for (const file of files) {
+    const path = file.path || (file.filePath && relativeOutputPath(file.filePath, cwd));
+    if (!path || paths.has(path)) continue;
+    paths.set(path, file);
+    const name = path.split('/').at(-1);
+    names.set(name, names.has(name) ? '' : path);
+  }
+  return { paths, names };
+}
+
+const plainFileNames =
+  /(?:^|[\s([（【“"'、，])([^\s`"'<>()[\]，。；、]+?\.[a-z\d][a-z\d_-]{0,15})(?=$|[\s.,;:!?()[\]”'",，。！？）】])/giu;
+
+// Search rendered prose and explicit paths. Code examples and the labels of
+// external links are separate content, so they don't turn into file cards.
+export function mentionedOutputPaths(tokens, index, cwd, includeExplicit = false) {
+  const found = new Set();
+  function find(name, explicit = false) {
+    const local = localOutputLink(name.trim(), cwd);
+    if (!local?.path) return;
+    if (index.paths.has(local.path) || (explicit && includeExplicit)) found.add(local.path);
+    else if (!explicit && !local.path.includes('/') && !name.includes('/')) {
+      const unique = index.names.get(local.path);
+      if (unique) found.add(unique);
+    }
+  }
+  function visit(token) {
+    if (token.type === 'link' || token.type === 'image') {
+      find(token.href, true);
+      return;
+    }
+    if (token.type === 'code' || token.type === 'html') return;
+    if (token.type === 'codespan') find(token.text);
+    if (token.type === 'text' && !token.tokens) {
+      for (const [, name] of (token.text || '').matchAll(plainFileNames)) find(name);
+    }
+    for (const child of token.tokens || token.items || []) visit(child);
+    if (token.type === 'table') {
+      for (const cell of [...token.header, ...token.rows.flat()]) {
+        for (const child of cell.tokens || []) visit(child);
+      }
+    }
+  }
+  for (const token of tokens) visit(token);
+  return found;
+}
+
 export function sessionOutputReferences(entries, cwd) {
   const written = new Map();
   const linked = new Map();
+  const known = new Set();
   const results = new Map();
   for (const entry of entries) {
     const message = entry?.type === 'message' && entry.message;
@@ -77,23 +129,42 @@ export function sessionOutputReferences(entries, cwd) {
         ? [{ type: 'text', text: message.content }]
         : message.content || [];
     for (const block of blocks) {
-      if (
-        block?.type === 'toolCall' &&
-        ['write', 'edit'].includes(block.name) &&
-        results.get(block.id)
-      ) {
+      const tool = String(block?.name || '')
+        .split('__')
+        .at(-1);
+      if (block?.type === 'toolCall' && results.get(block.id)) {
         const path = block.arguments?.path || block.arguments?.file_path;
         if (typeof path === 'string') {
           const relative = relativeOutputPath(path, cwd);
-          if (relative) written.set(relative, entry.id);
+          if (!relative) continue;
+          if (
+            /^(?:read|read_file|view|cat|write|edit|create_file|str_replace|multi_edit|apply_patch)$/.test(
+              tool,
+            )
+          ) {
+            known.add(relative);
+          }
+          if (['write', 'edit'].includes(tool)) written.set(relative, entry.id);
         }
       }
-      if (block?.type !== 'text' || !block.text?.includes(']')) continue;
-      marked.walkTokens(marked.lexer(block.text), (token) => {
-        if (token.type !== 'link') return;
-        const link = localOutputLink(token.href.trim(), cwd);
-        if (link?.path && !linked.has(link.path)) linked.set(link.path, entry.id);
-      });
+    }
+  }
+  const index = indexOutputFiles(
+    [...known].map((path) => ({ path })),
+    cwd,
+  );
+  for (const entry of entries) {
+    const message = entry?.type === 'message' && entry.message;
+    if (message?.role !== 'assistant') continue;
+    const blocks =
+      typeof message.content === 'string'
+        ? [{ type: 'text', text: message.content }]
+        : message.content || [];
+    for (const block of blocks) {
+      if (block?.type !== 'text' || !/[.`[]/.test(block.text)) continue;
+      for (const path of mentionedOutputPaths(marked.lexer(block.text), index, cwd, true)) {
+        if (!linked.has(path)) linked.set(path, entry.id);
+      }
     }
   }
   return { written, linked };
@@ -108,7 +179,7 @@ export function collectOutputs(
 ) {
   const pathEntries = Array.isArray(entries) ? entries : [];
   const files = collectArtifacts(pathEntries, { confirmedWrites: true })
-    .filter((artifact) => artifact.filePath || artifact.kind === 'preview')
+    .filter((artifact) => artifact.filePath && relativeOutputPath(artifact.filePath, cwd))
     .map((artifact) => ({
       ...artifact,
       kind: artifact.previewType || 'file',
@@ -203,6 +274,33 @@ export function groupOutputsByReply(entries, outputs) {
 
 export function svgPreviewURL(content) {
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(String(content).toWellFormed());
+}
+
+// Bound the read even when the host transport does not provide Content-Length.
+export async function readPreviewText(response, maxBytes) {
+  if (Number(response.headers.get('content-length')) > maxBytes) {
+    await response.body?.cancel();
+    return null;
+  }
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return text + decoder.decode();
+      bytes += value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 // HTML opens on request in a sandboxed iframe with an opaque origin.

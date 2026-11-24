@@ -85,9 +85,13 @@ describe('SessionContent', () => {
   });
 
   it.each([
-    ['final reply', { stopReason: 'stop', content: 'Here is the file.' }, '.reply-footer'],
+    [
+      'final reply',
+      { stopReason: 'stop', content: 'Here is `out.txt`.\n\nMore details.' },
+      '.reply-footer',
+    ],
     ['failed reply', { stopReason: 'error', errorMessage: 'HTTP 402' }, '.reply-error-actions'],
-  ])('keeps files visible after the %s', (_, message, controls) => {
+  ])('only shows a file alongside a mention in the %s', (_, message, controls) => {
     const path = [
       ...entries.slice(0, 3),
       {
@@ -115,24 +119,23 @@ describe('SessionContent', () => {
         model,
         live: true,
         chatAvailable: true,
-        outputs: [{ id: 'file', entryId: 'work' }],
+        outputs: [{ id: 'file', entryId: 'work', filePath: 'out.txt' }],
         renderOutputs: createRawSnippet(() => ({
           render: () => '<div class="file-preview"></div>',
         })),
       },
     });
     const cards = container.querySelectorAll('.file-preview');
-    expect(cards).toHaveLength(1);
     const reply = container.querySelector('#entry-final');
     expect(reply.previousElementSibling).toHaveClass('activity-group');
-    expect(reply).toContainElement(cards[0]);
+    expect(reply.querySelector(controls)).toBeInTheDocument();
     if (message.stopReason === 'error') {
-      expect(reply.querySelector(controls).compareDocumentPosition(cards[0])).toBe(
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      );
+      expect(cards).toHaveLength(0);
     } else {
-      expect(cards[0].previousElementSibling).toHaveClass('assistant-text');
-      expect(cards[0].nextElementSibling).toBe(reply.querySelector(controls));
+      expect(cards).toHaveLength(1);
+      expect(reply).toContainElement(cards[0]);
+      expect(cards[0].previousElementSibling).toHaveTextContent('Here is out.txt.');
+      expect(cards[0].nextElementSibling).toHaveTextContent('More details.');
     }
     expect(container.querySelector('#entry-mid').nextElementSibling.id).toBe('entry-leaf');
   });

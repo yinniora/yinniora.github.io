@@ -9,6 +9,7 @@
     assetUrl,
     collectOutputs,
     outputDocument,
+    readPreviewText,
     svgPreviewURL,
     formatAssetSize,
     sessionOutputReferences,
@@ -21,15 +22,23 @@
   let assetsReady = $state(false);
   let assetRequest;
   let downloadScope;
+  let previewRequest;
   let selected = $state(null);
   let previewOpen = $state(false);
   let previewText = $state('');
+  let previewLoading = $state(false);
+  let previewOrigin = $state('');
   let error = $state('');
   const failedVideos = new SvelteSet();
   const entries = $derived(model?.activePath || model?.entries || []);
   const references = $derived(sessionOutputReferences(entries, cwd));
   const outputs = $derived(collectOutputs(entries, assets, cwd, sessionId, references));
   const downloadBufferLimit = 16 * 1024 * 1024;
+  const textPreviewLimit = 2 * 1024 * 1024;
+
+  $effect(() => {
+    if (!previewOpen) previewRequest?.abort();
+  });
 
   async function refresh() {
     if (!sessionId) return;
@@ -58,9 +67,7 @@
       assetsReady = true;
       await Promise.all(
         assets
-          .filter(
-            (asset) => references.written.has(asset.path) || references.linked.has(asset.path),
-          )
+          .filter((asset) => references.linked.has(asset.path))
           .filter((asset) => asset.kind === 'svg' && !asset.content && asset.size < 512 * 1024)
           .slice(0, 20)
           .map(async (asset) => {
@@ -69,11 +76,7 @@
                 `/api/asset?id=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(asset.path)}`,
                 { signal: request.signal },
               );
-              if (
-                response.ok &&
-                Number(response.headers?.get?.('content-length') || 0) < 512 * 1024
-              )
-                asset.content = await response.text();
+              if (response.ok) asset.content = await readPreviewText(response, 512 * 1024);
             } catch {
               /* Keep the downloadable file even if its preview is unavailable. */
             }
@@ -87,7 +90,12 @@
   }
 
   async function open(output) {
-    if (output.kind === 'image' || (output.kind === 'svg' && output.content)) {
+    previewRequest?.abort();
+    if (
+      (output.kind === 'image' && output.previewUrl) ||
+      (output.kind === 'svg' && output.content)
+    ) {
+      previewOpen = false;
       window.dispatchEvent(
         new CustomEvent('pi:image-preview', {
           detail: {
@@ -99,22 +107,43 @@
       return;
     }
     selected = output;
-    previewText = output.content || '';
+    const recorded = output.recordedText
+      ?.filter((block) => block?.type === 'text')
+      .map((block) => block.text)
+      .join('\n');
+    const snapshot = output.content ?? recorded;
+    previewText = (snapshot ?? output.fallbackContent ?? '').slice(0, textPreviewLimit);
+    previewOrigin = snapshot == null && previewText ? 'toolFiles.diff' : '';
+    previewLoading = false;
     error = '';
     previewOpen = true;
     if (
-      !previewText &&
-      (output.kind === 'svg' || /^text\/|application\/json/.test(output.mime || '')) &&
+      snapshot == null &&
+      (output.kind === 'svg' ||
+        output.readWorkspaceText ||
+        /^(?:text\/|application\/json)/.test(output.mime || '')) &&
       output.href
     ) {
+      const request = new AbortController();
+      previewRequest = request;
+      previewLoading = true;
       try {
-        const response = await (fetchImpl || fetch)(output.href);
-        if (!response.ok) throw new Error();
-        const length = Number(response.headers?.get?.('content-length') || 0);
-        if (length > 2 * 1024 * 1024) return;
-        previewText = (await response.text()).slice(0, 2 * 1024 * 1024);
+        const response = await (fetchImpl || fetch)(output.href, { signal: request.signal });
+        const type = response.headers.get('content-type') || '';
+        if (!response.ok || !/^(?:text\/|application\/json|image\/svg\+xml)/i.test(type)) {
+          await response.body?.cancel();
+          throw new Error();
+        }
+        const text = await readPreviewText(response, textPreviewLimit);
+        if (text == null) throw new Error();
+        if (!request.signal.aborted) {
+          previewText = text;
+          previewOrigin = output.readWorkspaceText ? 'toolImages.workspaceFile' : '';
+        }
       } catch {
-        error = t('outputs.previewUnavailable');
+        if (!request.signal.aborted && !previewText) error = t('outputs.previewUnavailable');
+      } finally {
+        if (!request.signal.aborted) previewLoading = false;
       }
     }
   }
@@ -200,6 +229,7 @@
     window.addEventListener('pi-session-entries-reconciled', reload);
     return () => {
       downloadScope.abort();
+      previewRequest?.abort();
       transcript?.removeEventListener('click', onFileLink);
       assetRequest?.abort();
       clearTimeout(timer);
@@ -209,17 +239,26 @@
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- Lucide icons and sanitized Markdown -->
-{#snippet gallery(group)}
+{#snippet gallery(group, inlineMedia = true)}
   <section class="output-gallery" aria-label={t('outputs.title')}>
-    <div class="output-section-title">{t('outputs.title')}</div>
     <div class="output-grid">
       {#each group as output (output.id)}
-        {@const hasImage = output.kind === 'image' || (output.kind === 'svg' && output.content)}
-        {@const hasPreview = hasImage || ['video', 'audio'].includes(output.kind)}
+        {@const hasImage =
+          (output.kind === 'image' && output.previewUrl) ||
+          (output.kind === 'svg' && output.content)}
+        {@const hasPreview =
+          hasImage ||
+          (inlineMedia && output.previewUrl && ['video', 'audio'].includes(output.kind))}
         {@const fileType =
           output.title.match(/\.([\w-]+)$/)?.[1].toUpperCase() ||
           (output.kind === 'file' ? '' : output.kind.toUpperCase())}
         {@const fileMetadata = [fileType, formatAssetSize(output.size)].filter(Boolean).join(' · ')}
+        {#snippet fileLabel()}
+          <span class="output-file-name" title={output.filePath || output.title}
+            >{output.title}</span
+          >
+          {#if fileMetadata}<span class="output-file-meta">{fileMetadata}</span>{/if}
+        {/snippet}
         <article class="output-card" class:output-has-preview={hasPreview}>
           {#if hasImage}
             <button
@@ -240,7 +279,7 @@
                 >{@html icon(Maximize2, { size: 16 })}</span
               >
             </button>
-          {:else if output.kind === 'video'}
+          {:else if inlineMedia && output.kind === 'video' && output.previewUrl}
             <!-- svelte-ignore a11y_media_has_caption -->
             <video
               class="output-video"
@@ -253,7 +292,7 @@
             {#if failedVideos.has(output.id)}<p class="output-media-help">
                 {t('media.videoUnsupported')}
               </p>{/if}
-          {:else if output.kind === 'audio'}
+          {:else if inlineMedia && output.kind === 'audio' && output.previewUrl}
             <audio class="output-audio" controls preload="metadata" src={output.previewUrl}></audio>
           {/if}
           <div class="output-card-bar">
@@ -262,31 +301,31 @@
                 >{@html icon(FileDiff, { size: 17 })}</span
               >
             {/if}
-            <div class="output-file-details">
-              <span class="output-file-name" title={output.filePath || output.title}
-                >{output.title}</span
-              >
-              {#if fileMetadata}<span class="output-file-meta">{fileMetadata}</span>{/if}
-            </div>
-            <div class="output-card-actions">
-              {#if !hasImage}
-                <button
-                  type="button"
-                  class="output-action"
-                  title={t('outputs.open')}
-                  aria-label={`${t('outputs.open')} ${output.title}`}
-                  onclick={() => open(output)}>{@html icon(ExternalLink, { size: 16 })}</button
-                >
-              {/if}
+            {#if hasImage}
+              <div class="output-file-details">{@render fileLabel()}</div>
+            {:else}
               <button
                 type="button"
-                class="output-action output-download"
-                title={t('artifact.download')}
-                aria-label={`${t('artifact.download')} ${output.title}`}
-                onclick={() => download(output)}
+                class="output-file-details output-file-open"
+                aria-label={`${t('outputs.open')} ${output.title}`}
+                onclick={() => open(output)}
               >
-                {@html icon(Download, { size: 16 })}<span>{t('artifact.download')}</span>
+                <span class="output-file-label">{@render fileLabel()}</span>
+                <span aria-hidden="true">{@html icon(ExternalLink, { size: 15 })}</span>
               </button>
+            {/if}
+            <div class="output-card-actions">
+              {#if output.href || typeof output.content === 'string'}
+                <button
+                  type="button"
+                  class="output-action output-download"
+                  title={t('artifact.download')}
+                  aria-label={`${t('artifact.download')} ${output.title}`}
+                  onclick={() => download(output)}
+                >
+                  {@html icon(Download, { size: 16 })}<span>{t('artifact.download')}</span>
+                </button>
+              {/if}
             </div>
           </div>
         </article>
@@ -305,9 +344,12 @@
   {#if selected}
     <div class="output-full-view">
       <div class="output-full-toolbar">
-        <span>{selected.title}</span><button onclick={() => download(selected)}
-          >{@html icon(Download, { size: 16 })}{t('artifact.download')}</button
-        >
+        <span>{previewOrigin ? t(previewOrigin) : selected.title}</span>
+        {#if selected.href || typeof selected.content === 'string'}
+          <button onclick={() => download(selected)}
+            >{@html icon(Download, { size: 16 })}{t('artifact.download')}</button
+          >
+        {/if}
       </div>
       {#if error}<p class="output-error">{error}</p>{/if}
       {#if selected.kind === 'svg' && previewText}
@@ -320,9 +362,7 @@
           referrerpolicy="no-referrer"
           srcdoc={outputDocument(previewText)}
         ></iframe>
-      {:else if selected.kind === 'image'}
-        <img class="output-full-image" src={selected.previewUrl} alt={selected.title} />
-      {:else if selected.kind === 'video'}
+      {:else if selected.kind === 'video' && selected.previewUrl}
         <!-- svelte-ignore a11y_media_has_caption -->
         <video
           class="output-full-video"
@@ -332,9 +372,9 @@
           src={selected.previewUrl}
           onerror={() => (error = t('media.videoUnsupported'))}
         ></video>
-      {:else if selected.kind === 'audio'}
+      {:else if selected.kind === 'audio' && selected.previewUrl}
         <audio class="output-audio" controls src={selected.previewUrl}></audio>
-      {:else if selected.kind === 'pdf'}
+      {:else if selected.kind === 'pdf' && selected.previewUrl}
         <iframe
           class="output-full-frame"
           title={selected.title}
@@ -345,6 +385,8 @@
         <div class="markdown-content">{@html safeMarkedParse(previewText, { marked })}</div>
       {:else if previewText}
         <pre class="output-source"><code>{previewText}</code></pre>
+      {:else if previewLoading}
+        <p class="output-file-help">{t('toolImages.loadingPreview')}</p>
       {:else}
         <p class="output-file-help">{t('outputs.downloadToOpen')}</p>
       {/if}

@@ -16,11 +16,11 @@
   import { marked } from 'marked';
   import { safeMarkedParse } from '../../session/render/markdown.js';
   import { entriesWithReplyDetails } from '../../session/render/reply-details.js';
-  import { groupOutputsByReply } from '../../session/artifacts/outputs.js';
-  import { collectToolImagePreviews } from '../../session/artifacts/tool-images.js';
+  import { groupOutputsByReply, indexOutputFiles } from '../../session/artifacts/outputs.js';
+  import { collectToolFileOperations } from '../../session/artifacts/tool-files.js';
   import { groupConversationActivity } from '../../session/render/conversation-activity.js';
   import { t } from '../../shared/i18n.js';
-  import { Image } from '../../shared/icons.js';
+  import { FileText, Image, Pencil, Wrench } from '../../shared/icons.js';
   import { formatElapsed } from '../../session/render/entry-format.js';
 
   function activityText(section) {
@@ -76,19 +76,14 @@
       : model.activePath.map((entry) => ({ entry })),
   );
   const groups = $derived(outputs.length ? groupOutputsByReply(entries, outputs) : null);
-  const toolImages = $derived(
-    live ? collectToolImagePreviews(model.activePath, cwd, sessionId) : null,
+  const replyFileIndex = $derived(live ? indexOutputFiles(outputs, cwd) : null);
+  const toolFiles = $derived(
+    live ? collectToolFileOperations(model.activePath, cwd, sessionId) : null,
   );
   const workspacePreviews = new Map();
   const sections = $derived(
     live
-      ? groupConversationActivity(
-          entries,
-          groups?.byEntry,
-          sessionRunning,
-          thinkingPreviews,
-          toolImages,
-        )
+      ? groupConversationActivity(entries, sessionRunning, thinkingPreviews, toolFiles)
       : entries.map((item) => ({ key: item.entry.id, item })),
   );
   // Sections after the last user message belong to the newest turn; only that
@@ -151,6 +146,7 @@
       latestTurn={latestTurn && sessionRunning === false}
       {skipActivity}
       outputs={groups?.byEntry.get(entry.id)}
+      {replyFileIndex}
       {renderOutputs}
       {onCompact}
       {cwd}
@@ -193,8 +189,37 @@
             />
           {:else if step.kind === 'question'}
             <ToolCall call={step.call} {model} live />
-          {:else if step.kind === 'images'}
-            <ToolImageStrip group={step} {workspacePreviews} />
+          {:else if step.kind === 'files'}
+            {@const operation = step.operation}
+            {@const images = operation.images.length > 0}
+            {@const label =
+              operation.action === 'other'
+                ? t('toolImages.other')
+                : t((images ? 'toolImages.' : 'toolFiles.') + operation.action)}
+            {@const summary = [...operation.images, ...operation.files]
+              .map((file) => file.title)
+              .filter(Boolean)
+              .join(' · ')}
+            <ActivityDisclosure
+              kind="file"
+              id={step.key}
+              entryId={operation.resultId}
+              {label}
+              summary={summary || step.call.name.split('__').at(-1)}
+              glyph={operation.action === 'edit'
+                ? Pencil
+                : images
+                  ? Image
+                  : operation.action === 'other'
+                    ? Wrench
+                    : FileText}
+              status={operation.failed ? 'error' : ''}
+              deferBody
+            >
+              {#if images}<ToolImageStrip images={operation.images} {workspacePreviews} />{/if}
+              {#if operation.files.length}{@render renderOutputs?.(operation.files, false)}{/if}
+              <ToolCall call={step.call} {model} live resultAnchor={false} />
+            </ActivityDisclosure>
           {:else}
             <ToolRun run={step} {model} />
           {/if}
@@ -203,27 +228,8 @@
       {#if section.unfinished && chatAvailable && sessionRunning === false && sectionIndex >= latestFrom}
         <ReplyError actionsOnly onContinue={continueTask} onChooseModel={chooseModel} />
       {/if}
-      {#if section.outputs.length}
-        {@render renderOutputs?.(section.outputs)}
-      {/if}
     {:else}
-      {#if section.imageGroups}
-        <ActivityDisclosure
-          kind="image-summary"
-          id={`image-summary:${section.key}`}
-          label={t('toolImages.title')}
-          count={section.imageGroups.reduce((count, group) => count + group.images.length, 0)}
-          glyph={Image}
-        >
-          {#each section.imageGroups as group (group.key)}
-            <ToolImageStrip {group} {workspacePreviews} />
-          {/each}
-        </ActivityDisclosure>
-      {/if}
       {@render renderEntry(section.item, sectionIndex >= latestFrom)}
     {/if}
   {/each}
-  {#if groups?.unassigned.length}
-    {@render renderOutputs?.(groups.unassigned)}
-  {/if}
 </div>

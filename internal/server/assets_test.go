@@ -29,6 +29,9 @@ func assetTestServer(t *testing.T) (*Server, string) {
 		`{"type":"message","id":"write-result","message":{"role":"toolResult","toolCallId":"w1","isError":false}}`,
 		`{"type":"message","id":"failed-result","message":{"role":"toolResult","toolCallId":"w2","isError":true}}`,
 		`{"type":"message","id":"read-result","message":{"role":"toolResult","toolCallId":"r1","isError":false}}`,
+		`{"type":"message","id":"source-calls","message":{"role":"assistant","content":[{"type":"toolCall","name":"read","id":"source-read","arguments":{"path":"src/inspected.ts"}},{"type":"toolCall","name":"edit","id":"source-edit","arguments":{"path":"src/failed.ts"}}]}}`,
+		`{"type":"message","id":"source-read-result","message":{"role":"toolResult","toolCallId":"source-read","isError":false}}`,
+		`{"type":"message","id":"source-edit-result","message":{"role":"toolResult","toolCallId":"source-edit","isError":true}}`,
 	} {
 		transcript = append(append(transcript, line...), '\n')
 	}
@@ -144,6 +147,23 @@ func TestAssetRejectsTraversalHiddenPathsAndEscapingSymlinks(t *testing.T) {
 				t.Fatal("file content or private path leaked")
 			}
 		})
+	}
+}
+
+func TestSourcePreviewRequiresASuccessfulRecordedOperation(t *testing.T) {
+	s, cwd := assetTestServer(t)
+	for _, name := range []string{"src/inspected.ts", "src/failed.ts", "src/unrelated.ts"} {
+		createAsset(t, cwd, name)
+		w := httptest.NewRecorder()
+		query := url.Values{"id": {"a.jsonl"}, "path": {name}}
+		s.handleAsset(w, httptest.NewRequest(http.MethodGet, "/api/asset?"+query.Encode(), nil))
+		if name == "src/inspected.ts" {
+			if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
+				t.Fatalf("recorded source preview: %d %s", w.Code, w.Header().Get("Content-Type"))
+			}
+		} else if w.Code != http.StatusNotFound {
+			t.Fatalf("unexpected access to %s: %d", name, w.Code)
+		}
 	}
 }
 

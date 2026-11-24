@@ -1243,7 +1243,7 @@ test("gallery SVGs enlarge and H.264 video plays with authenticated range suppor
   }
 });
 
-test("image operations follow tool results, then fold above the completed reply", async ({
+test("tool file previews stay in their steps and delivered files follow reply references", async ({
   page,
   sessionsDir,
 }, testInfo) => {
@@ -1253,7 +1253,14 @@ test("image operations follow tool results, then fold above the completed reply"
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3"/></svg>';
   const png = { type: "image", mimeType: "image/png", data: SAMPLE_PNG };
   let parentId = lastId;
-  function recordTool(key: string, name: string, path: string, result: object, thinking = "") {
+  function recordTool(
+    key: string,
+    name: string,
+    path: string,
+    result: object,
+    thinking = "",
+    details: object = {},
+  ) {
     const assistant = assistantTextEntry(parentId, "");
     const call = { type: "toolCall", id: key, name, arguments: { path } };
     entries.push({
@@ -1275,6 +1282,7 @@ test("image operations follow tool results, then fold above the completed reply"
         toolCallId: key,
         toolName: name,
         content: [result],
+        details,
         isError: false,
       },
     } as any);
@@ -1284,26 +1292,31 @@ test("image operations follow tool results, then fold above the completed reply"
     text: '<svg xmlns="http://www.w3.org/2000/svg">\n[3 more lines in file. Use offset=2 to continue.]',
   });
   recordTool("read-png", "read", "/tmp/check.png", png);
+  recordTool("read-text", "read", "./notes.txt", { type: "text", text: "Notes at the time of the read" });
   const initial = entries.length;
   recordTool("edit-svg", "edit", "edited.svg", { type: "text", text: "Updated edited.svg" },
     "Adjust the circle.");
+  recordTool("edit-source", "edit", "edited.ts", { type: "text", text: "Updated edited.ts" },
+    "", { diff: "-old\n+new" });
   recordTool("screenshot", "mcp__browser__screenshot", "/tmp/capture.png", png);
   recordTool("recheck", "view_image", "/tmp/rechecked.png", png);
   recordTool("write-svg", "write", "finished.svg", { type: "text", text: "Wrote finished.svg" });
   const reply = assistantTextEntry(
     parentId,
-    "[Download the SVG](./finished.svg) · [Documentation](https://example.test/docs)",
+    "[Download the SVG](./finished.svg)\n\n[Documentation](https://example.test/docs)",
   );
   for (const file of ["reviewed.svg", "edited.svg", "finished.svg"]) {
     writeFileSync(join(cwd, file), svg);
   }
+  writeFileSync(join(cwd, "edited.ts"), "export const updated = 1;\n");
 
-  const name = uniqueSessionName(testInfo, "image-operations");
+  const name = uniqueSessionName(testInfo, "inline-files");
   const id = writeSession(sessionsDir, name, entries.slice(0, initial));
   const statusFile = join(dirname(sessionsDir), "session-status", id);
-  const summary = page.locator('details[data-display-kind="image-summary"]');
   const activity = page.locator(".activity-group").last();
-  const files = ["reviewed.svg", "check.png", "edited.svg", "capture.png", "rechecked.png"];
+  const steps = activity.locator('details[data-display-kind="file"]');
+  const step = (filename: string) => steps.filter({ hasText: filename });
+  const heading = (filename: string) => step(filename).locator(":scope > summary");
   let svgRequests = 0;
 
   page.on("request", (request) => {
@@ -1322,57 +1335,55 @@ test("image operations follow tool results, then fold above the completed reply"
     writeFileSync(statusFile, JSON.stringify({ state: "running", updatedAt: new Date().toISOString() }));
     await page.goto("/session?id=" + encodeURIComponent(id));
     await expect(activity).toHaveAttribute("data-running", "true");
-    await expect(summary).toHaveCount(0);
-    await expect(activity.locator("figcaption")).toHaveText(files.slice(0, 2));
-    const firstPreview = activity.getByRole("button", { name: "Enlarge reviewed.svg" });
+    await expect(steps).toHaveCount(3);
+    await expect(activity.locator(".tool-preview")).toHaveCount(0);
+    expect(svgRequests).toBe(0);
+    await heading("reviewed.svg").click();
+    const firstPreview = step("reviewed.svg").getByRole("button", { name: "Enlarge reviewed.svg" });
     await firstPreview.scrollIntoViewIfNeeded();
     await expect(firstPreview.locator("img")).toHaveAttribute("decoding", "async");
     expect(svgRequests).toBe(1);
+    await heading("reviewed.svg").click();
+    await expect(activity.locator(".tool-preview")).toHaveCount(0);
 
     const composer = page.locator("#pi-chat-message");
     await composer.fill("未发出的草稿");
     for (const entry of entries.slice(initial)) appendEntry(sessionsDir, name, entry);
-    await expect(activity.locator("figcaption")).toHaveText(files);
+    await expect(steps).toHaveCount(8);
     await expect(activity.locator(".activity-thinking")).toBeVisible();
-    expect(await activity.evaluate((group) => Array.from(group.querySelectorAll(
-      ".activity-thinking, .tool-image-strip",
-    )).map((row) => row.getAttribute("aria-label") || "thinking")))
-      .toEqual(["Viewed images", "Viewed images", "thinking", "Edited images", "Other operations", "Viewed images"]);
+    const labels = await activity.evaluate((group) => Array.from(group.querySelectorAll(
+      '.activity-thinking, details[data-display-kind="file"]',
+    )).map((row) => row.classList.contains("activity-thinking")
+      ? "thinking"
+      : row.querySelector(":scope > summary .activity-label")?.textContent));
+    expect(labels).toEqual([
+      "Viewed image", "Viewed image", "Read file", "thinking", "Edited image",
+      "Edited file", "Other operations", "Viewed image", "Wrote image",
+    ]);
     await expect(composer).toBeFocused();
     await expect(composer).toHaveValue("未发出的草稿");
-    await expect(summary).toHaveCount(0);
 
     appendEntry(sessionsDir, name, reply.entry);
-    await expect(summary).toHaveAttribute("open", "");
-    await expect(summary.locator("figcaption")).toHaveText(files);
-    await expect(summary.locator(".activity-label")).toHaveText("Image operations");
-    await expect(summary.locator(".activity-count")).toHaveText("5");
-    const orderedActions = await summary.locator(".tool-image-strip").evaluateAll((rows) =>
-      rows.map((row) => row.getAttribute("aria-label")),
-    );
-    expect(orderedActions).toEqual(["Viewed images", "Edited images", "Other operations", "Viewed images"]);
-    await expect(activity.locator(".tool-image-reference")).toHaveCount(5);
-    await expect(activity.locator(".tool-preview")).toHaveCount(0);
-
     const assistant = page.locator("#entry-" + reply.id);
     const output = assistant.getByRole("region", { name: "Outputs", exact: true });
+    await expect(assistant.locator(".assistant-text + .output-gallery + .assistant-text + .reply-footer")).toBeVisible();
+    await expect(output.locator(".output-file-name")).toHaveText("finished.svg");
+    await expect(assistant.locator("img.output-inline-preview")).toBeVisible();
     expect(await assistant.evaluate((reply) => reply.previousElementSibling?.getAttribute("data-display-kind")))
-      .toBe("image-summary");
-    await expect(assistant.locator(".assistant-text + .output-gallery + .reply-footer")).toBeVisible();
-    await expect(output.locator(".output-file-name").getByText("finished.svg", { exact: true })).toHaveCount(1);
-    await expect(output.locator(".output-file-name").getByText("edited.svg", { exact: true })).toHaveCount(1);
-    await expect(page.locator(".output-file-name")).toHaveCount(2);
+      .toBe("group");
+    await expect(page.locator('details[data-display-kind="image-summary"]')).toHaveCount(0);
+    await expect(activity.locator(".tool-preview")).toHaveCount(0);
 
-    const heading = summary.locator(":scope > summary");
-    await heading.click();
-    await expect(summary.locator(".tool-preview")).toHaveCount(0);
-    await heading.click();
+    if (!(await activity.getAttribute("open") === "")) {
+      await activity.locator(":scope > summary").click();
+    }
     for (const [filename, source] of [
       ["reviewed.svg", /^data:image\/svg\+xml/],
       ["check.png", /^data:image\/png/],
       ["edited.svg", /^data:image\/svg\+xml/],
     ] as const) {
-      const thumbnail = summary.getByRole("button", { name: "Enlarge " + filename, exact: true });
+      await heading(filename).click();
+      const thumbnail = step(filename).getByRole("button", { name: "Enlarge " + filename, exact: true });
       await thumbnail.scrollIntoViewIfNeeded();
       await thumbnail.click();
       await expect(page.locator("#modal-image")).toHaveAttribute("src", source);
@@ -1380,8 +1391,22 @@ test("image operations follow tool results, then fold above the completed reply"
         (image) => (image as HTMLImageElement).naturalWidth,
       )).toBeGreaterThan(0);
       await page.locator("#image-modal").getByRole("button", { name: "Close", exact: true }).click();
+      await heading(filename).click();
+      await expect(step(filename).locator(".tool-preview")).toHaveCount(0);
     }
     expect(svgRequests).toBe(1);
+    for (const [filename, content] of [
+      ["notes.txt", "Notes at the time of the read"],
+      ["edited.ts", "export const updated = 1;"],
+    ]) {
+      await heading(filename).click();
+      await step(filename).getByRole("button", { name: "Open " + filename, exact: true }).click();
+      const viewer = page.getByRole("dialog", { name: filename, exact: true });
+      await expect(viewer.locator(".output-source")).toHaveText(content);
+      await viewer.getByRole("button", { name: "Close " + filename, exact: true }).click();
+      await expect(viewer).toBeHidden();
+      await heading(filename).click();
+    }
     const linkColors = await assistant.evaluate((element) =>
       [".session-file-link", "a", ".output-download"].map((selector) =>
         getComputedStyle(element.querySelector(selector)!).color,

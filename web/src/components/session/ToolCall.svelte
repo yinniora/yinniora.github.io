@@ -15,7 +15,7 @@
   } from '../../session/render/conversation-activity.js';
   import { t } from '../../shared/i18n.js';
 
-  let { call, model, live = false } = $props();
+  let { call, model, live = false, resultAnchor = true } = $props();
 
   const resultEntry = $derived.by(() => {
     for (const entry of model?.entries || []) {
@@ -60,7 +60,7 @@
 {#snippet execution()}
   <div
     class="tool-execution {statusClass}"
-    id={resultEntry ? `entry-${resultEntry.id}` : undefined}
+    id={resultAnchor && resultEntry ? `entry-${resultEntry.id}` : undefined}
   >
     {#if call.name === 'bash'}
       {@const command = str(args.command)}
