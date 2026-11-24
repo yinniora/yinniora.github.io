@@ -48,8 +48,10 @@ Bug reports and contributions for this variant belong in this repository.
    Home Screen. An [iOS project](apps/ios/README.md) is also available for signed
    device builds and TestFlight.
 
-   When you enable another connection later, scan a new code from the same
-   client to add the route to that client's existing device authorization.
+   When you enable another connection later, connected clients learn its
+   address over their existing authenticated connection. If every known
+   route is offline, scanning a new code in the same app adds the address
+   to the existing device authorization.
 
 On a second desktop, install the same YuGo Pi package for its platform and
 choose **Connect to another computer**. Switch later in **Settings →

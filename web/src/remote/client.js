@@ -27,6 +27,15 @@ export const SIGNAL_OPEN_TIMEOUT = 8000;
 export const ANSWER_TIMEOUT = 20000;
 export const CHANNEL_TIMEOUT = 20000;
 export const RESUME_PROBE_TIMEOUT = 1500;
+const DIRECT_FALLBACK_TIMEOUT = 5000;
+const routeFailures = new Set([
+  'timeout',
+  'relayFailed',
+  'signalTimeout',
+  'channelTimeout',
+  'disconnected',
+  'offline',
+]);
 
 // Short-lived TURN credentials are reused in memory (never persisted) so a
 // reconnect in the same page skips the signed /ice round trip.
@@ -142,7 +151,7 @@ export class RemoteClient extends EventTarget {
   }
 
   updateConfiguration(config) {
-    if (config?.fingerprint !== this.config.fingerprint) return;
+    if (!this.authorized || config?.fingerprint !== this.config.fingerprint) return;
     try {
       this.config = publicRemoteConfig({ ...this.config, ...config });
       saveRemoteConfig(this.config);
@@ -201,6 +210,7 @@ export class RemoteClient extends EventTarget {
     this.connecting = this.openConnection()
       .then(() => {
         this.phase('sync');
+        this.refreshRoutes(AbortSignal.timeout(5000)).catch(() => {});
         if (this.deviceIdentified) return;
         this.fetch('/api/devices', {
           method: 'POST',
@@ -238,16 +248,6 @@ export class RemoteClient extends EventTarget {
       error.code = 'storageUnavailable';
       throw error;
     }
-    const signaling = new AbortController();
-    try {
-      await this.negotiate(identity, signaling.signal);
-    } catch (error) {
-      signaling.abort();
-      throw error;
-    }
-  }
-
-  async negotiate(identity, signal) {
     const { lanUrl, directUrl, signalUrl, iceUrl } = this.config;
     const relayOnly = this.preference === 'vps' && !!signalUrl;
     const useTURN = !!iceUrl && this.preference !== 'tailscale';
@@ -255,100 +255,159 @@ export class RemoteClient extends EventTarget {
     const routes = [];
     if (lanUrl && this.nativeLANSocket && !relayOnly) routes.push({ url: lanUrl, kind: 'lan' });
     if (directUrl && !relayOnly) routes.push({ url: directUrl, kind: 'direct' });
-    if (signalUrl && (!directUrl || this.preference !== 'tailscale'))
+    if (signalUrl && (this.preference !== 'tailscale' || !routes.length))
       routes.push({ url: signalUrl, kind: 'relay' });
     if (!routes.length) throw connectionError('lanNeedsApp');
+
+    for (;;) {
+      const attempt = new AbortController();
+      let selected;
+      try {
+        // A relay-only route can fetch credentials while its socket opens. With
+        // private routes in the race, fetch them only if the relay is selected.
+        const earlyTURN =
+          useTURN && routes.length === 1 && routes[0].kind === 'relay'
+            ? this.loadTURN(identity, attempt.signal, relayOnly)
+            : null;
+        const opening = this.openSignaling(routes, identity, attempt.signal, unavailable);
+        opening.catch(() => {});
+        let turn = earlyTURN ? await earlyTURN : null;
+        this.phase('signal');
+        selected = await opening;
+        this.diagnostics.signalRoute = selected.route.kind;
+        if (useTURN && selected.route.kind === 'relay' && !turn)
+          turn = await this.loadTURN(identity, attempt.signal, relayOnly);
+
+        const fastFallback =
+          this.preference === 'auto' && routes.length > 1 && selected.route.kind !== 'relay';
+        await this.negotiate(identity, selected.socket, {
+          turn,
+          relayOnly,
+          signal: attempt.signal,
+          unavailable,
+          fastFallback,
+        });
+        return;
+      } catch (error) {
+        attempt.abort();
+        if (
+          this.preference !== 'auto' ||
+          !selected ||
+          routes.length < 2 ||
+          this.blocked ||
+          !routeFailures.has(error.code)
+        )
+          throw error;
+        routes.splice(routes.indexOf(selected.route), 1);
+        this.phase('fallback');
+      }
+    }
+  }
+
+  async openSignaling(routes, identity, signal, unavailable) {
     const attempts = routes.map(() => new AbortController());
     signal.addEventListener('abort', () => attempts.forEach((attempt) => attempt.abort()), {
       once: true,
     });
-    const signaling = Promise.any(
-      routes.map(async (route, index) => {
-        const createSocket =
-          route.kind === 'lan'
-            ? (url) => this.nativeLANSocket(url, this.config.fingerprint)
-            : (url) => new WebSocket(url);
-        const socket = await openSignalSocket(
-          route.url,
-          attempts[index].signal,
-          unavailable,
-          createSocket,
-        );
-        if (route.kind === 'relay') {
-          try {
-            await authenticateRelay(socket, identity, this.config);
-          } catch (error) {
-            socket.close();
-            throw error;
+    try {
+      const selected = await Promise.any(
+        routes.map(async (route, index) => {
+          const createSocket =
+            route.kind === 'lan'
+              ? (url) => this.nativeLANSocket(url, this.config.fingerprint)
+              : (url) => new WebSocket(url);
+          const socket = await openSignalSocket(
+            route.url,
+            attempts[index].signal,
+            unavailable,
+            createSocket,
+          );
+          if (route.kind === 'relay') {
+            try {
+              await authenticateRelay(socket, identity, this.config);
+            } catch (error) {
+              socket.close();
+              throw error;
+            }
           }
-        }
-        return { socket, index };
-      }),
-    ).then(({ socket, index }) => {
-      attempts.forEach((attempt, other) => {
-        if (other !== index) attempt.abort();
+          return { socket, route, index };
+        }),
+      );
+      attempts.forEach((attempt, index) => {
+        if (index !== selected.index) attempt.abort();
       });
-      return socket;
-    });
-    signaling.catch(() => {});
-
-    let iceServers = [];
-    let iceFromCache = false;
-    const cached = useTURN && cachedICE(iceUrl);
-    if (cached) {
-      iceServers = cached;
-      iceFromCache = true;
-      this.diagnostics.iceCached = true;
-    } else if (useTURN) {
-      this.phase('ice');
-      try {
-        const options = {
-          cache: 'no-store',
-          credentials: 'omit',
-          redirect: 'error',
-          signal: AbortSignal.timeout(8000),
-        };
-        if (this.config.relayAuth)
-          options.headers = { Authorization: await relayICEAuthorization(identity, this.config) };
-        let response = await originalFetch(iceUrl, options);
-        this.diagnostics.iceHTTPStatus = response.status;
-        if (response.status === 401 && !options.headers) {
-          options.headers = { Authorization: await relayICEAuthorization(identity, this.config) };
-          response = await originalFetch(iceUrl, options);
-          this.diagnostics.iceHTTPStatus = response.status;
-        }
-        if (!response.ok)
-          throw connectionError(response.status === 401 ? 'relayDenied' : 'iceUnavailable');
-        const reader = response.body.getReader();
-        const chunks = [];
-        let size = 0;
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          size += value.length;
-          if (size > 65536) {
-            await reader.cancel();
-            throw new Error('ICE response too large');
-          }
-          chunks.push(value);
-        }
-        const data = JSON.parse(await new Blob(chunks).text());
-        iceServers = validatedICEServers(data, new URL(iceUrl).hostname);
-        rememberICE(iceUrl, iceServers);
-        if (relayOnly && !iceServers.length) throw connectionError('iceUnavailable');
-      } catch (error) {
-        const knownError = typeof error.code === 'string';
-        this.diagnostics.iceError = knownError
-          ? error.code
-          : error.name === 'TimeoutError'
-            ? 'timeout'
-            : 'network';
-        if (relayOnly) throw knownError ? error : connectionError('iceUnavailable');
-        /* Direct candidates may still connect over Tailscale or LAN. */
-      }
+      return selected;
+    } catch (error) {
+      const code = error.errors?.some((failure) => failure?.code === 'relayDenied')
+        ? 'relayDenied'
+        : unavailable;
+      const failure = connectionError(code);
+      failure.cause = error;
+      throw failure;
     }
+  }
+
+  async loadTURN(identity, signal, required) {
+    const { iceUrl } = this.config;
+    const cached = cachedICE(iceUrl);
+    if (cached) {
+      this.diagnostics.iceCached = true;
+      return { servers: cached, fromCache: true };
+    }
+
+    this.phase('ice');
+    try {
+      const deadline = AbortSignal.timeout(8000);
+      const options = {
+        cache: 'no-store',
+        credentials: 'omit',
+        redirect: 'error',
+        signal: AbortSignal.any?.([signal, deadline]) || deadline,
+      };
+      if (this.config.relayAuth)
+        options.headers = { Authorization: await relayICEAuthorization(identity, this.config) };
+      let response = await originalFetch(iceUrl, options);
+      this.diagnostics.iceHTTPStatus = response.status;
+      if (response.status === 401 && !options.headers) {
+        options.headers = { Authorization: await relayICEAuthorization(identity, this.config) };
+        response = await originalFetch(iceUrl, options);
+        this.diagnostics.iceHTTPStatus = response.status;
+      }
+      if (!response.ok)
+        throw connectionError(response.status === 401 ? 'relayDenied' : 'iceUnavailable');
+      const reader = response.body.getReader();
+      const chunks = [];
+      let size = 0;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > 65536) {
+          await reader.cancel();
+          throw new Error('ICE response too large');
+        }
+        chunks.push(value);
+      }
+      const data = JSON.parse(await new Blob(chunks).text());
+      const servers = validatedICEServers(data, new URL(iceUrl).hostname);
+      rememberICE(iceUrl, servers);
+      if (required && !servers.length) throw connectionError('iceUnavailable');
+      return { servers };
+    } catch (error) {
+      const knownError = typeof error.code === 'string';
+      this.diagnostics.iceError = knownError
+        ? error.code
+        : error.name === 'TimeoutError'
+          ? 'timeout'
+          : 'network';
+      if (required) throw knownError ? error : connectionError('iceUnavailable');
+      return { servers: [] };
+    }
+  }
+
+  async negotiate(identity, socket, { turn, relayOnly, signal, unavailable, fastFallback }) {
     const peer = new RTCPeerConnection({
-      iceServers,
+      iceServers: turn?.servers || [],
       iceTransportPolicy: relayOnly ? 'relay' : 'all',
     });
     const channel = peer.createDataChannel('pi-workspace-v1', { ordered: true });
@@ -367,7 +426,6 @@ export class RemoteClient extends EventTarget {
       if (peer.connectionState === 'connected') this.updateTransport(peer);
     };
     this.authorized = false;
-    let socket;
     let answerTimer;
     let rejectAnswer;
     let approvalTimer;
@@ -376,6 +434,7 @@ export class RemoteClient extends EventTarget {
     const approved = new Promise((resolve, reject) => {
       rejectApproval = reject;
       channel.onmessage = async (event) => {
+        if (this.channel !== channel || signal.aborted) return;
         let message;
         try {
           message = JSON.parse(event.data);
@@ -387,16 +446,13 @@ export class RemoteClient extends EventTarget {
           try {
             if (message.fingerprint !== this.config.fingerprint)
               throw new Error(t('remote.identityFailed'));
-            channel.send(
-              JSON.stringify(
-                await createDeviceProof(
-                  identity,
-                  message.nonce,
-                  this.config.fingerprint,
-                  this.config.ticket || '',
-                ),
-              ),
+            const proof = await createDeviceProof(
+              identity,
+              message.nonce,
+              this.config.fingerprint,
+              this.config.ticket || '',
             );
+            if (this.channel === channel && !signal.aborted) channel.send(JSON.stringify(proof));
           } catch (error) {
             clearTimeout(approvalTimer);
             reject(error);
@@ -445,8 +501,6 @@ export class RemoteClient extends EventTarget {
     });
     approved.catch(() => {});
     try {
-      this.phase('signal');
-      socket = await signaling;
       const answerPromise = new Promise((resolve, reject) => {
         // Start the answer budget only after sending the offer, not during ICE gathering.
         rejectAnswer = reject;
@@ -466,7 +520,7 @@ export class RemoteClient extends EventTarget {
           }
           if (message.type === 'offline') {
             clearTimeout(answerTimer);
-            reject(new Error(t('remote.offline')));
+            reject(connectionError('offline'));
           }
         };
       });
@@ -488,10 +542,12 @@ export class RemoteClient extends EventTarget {
         peer.localDescription.sdp.match(/ typ relay/g) || []
       ).length;
       this.phase('answer');
+      if (socket.readyState != null && socket.readyState !== WebSocket.OPEN)
+        throw connectionError(unavailable);
       socket.send(JSON.stringify({ type: 'offer', sdp: peer.localDescription.sdp }));
       answerTimer = setTimeout(
         () => rejectAnswer(connectionError('signalTimeout')),
-        ANSWER_TIMEOUT,
+        fastFallback ? DIRECT_FALLBACK_TIMEOUT : ANSWER_TIMEOUT,
       );
       const sdp = await answerPromise;
       clearTimeout(answerTimer);
@@ -510,7 +566,7 @@ export class RemoteClient extends EventTarget {
                 this.diagnostics.stage === 'auth' ? 'authIncomplete' : 'channelTimeout',
               ),
             ),
-          CHANNEL_TIMEOUT,
+          fastFallback ? DIRECT_FALLBACK_TIMEOUT : CHANNEL_TIMEOUT,
         );
       await approved;
       clearTimeout(approvalTimer);
@@ -525,19 +581,9 @@ export class RemoteClient extends EventTarget {
       clearTimeout(approvalTimer);
       clearTimeout(gatherGrace);
       // Stale cached TURN credentials must not poison the next attempt.
-      if (iceFromCache) forgetICE(iceUrl);
+      if (turn?.fromCache) forgetICE(this.config.iceUrl);
       rejectApproval(error);
       peer.close();
-      socket?.close();
-      if (error instanceof AggregateError) {
-        const code = error.errors.some((failure) => failure?.code === 'relayDenied')
-          ? 'relayDenied'
-          : unavailable;
-        const failure = connectionError(code);
-        failure.diagnostics = error.diagnostics;
-        failure.cause = error;
-        throw failure;
-      }
       throw error;
     }
   }
@@ -645,6 +691,15 @@ export class RemoteClient extends EventTarget {
     return response;
   }
 
+  async refreshRoutes(signal) {
+    const peer = this.peer;
+    const config = this.config;
+    const response = await this.fetch('/api/devices', { signal });
+    if (!response.ok) throw connectionError('disconnected');
+    const { connection } = await response.json();
+    if (this.peer === peer && this.config === config) this.updateConfiguration(connection);
+  }
+
   resume() {
     this.resuming ||= this.verifyChannel().finally(() => {
       this.resuming = null;
@@ -661,10 +716,7 @@ export class RemoteClient extends EventTarget {
     )
       return this.connect();
     try {
-      const response = await this.fetch('/api/version', {
-        signal: AbortSignal.timeout(RESUME_PROBE_TIMEOUT),
-      });
-      await response.arrayBuffer();
+      await this.refreshRoutes(AbortSignal.timeout(RESUME_PROBE_TIMEOUT));
     } catch {
       if (this.peer === peer) return this.reconnect(this.preference);
     }

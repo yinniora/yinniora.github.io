@@ -40,6 +40,7 @@ async function setup({
   preference = 'vps',
   routes = {},
   directOpenDelay = 0,
+  answerFingerprint = fingerprint,
 } = {}) {
   vi.stubGlobal(
     'fetch',
@@ -76,12 +77,13 @@ async function setup({
       send(data) {
         const packet = JSON.parse(data);
         offers.push(packet);
-        if (answer && packet.type === 'offer')
+        const shouldAnswer = typeof answer === 'function' ? answer(this.url) : answer;
+        if (shouldAnswer && packet.type === 'offer')
           queueMicrotask(() =>
             this.onmessage?.({
               data: JSON.stringify({
                 type: 'answer',
-                sdp: `v=0\r\na=fingerprint:sha-256 ${fingerprint}\r\na=candidate:1 1 udp 1 203.0.113.1 3478 typ relay\r\n`,
+                sdp: `v=0\r\na=fingerprint:sha-256 ${answerFingerprint}\r\na=candidate:1 1 udp 1 203.0.113.1 3478 typ relay\r\n`,
               }),
             }),
           );
@@ -95,8 +97,9 @@ async function setup({
   vi.stubGlobal(
     'RTCPeerConnection',
     class {
-      constructor() {
+      constructor(options) {
         peer = this;
+        this.options = options;
         this.connectionState = 'connecting';
         this.iceConnectionState = 'checking';
       }
@@ -182,6 +185,55 @@ it('connects using the direct route when the faster relay socket refuses its cap
   expect(readRemoteConfig()).toMatchObject({ directUrl, signalUrl: config.signalUrl, fingerprint });
   expect(readRemoteConfig()).not.toHaveProperty('relayTicket');
   expect(readRemoteConfig()).not.toHaveProperty('ticket');
+});
+
+it('starts the encrypted private session without waiting for a slow public relay', async () => {
+  const directUrl = 'wss://host.tail.example/remote-signal';
+  authenticateRelay.mockImplementationOnce(() => new Promise(() => {}));
+  const { client, sockets, getPeer } = await setup({
+    preference: 'auto',
+    routes: { directUrl },
+  });
+  const result = client.openConnection();
+  await vi.advanceTimersByTimeAsync(0);
+  await result;
+  expect(client.socket.url).toBe(directUrl);
+  expect(sockets.find((socket) => socket.url === config.signalUrl).closed).toBe(true);
+  expect(getPeer().options.iceServers).toEqual([]);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('tries the relay with the same identity when private signaling opens but never answers', async () => {
+  const directUrl = 'wss://host.tail.example/remote-signal';
+  const { client, offers, sockets } = await setup({
+    answer: (url) => url === config.signalUrl,
+    preference: 'auto',
+    routes: { directUrl },
+  });
+  const result = client.openConnection();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(offers).toHaveLength(1);
+  expect(fetch).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(5000);
+  await result;
+  expect(offers).toHaveLength(2);
+  expect(sockets.find((socket) => socket.url === directUrl).closed).toBe(true);
+  expect(client.socket.url).toBe(config.signalUrl);
+  expect(client.authorized).toBe(true);
+  expect(fetch).toHaveBeenCalledExactlyOnceWith(config.iceUrl, expect.anything());
+  expect(readRemoteConfig()).toMatchObject({ fingerprint, directUrl, signalUrl: config.signalUrl });
+});
+
+it('blocks a mismatched host identity without falling back to another route', async () => {
+  const { client, offers } = await setup({
+    preference: 'auto',
+    routes: { directUrl: 'wss://host.tail.example/remote-signal' },
+    answerFingerprint: Array(32).fill('cd').join(':'),
+  });
+  await expect(client.openConnection()).rejects.toThrow('Mac identity mismatch');
+  expect(offers).toHaveLength(1);
+  expect(fetch).not.toHaveBeenCalled();
+  expect(readRemoteConfig()).toBeNull();
 });
 
 it('reports relay authorization failures before waiting on an impossible relay-only channel', async () => {

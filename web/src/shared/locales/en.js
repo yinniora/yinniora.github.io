@@ -18,7 +18,7 @@ export default {
   'remote.phase.channel': 'Establishing the encrypted channel…',
   'remote.phase.auth': 'Verifying this device on the host…',
   'remote.phase.sync': 'Connected. Synchronizing the workspace…',
-  'remote.phase.fallback': 'Tailscale did not answer. Trying Automatic (direct + relay)…',
+  'remote.phase.fallback': 'Trying another connection route…',
   'models.title': 'Models',
   'plugins.title': 'Plugins',
   'plugins.intro':

@@ -28,6 +28,10 @@ func TestEncryptedHTTPRequiresDeviceProof(t *testing.T) {
 			}
 			defer host.Close()
 			host.Origins = []string{"client.example"}
+			host.ICE = func() []webrtc.ICEServer {
+				t.Error("private signaling reached the TURN provider")
+				return nil
+			}
 			direct := httptest.NewTLSServer(http.HandlerFunc(host.ServeSignal))
 			defer direct.Close()
 			key, raw := testDevice(t)

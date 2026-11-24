@@ -105,16 +105,22 @@ SDP and DTLS ciphertext,
 Outer HTTPS certificates protect signaling availability and metadata; losing a
 VPS HTTPS key cannot impersonate the pinned inner DTLS identity.
 
-One entry named Pi offers Automatic, Tailscale and VPS preferences. Automatic
-races direct and public signaling and allows direct ICE routes. A relay must
-authorize its signaling socket before it can win the race. Tailscale uses
-the private signaling endpoint when configured, otherwise the existing public
-signaling endpoint, and requests no client TURN servers. This preference works
-without changing tailnet settings; available direct candidates remain preferred.
-VPS uses
-public signaling and relay-only ICE. Switching routes keeps the same pinned
-identity and device approval. An authenticated metadata refresh can update the
-direct endpoint, but cannot change the pinned Mac identity.
+Automatic races the known private and public signaling routes. A relay must
+authorize its socket before it qualifies. When a private route wins, both ends
+gather direct candidates immediately, independently of public TURN credentials.
+If signaling opens but the data channel cannot be established, Automatic
+can try another known route with the same device identity.
+ICE checks candidate reachability and prefers direct data paths. A working
+session stays open while the set of known routes changes. The manual P2P
+preference tries configured private signaling first, and the relay preference
+uses public signaling with relay-only ICE.
+
+Route changes are sent on the authenticated event stream. Reconnect and
+foreground probes also refresh route metadata from the approved host. A
+refresh can add or replace an address while the host fingerprint and approved
+device key stay fixed. If every known address is unreachable and the client
+has yet to receive a new address, a fresh code scanned in the same client
+adds the address to the existing authorization.
 
 An approved host can also create a code using only a private WSS signaling
 endpoint. That code carries the same pinned host fingerprint and one-time
@@ -131,7 +137,8 @@ against the same pin used for WebRTC. Browsers use the Tailscale or VPS route
 from the code. A LAN-only host requires the native app and a client on the
 local network.
 
-Signaling and ICE discovery run concurrently. The installed web app coalesces
+Public signaling and TURN discovery run concurrently when the public path is
+the only candidate. The installed web app coalesces
 foreground and network wakeups into one probe of its existing authenticated
 channel. If iOS discarded the process or the channel is stale, the previously
 approved device signs a fresh challenge. Startup synchronizes workspace settings

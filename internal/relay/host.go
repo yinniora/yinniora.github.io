@@ -105,7 +105,8 @@ func (h *Host) answer(ctx context.Context, peer signalPeer, offer string) (strin
 		return "", errors.New("too many connections")
 	}
 	configuration := webrtc.Configuration{Certificates: []webrtc.Certificate{*h.Certificate}}
-	if h.ICE != nil {
+	// Local and tailnet signaling should work independently of the relay.
+	if peer.broker != nil && h.ICE != nil {
 		configuration.ICEServers = h.ICE()
 	}
 	newPeer := webrtc.NewPeerConnection

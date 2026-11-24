@@ -1,4 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
+import { readRemoteConfig } from './config.js';
+
+vi.mock('./relay-auth.js', () => ({
+  authenticateRelay: vi.fn(async () => {}),
+  relayICEAuthorization: vi.fn(async () => 'fixture-proof'),
+}));
 vi.mock('./identity.js', async (original) => ({
   ...(await original()),
   getDeviceIdentity: vi.fn().mockResolvedValue({}),
@@ -28,7 +34,7 @@ it.each([
     'wss://mac.tail.example/remote-signal',
     ['wss://mac.tail.example/remote-signal', 'wss://relay.example/signal'],
     'all',
-    true,
+    false,
   ],
   [
     'auto',
@@ -71,33 +77,16 @@ it.each([
       ),
     );
     vi.stubGlobal('fetch', fetch);
-    const endpoints = [],
-      peers = [];
+    const endpoints = [];
     vi.stubGlobal(
       'WebSocket',
       class {
         constructor(url) {
           endpoints.push(url);
-          queueMicrotask(() => this.onerror?.());
+          queueMicrotask(() => this.onopen?.());
         }
         close() {
           this.onclose?.();
-        }
-      },
-    );
-    vi.stubGlobal(
-      'RTCPeerConnection',
-      class {
-        constructor(options) {
-          this.options = options;
-          peers.push(this);
-        }
-        createDataChannel() {
-          this.channel = {};
-          return this.channel;
-        }
-        close() {
-          this.channel.onclose?.();
         }
       },
     );
@@ -105,9 +94,15 @@ it.each([
     const routes = directOnly
       ? { version: config.version, fingerprint: config.fingerprint, directUrl }
       : { ...config, directUrl };
-    await expect(new RemoteClient(routes, { preference }).connect()).rejects.toThrow();
+    const client = new RemoteClient(routes, { preference });
+    const negotiate = vi.spyOn(client, 'negotiate').mockResolvedValue();
+    await client.openConnection();
     expect(endpoints).toEqual(expected);
-    expect(peers[0].options.iceTransportPolicy).toBe(policy);
+    expect(negotiate).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ relayOnly: policy === 'relay' }),
+    );
     expect(fetch.mock.calls.length > 0).toBe(needsIce);
   },
 );
@@ -192,10 +187,34 @@ it('reuses a working authenticated channel when the app returns to the foregroun
     .mockRejectedValueOnce(new Error('stale channel'));
   client.reconnect = vi.fn().mockResolvedValue(undefined);
   await client.resume();
-  expect(client.fetch).toHaveBeenCalledWith('/api/version', { signal: expect.anything() });
+  expect(client.fetch).toHaveBeenCalledWith('/api/devices', { signal: expect.anything() });
   expect(client.reconnect).not.toHaveBeenCalled();
   await client.resume();
   expect(client.reconnect).toHaveBeenCalledOnce();
+});
+
+it('learns a new route over an approved connection without replacing its channel', async () => {
+  const { RemoteClient } = await import('./client.js');
+  const client = new RemoteClient(config);
+  const directUrl = 'wss://host.tail.example/remote-signal';
+  const peer = { connectionState: 'connected', close: vi.fn() };
+  client.peer = peer;
+  client.channel = { readyState: 'open' };
+  client.authorized = true;
+  client.fetch = vi
+    .fn()
+    .mockResolvedValue(
+      Response.json({ connection: { fingerprint: config.fingerprint, directUrl } }),
+    );
+  await client.resume();
+  expect(readRemoteConfig()).toMatchObject({ signalUrl: config.signalUrl, directUrl });
+  expect(client.peer).toBe(peer);
+  expect(peer.close).not.toHaveBeenCalled();
+  client.updateConfiguration({
+    fingerprint: Array(32).fill('cd').join(':'),
+    directUrl: 'wss://other.example/remote-signal',
+  });
+  expect(readRemoteConfig().directUrl).toBe(directUrl);
 });
 
 it('shares a single channel check across concurrent resume events', async () => {

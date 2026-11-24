@@ -226,11 +226,6 @@ async function launchWorkspace(client) {
   window.__PI_REMOTE_CLIENT__ = client;
   client.setSyncing(true);
   const syncSettings = prepareStartupSettings({ fetchImpl: window.fetch });
-  client
-    .fetch('/api/devices', { signal: AbortSignal.timeout(5000) })
-    .then((response) => response.json())
-    .then(({ connection }) => client.updateConfiguration(connection))
-    .catch(() => {});
   const [settings] = await Promise.all([syncSettings, waitForMediaBridge()]);
   if (settings?.['pi-web:v1:standalone-tap-diagnostics'] === 'true') {
     import('./remote/tap-diagnostics.js')
